@@ -1,0 +1,6 @@
+project_id = "hfcfkxozzbrzzrejtbdj"
+
+# Endpoint público chamado pela Z-API: valida origem por header Client-Token,
+# não por JWT do Supabase.
+[functions.webhook-zapi-receive]
+verify_jwt = false

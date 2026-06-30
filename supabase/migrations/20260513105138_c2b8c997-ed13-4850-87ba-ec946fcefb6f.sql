@@ -1,0 +1,1 @@
+ALTER TYPE close_reason ADD VALUE IF NOT EXISTS 'migracao_inicial';

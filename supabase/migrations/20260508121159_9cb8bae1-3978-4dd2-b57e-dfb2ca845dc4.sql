@@ -1,0 +1,2 @@
+UPDATE public.system_config SET valor = 'false', updated_at = now() WHERE chave = 'bot_ativo';
+UPDATE public.system_config SET valor = (now() - interval '1 minute')::text, updated_at = now() WHERE chave = 'bot_ativacao_programada';

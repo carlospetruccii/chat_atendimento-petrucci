@@ -30,3 +30,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Env / secrets (não subir credenciais)
+.env
+.env.*
+!.env.example
+
+# Supabase (estado local da CLI)
+supabase/.temp
+supabase/.branches
+
+# Lockfile alternativo (o projeto usa bun.lock)
+package-lock.json

@@ -1,0 +1,1 @@
+ALTER TABLE public.atendimentos ADD COLUMN triagem_last_processed_msg_id uuid NULL;

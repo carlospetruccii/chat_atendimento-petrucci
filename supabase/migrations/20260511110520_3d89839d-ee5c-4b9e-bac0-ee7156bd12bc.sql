@@ -1,0 +1,1 @@
+UPDATE public.system_config SET valor = 'false', updated_at = now() WHERE chave = 'bot_ativo';

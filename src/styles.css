@@ -1,22 +1,9 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
-
-/*
- * Design system definition.
- *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
- *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
- */
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -59,77 +46,159 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-chat-bg: var(--chat-bg);
+  --color-chat-sent: var(--chat-sent);
+  --color-chat-sent-foreground: var(--chat-sent-foreground);
+  --color-chat-received: var(--chat-received);
+  --color-chat-received-foreground: var(--chat-received-foreground);
 }
 
+/* =================================================================
+ * Sistema de 4 camadas SÓLIDAS — Tema CLARO
+ * L0 background (bege WhatsApp) → L1 surface (branco) → L2 card → L3 elevated
+ * Nada de fundos translúcidos em superfícies. Transparência só em overlays.
+ * ================================================================= */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --radius: 0.5rem;
+  --font-sans: "Inter", system-ui, sans-serif;
+
+  /* WhatsApp green */
+  --wa-green: oklch(0.65 0.13 168);
+  --wa-green-hover: oklch(0.6 0.13 168);
+  --wa-green-soft: oklch(0.93 0.06 160);
+
+  /* 4 camadas sólidas */
+  --layer-0: oklch(0.955 0.008 95);   /* página */
+  --layer-1: oklch(1 0 0);             /* surface: sidebar, lista, header */
+  --layer-2: oklch(0.975 0.004 230);   /* card / modal / popover */
+  --layer-3: oklch(0.94 0.005 230);    /* elevated / hover / input focus */
+
+  /* Hierarquia de texto */
+  --text-primary: oklch(0.18 0.01 240);
+  --text-secondary: oklch(0.40 0.01 240);
+  --text-tertiary: oklch(0.58 0.01 240);
+
+  --background: var(--layer-0);
+  --foreground: var(--text-primary);
+  --card: var(--layer-2);
+  --card-foreground: var(--text-primary);
+  --popover: var(--layer-2);
+  --popover-foreground: var(--text-primary);
+
+  --primary: var(--wa-green);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--layer-3);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--layer-3);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--layer-3);
+  --accent-foreground: var(--text-primary);
+  --destructive: oklch(0.6 0.22 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.88 0.005 230);
+  --input: var(--layer-3);
+  --ring: var(--wa-green);
+
+  /* Superfície macia (legado blue-50/40) -> L2 sólido */
+  --surface-soft: var(--layer-2);
+  --surface-soft-border: var(--border);
+
+  /* Aviso / supervisão */
+  --warning-bg: oklch(0.94 0.07 85);
+  --warning-foreground: oklch(0.38 0.12 50);
+  --warning-border: oklch(0.82 0.1 80);
+
+  /* Chat */
+  --chat-bg: oklch(0.93 0.012 90);
+  --chat-sent: oklch(0.92 0.07 155);
+  --chat-sent-foreground: var(--text-primary);
+  --chat-received: var(--layer-1);
+  --chat-received-foreground: var(--text-primary);
+
+  --chart-1: var(--wa-green);
+  --chart-2: oklch(0.7 0.12 200);
+  --chart-3: oklch(0.65 0.18 50);
+  --chart-4: oklch(0.7 0.15 140);
+  --chart-5: oklch(0.65 0.2 320);
+
+  --sidebar: var(--layer-1);
+  --sidebar-foreground: var(--text-secondary);
+  --sidebar-primary: var(--wa-green);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: var(--layer-3);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--wa-green);
 }
 
+/* =================================================================
+ * Sistema de 4 camadas SÓLIDAS — Tema ESCURO (WhatsApp Web dark)
+ * ================================================================= */
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --wa-green: oklch(0.72 0.14 168);
+  --wa-green-hover: oklch(0.78 0.14 168);
+  --wa-green-soft: oklch(0.45 0.09 165);
+
+  /* 4 camadas sólidas */
+  --layer-0: oklch(0.16 0.01 220);    /* página, quase preto */
+  --layer-1: oklch(0.22 0.012 220);   /* sidebar, lista, header */
+  --layer-2: oklch(0.27 0.013 220);   /* card / modal / popover */
+  --layer-3: oklch(0.33 0.014 220);   /* elevated / hover / input focus */
+
+  /* Hierarquia de texto (alta legibilidade) */
+  --text-primary: oklch(0.97 0.005 220);
+  --text-secondary: oklch(0.80 0.008 220);
+  --text-tertiary: oklch(0.58 0.01 220);
+
+  --background: var(--layer-0);
+  --foreground: var(--text-primary);
+  --card: var(--layer-2);
+  --card-foreground: var(--text-primary);
+  --popover: var(--layer-2);
+  --popover-foreground: var(--text-primary);
+
+  --primary: var(--wa-green);
+  --primary-foreground: oklch(0.15 0.01 220);
+  --secondary: var(--layer-3);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--layer-3);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--layer-3);
+  --accent-foreground: var(--text-primary);
+  --destructive: oklch(0.65 0.22 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.36 0.012 220);
+  --input: var(--layer-3);
+  --ring: var(--wa-green);
+
+  --surface-soft: var(--layer-2);
+  --surface-soft-border: var(--border);
+
+  --warning-bg: oklch(0.34 0.06 70);
+  --warning-foreground: oklch(0.94 0.08 80);
+  --warning-border: oklch(0.48 0.1 75);
+
+  /* Chat */
+  --chat-bg: oklch(0.14 0.01 220);
+  --chat-sent: oklch(0.4 0.07 168);
+  --chat-sent-foreground: var(--text-primary);
+  --chat-received: var(--layer-2);
+  --chat-received-foreground: var(--text-primary);
+
+  --chart-1: var(--wa-green);
+  --chart-2: oklch(0.7 0.12 200);
+  --chart-3: oklch(0.75 0.18 50);
+  --chart-4: oklch(0.75 0.15 140);
+  --chart-5: oklch(0.75 0.2 320);
+
+  --sidebar: var(--layer-1);
+  --sidebar-foreground: var(--text-secondary);
+  --sidebar-primary: var(--wa-green);
+  --sidebar-primary-foreground: oklch(0.15 0.01 220);
+  --sidebar-accent: var(--layer-3);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--wa-green);
 }
 
 @layer base {
@@ -140,5 +209,128 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
   }
 }
+
+/* =================================================================
+ * Garantia de contraste: superfícies sólidas e texto legível.
+ * Todos os componentes agora usam tokens sólidos diretamente
+ * (bg-card, bg-muted, bg-popover) — sem modificadores de opacidade.
+ * ================================================================= */
+@layer utilities {
+  /* Forçar opacidade total em superfícies de camada, caso algum
+   * componente ainda aplique alpha via color-mix do Tailwind. */
+  .bg-card {
+    background-color: var(--layer-2) !important;
+  }
+  .bg-popover {
+    background-color: var(--layer-2) !important;
+  }
+  .bg-muted {
+    background-color: var(--layer-3) !important;
+  }
+  .bg-background {
+    background-color: var(--layer-0) !important;
+  }
+  .bg-sidebar {
+    background-color: var(--layer-1) !important;
+  }
+
+  /* Amber / warning sólidos */
+  .bg-amber-100,
+  .bg-amber-50 {
+    background-color: var(--warning-bg) !important;
+    color: var(--warning-foreground);
+  }
+  .text-amber-700,
+  .text-amber-900 {
+    color: var(--warning-foreground) !important;
+  }
+  .border-amber-200,
+  .border-amber-300 {
+    border-color: var(--warning-border) !important;
+  }
+  .bg-slate-200 {
+    background-color: var(--layer-3) !important;
+  }
+  .text-slate-700 {
+    color: var(--text-secondary) !important;
+  }
+
+  /* Textos azuis legados -> verde WhatsApp */
+  .text-blue-400,
+  .text-blue-500,
+  .text-blue-600,
+  .text-blue-700,
+  .text-blue-900 {
+    color: var(--primary) !important;
+  }
+
+  /* Labels de card com bom contraste */
+  .text-muted-foreground {
+    color: var(--text-secondary) !important;
+  }
+  .text-muted-foreground\/80 {
+    color: var(--text-secondary) !important;
+  }
+
+  /* Badge de contador (notificações): sempre verde WhatsApp */
+  .badge-counter {
+    background-color: var(--wa-green) !important;
+    color: oklch(1 0 0) !important;
+  }
+}
+
+/* =================================================================
+ * Dark mode: ajustes de cores semânticas (sucesso/erro/aviso)
+ * para garantir legibilidade dentro de cards escuros.
+ * ================================================================= */
+.dark .bg-rose-50 {
+  background-color: color-mix(in oklab, oklch(0.55 0.18 20) 18%, var(--layer-2)) !important;
+}
+.dark .border-rose-200 {
+  border-color: color-mix(in oklab, oklch(0.65 0.18 20) 45%, transparent) !important;
+}
+.dark .text-rose-800,
+.dark .text-rose-900,
+.dark .text-rose-900\/80 {
+  color: oklch(0.85 0.12 20) !important;
+}
+.dark .bg-rose-700 {
+  background-color: oklch(0.75 0.15 20) !important;
+}
+
+.dark .bg-emerald-50 {
+  background-color: color-mix(in oklab, var(--wa-green) 14%, var(--layer-2)) !important;
+}
+.dark .border-emerald-200 {
+  border-color: color-mix(in oklab, var(--wa-green) 45%, transparent) !important;
+}
+.dark .text-emerald-800,
+.dark .text-emerald-900,
+.dark .text-emerald-900\/80 {
+  color: oklch(0.88 0.12 165) !important;
+}
+.dark .bg-emerald-700 {
+  background-color: var(--wa-green) !important;
+}
+
+/* Badge "modo emergência" sobre fundo amber no dark */
+.dark .bg-amber-200 {
+  background-color: oklch(0.7 0.16 75) !important;
+  color: oklch(0.18 0.02 75) !important;
+}
+
+/* Spinners do input number — visíveis no dark */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 0.6;
+}
+.dark input[type="number"]::-webkit-inner-spin-button,
+.dark input[type="number"]::-webkit-outer-spin-button {
+  filter: invert(1) brightness(1.4);
+  opacity: 0.75;
+}
+
+

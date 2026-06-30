@@ -1,0 +1,1 @@
+ALTER TYPE public.tipo_evento_timeline ADD VALUE IF NOT EXISTS 'reabertura_automatica';
