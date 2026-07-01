@@ -11,7 +11,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo, getBotAtivadoEm } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
-import { enviarListaOpcoes, enviarTexto, type OpcaoLista, ZapiError } from "../_shared/zapi-client.ts";
+import { enviarListaOpcoes, enviarTexto, type OpcaoLista, ZapiError } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "triagem-bot";
 const BOT_USER_ID = "00000000-0000-0000-0000-000000000001";

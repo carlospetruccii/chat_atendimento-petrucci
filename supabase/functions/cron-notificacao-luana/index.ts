@@ -10,7 +10,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
-import { enviarTexto, ZapiError } from "../_shared/zapi-client.ts";
+import { enviarTexto, ZapiError } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "cron-notificacao-luana";
 const LIMITE = 50;
