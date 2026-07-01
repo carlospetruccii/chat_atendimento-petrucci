@@ -1,17 +1,19 @@
 // Edge Function: webhook-zapi-receive
-// Endpoint público chamado pela Z-API para entregar eventos de WhatsApp.
+// Endpoint público chamado pela uazapi para entregar eventos de WhatsApp.
+// (O nome da função/pasta e a coluna zapi_message_id são cosméticos e ficam.)
 //
 // Princípios:
 //   - Sempre responde 200 quando o payload é parseável (evita reentrega em loop).
-//   - Idempotente via UNIQUE em mensagens.zapi_message_id.
+//   - Idempotente via UNIQUE em mensagens.zapi_message_id (guarda o `id` da uazapi).
 //   - NÃO consulta bot_ativo: webhook só recebe; quem responde respeita kill switch.
-//   - Mídias: persiste imediatamente apontando para a URL temporária da Z-API e,
-//     em background, baixa e sobe ao Storage substituindo o media_url.
+//   - Mídias: persiste imediatamente e, em background, baixa via
+//     POST /message/download (ou data.fileURL) e sobe ao Storage.
 //
-// Validação leve de origem: header Client-Token == ZAPI_CLIENT_TOKEN.
+// Validação de origem: segredo na query string (?secret=...) vs UAZAPI_WEBHOOK_SECRET.
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { baixarMidiaMensagem } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "webhook-zapi-receive";
 const BUCKET = "mensagens-midia";
@@ -19,7 +21,7 @@ const BUCKET = "mensagens-midia";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, client-token",
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -35,22 +37,31 @@ type TipoMensagem =
 
 type StatusWhatsapp = "enviado" | "entregue" | "lido" | "falha_whatsapp";
 
-// Status entre status (que não envolvem inserir mensagem inbound).
-const STATUS_TIPOS = new Set([
-  "MessageStatusCallback",
-  "DeliveryCallback",
-  "ReadCallback",
-]);
-
-// Status string da Z-API → enum status_whatsapp_mensagem.
+// Status string da uazapi → enum status_whatsapp_mensagem.
+// Os textos exatos são incertos → mapeamento defensivo por SUBSTRING (uppercase).
 function mapStatusWhatsapp(s: string | undefined | null): StatusWhatsapp | null {
   if (!s) return null;
-  const u = s.toUpperCase();
-  if (u === "SENT") return "enviado";
-  if (u === "RECEIVED" || u === "DELIVERED") return "entregue";
-  if (u === "READ" || u === "PLAYED") return "lido";
-  if (u === "FAILED" || u === "ERROR") return "falha_whatsapp";
+  const u = String(s).toUpperCase();
+  if (u.includes("DELIVER")) return "entregue";
+  if (u.includes("READ") || u.includes("PLAYED")) return "lido";
+  if (u.includes("SENT")) return "enviado";
+  if (u.includes("FAIL") || u.includes("ERROR")) return "falha_whatsapp";
   return null;
+}
+
+// Mapeia messageType (cru da uazapi) para o tipo interno do sistema, por
+// substring case-insensitive (os valores exatos da uazapi são incertos).
+function mapMessageType(mt: string | null | undefined): TipoMensagem {
+  const t = String(mt ?? "").toLowerCase();
+  if (t.includes("image")) return "imagem";
+  if (t.includes("video")) return "video";
+  if (t.includes("audio") || t.includes("ptt")) return "audio";
+  if (t.includes("document")) return "documento";
+  if (t.includes("sticker")) return "sticker";
+  if (t.includes("location")) return "localizacao";
+  if (t.includes("contact") || t.includes("vcard")) return "contato";
+  // "conversation" / "text" / "extendedText" e fallback desconhecido → texto.
+  return "texto";
 }
 
 interface ParsedMensagem {
@@ -60,166 +71,102 @@ interface ParsedMensagem {
   media_metadata: Record<string, unknown> | null;
 }
 
-// Detecta o tipo de mensagem e extrai conteúdo/metadados do payload Z-API.
-// A Z-API envia diferentes campos conforme o tipo (text.message, image.imageUrl, etc.).
+// Detecta o tipo de mensagem e extrai conteúdo/metadados do objeto Message
+// da uazapi (o `data` do evento). Campos: messageType, text, fileURL,
+// buttonOrListid, content (objeto rico). Mantém o MESMO shape interno de saída.
 function parseMensagem(p: Record<string, unknown>): ParsedMensagem | null {
-  const get = <T = unknown>(k: string): T | undefined =>
-    p[k] as T | undefined;
+  const messageType = (p.messageType as string | undefined) ?? null;
+  const texto = typeof p.text === "string" ? (p.text as string) : null;
+  const fileURL = typeof p.fileURL === "string" && p.fileURL ? (p.fileURL as string) : null;
+  const buttonOrListid =
+    typeof p.buttonOrListid === "string" && p.buttonOrListid.trim() !== ""
+      ? (p.buttonOrListid as string)
+      : null;
 
-  const text = get<{ message?: string }>("text");
-  if (text?.message != null) {
-    return { tipo: "texto", content: String(text.message), media_url: null, media_metadata: null };
-  }
-
-  const image = get<{ imageUrl?: string; caption?: string; mimeType?: string }>("image");
-  if (image?.imageUrl) {
+  // Resposta interativa (lista/botão da triagem): tratar como TEXTO, usando o
+  // título da opção (text) para o matching da triagem funcionar, e guardar o
+  // id selecionado em media_metadata (replicando o tratamento antigo).
+  if (buttonOrListid) {
     return {
-      tipo: "imagem",
-      content: image.caption ?? null,
-      media_url: image.imageUrl,
-      media_metadata: { mime_type: image.mimeType ?? null },
-    };
-  }
-
-  const audio = get<{ audioUrl?: string; mimeType?: string; seconds?: number }>("audio");
-  if (audio?.audioUrl) {
-    return {
-      tipo: "audio",
-      content: null,
-      media_url: audio.audioUrl,
-      media_metadata: { mime_type: audio.mimeType ?? null, duracao_seg: audio.seconds ?? null },
-    };
-  }
-
-  const video = get<{ videoUrl?: string; caption?: string; mimeType?: string }>("video");
-  if (video?.videoUrl) {
-    return {
-      tipo: "video",
-      content: video.caption ?? null,
-      media_url: video.videoUrl,
-      media_metadata: { mime_type: video.mimeType ?? null },
-    };
-  }
-
-  const document = get<{ documentUrl?: string; mimeType?: string; fileName?: string; pageCount?: number }>("document");
-  if (document?.documentUrl) {
-    return {
-      tipo: "documento",
-      content: null,
-      media_url: document.documentUrl,
+      tipo: "texto",
+      content: texto ?? "",
+      media_url: null,
       media_metadata: {
-        mime_type: document.mimeType ?? null,
-        file_name: document.fileName ?? null,
-        paginas: document.pageCount ?? null,
+        kind: "list_reply",
+        selected_id: buttonOrListid,
+        source: "uazapi_interactive",
       },
     };
   }
 
-  const sticker = get<{ stickerUrl?: string; mimeType?: string }>("sticker");
-  if (sticker?.stickerUrl) {
-    return {
-      tipo: "sticker",
-      content: null,
-      media_url: sticker.stickerUrl,
-      media_metadata: { mime_type: sticker.mimeType ?? null },
-    };
-  }
+  const tipo = mapMessageType(messageType);
 
-  const location = get<{ latitude?: number; longitude?: number; address?: string }>("location");
-  if (location && (location.latitude != null || location.longitude != null)) {
-    return {
-      tipo: "localizacao",
-      content: location.address ?? null,
-      media_url: null,
-      media_metadata: { latitude: location.latitude ?? null, longitude: location.longitude ?? null },
-    };
-  }
-
-  const contact = get<{ displayName?: string; vCard?: string }>("contact");
-  if (contact?.displayName || contact?.vCard) {
-    return {
-      tipo: "contato",
-      content: contact.displayName ?? null,
-      media_url: null,
-      media_metadata: { vcard: contact.vCard ?? null },
-    };
-  }
-
-  // ===== Respostas interativas (Send List / Buttons) =====
-  // A Z-API envia o resultado da seleção em payloads sem `text.message`,
-  // usando estruturas como `listResponseMessage`, `buttonsResponseMessage`,
-  // `interactiveResponseMessage` etc. Sem este parsing, a resposta do
-  // cliente seria silenciosamente descartada e a triagem ficaria parada.
-
-  const pickStr = (...vals: unknown[]): string | null => {
-    for (const v of vals) {
-      if (typeof v === "string" && v.trim() !== "") return v;
-    }
-    return null;
-  };
-
-  // 1) List reply
-  const listKeys = Object.keys(p).filter((k) => /list/i.test(k) && /response|reply/i.test(k));
-  for (const k of ["listResponseMessage", "listResponse", ...listKeys]) {
-    const lr = p[k] as Record<string, unknown> | undefined;
-    if (!lr || typeof lr !== "object") continue;
-    const single = (lr as { singleSelectReply?: Record<string, unknown> }).singleSelectReply;
-    const titulo = pickStr(
-      (lr as { title?: unknown }).title,
-      (lr as { selectedDisplayText?: unknown }).selectedDisplayText,
-      (lr as { message?: unknown }).message,
-      (lr as { description?: unknown }).description,
-      single && (single as { selectedRowId?: unknown }).selectedRowId,
-    );
-    const rowId = pickStr(
-      (lr as { selectedRowId?: unknown }).selectedRowId,
-      single && (single as { selectedRowId?: unknown }).selectedRowId,
-      (lr as { rowId?: unknown }).rowId,
-    );
-    if (titulo || rowId) {
+  // Tipos com mídia: media_url aponta para fileURL (quando presente); o
+  // download real (via /message/download) roda em background e substitui.
+  switch (tipo) {
+    case "imagem":
+    case "video":
       return {
-        tipo: "texto",
-        content: titulo ?? rowId ?? "",
+        tipo,
+        content: texto ?? null,
+        media_url: fileURL,
+        media_metadata: { mime_type: null },
+      };
+    case "audio":
+      return {
+        tipo,
+        content: null,
+        media_url: fileURL,
+        media_metadata: { mime_type: null },
+      };
+    case "sticker":
+      return {
+        tipo,
+        content: null,
+        media_url: fileURL,
+        media_metadata: { mime_type: null },
+      };
+    case "documento":
+      return {
+        tipo,
+        content: null,
+        media_url: fileURL,
+        media_metadata: { mime_type: null, file_name: null },
+      };
+    case "localizacao": {
+      const content = (p.content ?? null) as Record<string, unknown> | null;
+      const latitude = (content?.latitude ?? content?.degreesLatitude ?? null) as number | null;
+      const longitude = (content?.longitude ?? content?.degreesLongitude ?? null) as number | null;
+      const address =
+        (typeof content?.address === "string" ? content.address : null) ?? texto ?? null;
+      return {
+        tipo,
+        content: address,
         media_url: null,
-        media_metadata: {
-          kind: "list_reply",
-          selected_row_id: rowId,
-          source: "whatsapp_interactive",
-        },
+        media_metadata: { latitude, longitude },
       };
     }
-  }
-
-  // 2) Button reply
-  for (const k of ["buttonsResponseMessage", "buttonResponseMessage", "interactiveResponseMessage", "templateButtonReplyMessage"]) {
-    const br = p[k] as Record<string, unknown> | undefined;
-    if (!br || typeof br !== "object") continue;
-    const titulo = pickStr(
-      (br as { selectedDisplayText?: unknown }).selectedDisplayText,
-      (br as { selectedButtonText?: unknown }).selectedButtonText,
-      (br as { message?: unknown }).message,
-      (br as { title?: unknown }).title,
-    );
-    const buttonId = pickStr(
-      (br as { selectedButtonId?: unknown }).selectedButtonId,
-      (br as { buttonId?: unknown }).buttonId,
-      (br as { selectedId?: unknown }).selectedId,
-    );
-    if (titulo || buttonId) {
+    case "contato": {
+      const content = (p.content ?? null) as Record<string, unknown> | null;
+      const displayName =
+        (typeof content?.displayName === "string" ? content.displayName : null) ?? texto ?? null;
+      const vcard = (typeof content?.vcard === "string" ? content.vcard : null) ??
+        (typeof content?.vCard === "string" ? content.vCard : null) ?? null;
       return {
-        tipo: "texto",
-        content: titulo ?? buttonId ?? "",
+        tipo,
+        content: displayName,
         media_url: null,
-        media_metadata: {
-          kind: "button_reply",
-          selected_button_id: buttonId,
-          source: "whatsapp_interactive",
-        },
+        media_metadata: { vcard },
       };
     }
+    case "texto":
+    default:
+      // Mensagem de texto (conversation/text/extendedText) ou fallback.
+      // Só descarta se não há absolutamente nenhum texto (evita persistir vazio
+      // de eventos que não são mensagem de fato).
+      if (texto == null) return null;
+      return { tipo: "texto", content: texto, media_url: null, media_metadata: null };
   }
-
-  return null;
 }
 
 const STATUS_INSTAVEL_ATENDIMENTO = ["em_triagem", "reservado", "pendente", "em_atendimento"];
@@ -234,7 +181,8 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-// Normaliza número para E.164 com '+' (Z-API manda sem '+').
+// Normaliza número para E.164 com '+'. Aceita "<numero>@s.whatsapp.net",
+// "@c.us", "@lid" ou dígitos puros — extrai só os dígitos e prefixa '+'.
 function normalizarNumero(n: string | null | undefined): string | null {
   if (!n) return null;
   const digits = String(n).replace(/\D/g, "");
@@ -250,24 +198,23 @@ function mascararNumero(n: string | null | undefined): string | null {
   return `${d.slice(0, 4)}***${d.slice(-2)}`;
 }
 
-// Detecta se payload.phone é LID (não E.164). Regra composta:
+// Detecta se o chatid da uazapi é LID (não E.164). Regra composta:
 //  - sufixo @lid → LID
 //  - sufixo @g.us → grupo (não LID, tratado pelo guard de grupo)
-//  - se chatLid existe e bate (em dígitos) com phone → LID
+//  - se sender_lid existe e não há telefone (sender_pn) → LID
 //  - caso contrário, assume E.164.
 function ehLid(
-  rawPhone: string | null | undefined,
-  chatLid: string | null | undefined,
+  chatid: string | null | undefined,
+  senderLid: string | null | undefined,
+  senderPn: string | null | undefined,
 ): boolean {
-  if (!rawPhone) return false;
-  const s = String(rawPhone);
+  const s = chatid ? String(chatid) : "";
   if (s.includes("@lid")) return true;
   if (s.includes("@g.us")) return false;
-  if (chatLid) {
-    const phoneDigits = s.split("@")[0].replace(/\D/g, "");
-    const lidDigits = String(chatLid).split("@")[0].replace(/\D/g, "");
-    if (phoneDigits && lidDigits && phoneDigits === lidDigits) return true;
-  }
+  // Sem telefone resolvível e com LID disponível → caminho LID.
+  const temPn = senderPn && String(senderPn).replace(/\D/g, "") !== "";
+  const temLid = senderLid && String(senderLid).replace(/\D/g, "") !== "";
+  if (!temPn && temLid) return true;
   return false;
 }
 
@@ -278,10 +225,10 @@ function extrairLid(raw: string | null | undefined): string | null {
   return digits || null;
 }
 
-function ehGrupo(payload: Record<string, unknown>): boolean {
-  if ((payload as { isGroup?: unknown }).isGroup === true) return true;
-  const phone = (payload as { phone?: string }).phone;
-  return typeof phone === "string" && phone.includes("@g.us");
+function ehGrupo(data: Record<string, unknown>): boolean {
+  if ((data as { isGroup?: unknown }).isGroup === true) return true;
+  const chatid = (data as { chatid?: string }).chatid;
+  return typeof chatid === "string" && chatid.includes("@g.us");
 }
 
 // Mascara LID para logs (RNF-S10): mantém 4 primeiros e 2 últimos.
@@ -304,17 +251,20 @@ type ResolverErro =
   | { erro: "criar_erro"; detalhe?: string };
 
 async function resolverClienteIdent(
-  payload: Record<string, unknown>,
+  data: Record<string, unknown>,
   supabase: ReturnType<typeof getSupabaseAdmin>,
   opts: { permitirCriar: boolean; senderName: string | null },
 ): Promise<ClienteResolvido | ResolverErro> {
-  const rawPhone = (payload.phone as string | undefined) ?? null;
-  const chatLidRaw = (payload as { chatLid?: string }).chatLid ?? null;
-  const chatLidNorm = extrairLid(chatLidRaw);
+  const chatid = (data.chatid as string | undefined) ?? null;
+  const senderPn = (data.sender_pn as string | undefined) ?? null;
+  const senderLid = (data.sender_lid as string | undefined) ?? null;
+  // LID normalizado: preferir sender_lid; senão o chatid quando for @lid.
+  const chatLidNorm = extrairLid(senderLid) ??
+    (chatid && String(chatid).includes("@lid") ? extrairLid(chatid) : null);
 
-  if (!ehLid(rawPhone, chatLidRaw)) {
-    // Caminho E.164.
-    const numero = normalizarNumero(rawPhone);
+  if (!ehLid(chatid, senderLid, senderPn)) {
+    // Caminho E.164. Número vem de sender_pn ou do chatid (@s.whatsapp.net/@c.us).
+    const numero = normalizarNumero(senderPn ?? chatid);
     if (!numero) return { erro: "sem_telefone" };
 
     const { data: c } = await supabase
@@ -358,7 +308,8 @@ async function resolverClienteIdent(
   }
 
   // Caminho LID.
-  const lid = extrairLid(rawPhone) ?? chatLidNorm;
+  const lid = chatLidNorm ??
+    (chatid && String(chatid).includes("@lid") ? extrairLid(chatid) : null);
   if (!lid) return { erro: "sem_telefone" };
 
   const { data: c } = await supabase
@@ -529,122 +480,126 @@ Deno.serve(async (req: Request) => {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
 
-  // 1) Validação leve de origem.
-  const expectedClientToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
-  const headerClientToken = req.headers.get("Client-Token") ?? req.headers.get("client-token");
-  if (expectedClientToken && headerClientToken && headerClientToken !== expectedClientToken) {
-    log({ funcao: FUNCAO, evento: "client_token_invalido", status: "erro", duracao_ms: cron() });
-    return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
-  }
-  if (expectedClientToken && !headerClientToken) {
-    log({ funcao: FUNCAO, evento: "sem_client_token", status: "ok" });
+  // 1) Validação de origem: segredo na query string (?secret=...).
+  const expectedSecret = Deno.env.get("UAZAPI_WEBHOOK_SECRET");
+  if (expectedSecret) {
+    const querySecret = new URL(req.url).searchParams.get("secret");
+    if (querySecret !== expectedSecret) {
+      log({ funcao: FUNCAO, evento: "secret_invalido", status: "erro", duracao_ms: cron() });
+      return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+    }
+  } else {
+    // Fase de bring-up: sem secret configurado, permite mas avisa.
+    log({ funcao: FUNCAO, evento: "webhook_sem_secret_configurado", status: "ok" });
   }
 
-  // 2) Parse do payload.
-  let payload: Record<string, unknown>;
+  // 2) Parse do envelope.
+  let envelope: Record<string, unknown>;
   try {
-    payload = (await req.json()) as Record<string, unknown>;
+    envelope = (await req.json()) as Record<string, unknown>;
   } catch {
     log({ funcao: FUNCAO, evento: "payload_invalido", status: "erro", duracao_ms: cron() });
-    // 200 mesmo assim para não fazer Z-API reenviar payload quebrado.
+    // 200 mesmo assim para a uazapi não reenviar payload quebrado.
     return jsonResponse({ ok: true, ignorado: "payload_invalido" });
   }
 
-  const tipoEvento = (payload.type as string | undefined) ?? null;
+  // Envelope uazapi: { event, instance, data }. Seja defensivo: se `data`
+  // não vier, usa o próprio envelope como fonte (alguns setups mandam flat).
+  const eventStr = (envelope.event as string | undefined) ?? null;
+  const payload = ((envelope.data && typeof envelope.data === "object")
+    ? envelope.data
+    : envelope) as Record<string, unknown>;
+
+  // Conexão: apenas logar, sem ação no banco.
+  const eventLc = (eventStr ?? "").toLowerCase();
+  if (eventLc === "connection") {
+    log({
+      funcao: FUNCAO,
+      evento: "uazapi_connection",
+      status: "ok",
+      extra: { event: eventStr },
+    });
+    return jsonResponse({ ok: true });
+  }
+
+  // Detecção de rota. Eventos de status: "messages_update"/"status". Mensagem
+  // nova: "messages"/"message". Se o `event` não bater, roteia pela forma do
+  // `data`: cara de mensagem (tem messageType/text/chatid) → mensagem;
+  // só id+status → status.
+  const statusRaw =
+    (payload.status as string | undefined) ??
+      (payload.messageStatus as string | undefined) ??
+      null;
+  const temCaraDeMensagem = payload.messageType != null ||
+    typeof payload.text === "string" ||
+    payload.chatid != null ||
+    payload.fromMe != null;
+  const ehEventoStatus = eventLc === "messages_update" || eventLc === "status" ||
+    (!eventLc.startsWith("message") && !temCaraDeMensagem && statusRaw != null);
+  const ehEventoMensagem = eventLc === "messages" || eventLc === "message" ||
+    (!ehEventoStatus && temCaraDeMensagem);
+
   const fromMe = payload.fromMe === true;
+  const wasSentByApi = payload.wasSentByApi === true;
   const zapiMessageId =
-    (payload.messageId as string | undefined) ??
-      (payload.id as string | undefined) ??
+    (payload.id as string | undefined) ??
+      (payload.messageid as string | undefined) ??
       null;
 
-  // referenceMessageId: presente quando a mensagem é uma resposta (citação) a outra
-  // do WhatsApp. Resolve para nossa mensagens.id correspondente, se existir.
-  const referenceMessageId =
-    (payload.referenceMessageId as string | undefined) ??
-      ((payload as { messageContextInfo?: { stanzaId?: string } }).messageContextInfo?.stanzaId) ??
+  // `quoted`: id (owner:messageid) da mensagem citada. Resolve para nossa
+  // mensagens.id correspondente, se existir.
+  const quotedId =
+    (typeof payload.quoted === "string" ? (payload.quoted as string) : null) ??
       null;
   let replyToMessageId: string | null = null;
-  if (referenceMessageId) {
+  if (quotedId) {
     const { data: refRow } = await supabase
       .from("mensagens")
       .select("id")
-      .eq("zapi_message_id", referenceMessageId)
+      .eq("zapi_message_id", quotedId)
       .maybeSingle();
     if (refRow?.id) replyToMessageId = refRow.id as string;
   }
 
+  // Bring-up/observabilidade: log estruturado sem dados sensíveis (nada de
+  // texto, número completo ou tokens) para confirmar o formato real da uazapi.
   log({
     funcao: FUNCAO,
-    evento: "webhook_recebido",
+    evento: "uazapi_webhook_recebido",
     status: "ok",
-    extra: { tipo_evento: tipoEvento, from_me: fromMe, has_message_id: !!zapiMessageId },
+    extra: {
+      event: eventStr,
+      message_type: (payload.messageType as string | undefined) ?? null,
+      from_me: fromMe,
+      was_sent_by_api: wasSentByApi,
+      is_group: (payload as { isGroup?: unknown }).isGroup === true,
+      has_file: typeof payload.fileURL === "string" && !!payload.fileURL,
+      has_button_or_list: typeof payload.buttonOrListid === "string" &&
+        (payload.buttonOrListid as string).trim() !== "",
+      status_raw: statusRaw,
+    },
   });
 
-  // Instrumentação temporária (RNF-S10 — proibido logar conteúdo da mensagem):
-  // logamos apenas a ESTRUTURA do payload e os campos de detecção de origem,
-  // para diagnosticar mensagens enviadas pelo nosso número fora do sistema que
-  // estão chegando como inbound. Não logar text/body/caption/conversation.
-  try {
-    const key = (payload as { key?: Record<string, unknown> }).key ?? null;
-    log({
-      funcao: FUNCAO,
-      evento: "webhook_payload_estrutura",
-      status: "ok",
-      extra: {
-        tipo_evento: tipoEvento,
-        zapi_message_id: zapiMessageId,
-        timestamp_payload: (payload as { momment?: unknown; timestamp?: unknown }).momment
-          ?? (payload as { timestamp?: unknown }).timestamp ?? null,
-        telefone_mask: mascararNumero((payload as { phone?: string }).phone),
-        // Lista completa de chaves do payload (estrutura, sem valores).
-        keys_top: Object.keys(payload),
-        keys_key: key && typeof key === "object" ? Object.keys(key) : null,
-        // Campos relevantes para detecção de origem.
-        from_me_top: (payload as { fromMe?: unknown }).fromMe ?? null,
-        from_me_top_tipo: typeof (payload as { fromMe?: unknown }).fromMe,
-        from_me_key: key && typeof key === "object"
-          ? (key as { fromMe?: unknown }).fromMe ?? null
-          : null,
-        is_group: (payload as { isGroup?: unknown }).isGroup ?? null,
-        participant: (payload as { participant?: unknown }).participant ?? null,
-        participant_phone: (payload as { participantPhone?: unknown }).participantPhone ?? null,
-        sender_jid: (payload as { senderJid?: unknown }).senderJid ?? null,
-        sender_phone_mask: mascararNumero(
-          (payload as { senderPhone?: string }).senderPhone,
-        ),
-        sender_name: (payload as { senderName?: unknown }).senderName ?? null,
-        instance_id: (payload as { instanceId?: unknown }).instanceId ?? null,
-        message_type: (payload as { messageType?: unknown }).messageType ?? null,
-        connected_phone_mask: mascararNumero(
-          (payload as { connectedPhone?: string }).connectedPhone,
-        ),
-        from_api: (payload as { fromApi?: unknown }).fromApi ?? null,
-        chat_lid: (payload as { chatLid?: unknown }).chatLid ?? null,
-        chat_name: typeof (payload as { chatName?: unknown }).chatName === "string"
-          ? ((payload as { chatName: string }).chatName).slice(0, 30)
-          : null,
-        participant_lid: (payload as { participantLid?: unknown }).participantLid ?? null,
-        forwarded: (payload as { forwarded?: unknown }).forwarded ?? null,
-        status_payload: (payload as { status?: unknown }).status ?? null,
-      },
-    });
-  } catch (e) {
-    log({
-      funcao: FUNCAO,
-      evento: "webhook_payload_estrutura_erro",
-      status: "erro",
-      erro_msg: e instanceof Error ? e.message : String(e),
-    });
-  }
-
-  // Guard: mensagens de grupo são descartadas explicitamente. payload.phone
-  // vem como "...@g.us" e violaria o CHECK E.164 ao tentar criar cliente.
-  if (ehGrupo(payload)) {
+  // Segurança: mensagens enviadas pela própria API voltam com wasSentByApi=true.
+  // A config do webhook já as exclui, mas ignoramos aqui também (evita loop).
+  if (wasSentByApi) {
     log({
       funcao: FUNCAO,
       evento: "evento_ignorado",
       status: "ok",
-      extra: { motivo: "mensagem_grupo", tipo_evento: tipoEvento },
+      extra: { motivo: "was_sent_by_api", event: eventStr },
+    });
+    return jsonResponse({ ok: true });
+  }
+
+  // Guard: mensagens de grupo são descartadas explicitamente. chatid termina
+  // em "@g.us" e violaria o CHECK E.164 ao tentar criar cliente.
+  if (ehEventoMensagem && ehGrupo(payload)) {
+    log({
+      funcao: FUNCAO,
+      evento: "evento_ignorado",
+      status: "ok",
+      extra: { motivo: "mensagem_grupo", event: eventStr },
     });
     return jsonResponse({ ok: true });
   }
@@ -653,24 +608,16 @@ Deno.serve(async (req: Request) => {
     // 3) Roteamento por tipo de evento.
 
     // 3a) Status de mensagem outbound (delivered/read/...).
-    if (tipoEvento && STATUS_TIPOS.has(tipoEvento)) {
-      const statusStr =
-        (payload.status as string | undefined) ??
-          ((payload as { messageStatus?: { status?: string } }).messageStatus?.status);
-      const novoStatus = mapStatusWhatsapp(statusStr ?? null);
-      // Z-API às vezes manda lista de IDs em "ids".
-      const ids: string[] = Array.isArray((payload as { ids?: unknown }).ids)
-        ? ((payload as { ids: unknown[] }).ids).filter((x): x is string => typeof x === "string")
-        : zapiMessageId
-          ? [zapiMessageId]
-          : [];
+    if (ehEventoStatus) {
+      const novoStatus = mapStatusWhatsapp(statusRaw);
+      const ids: string[] = zapiMessageId ? [zapiMessageId] : [];
 
       if (!novoStatus || ids.length === 0) {
         log({
           funcao: FUNCAO,
           evento: "status_ignorado",
           status: "ok",
-          extra: { tipo_evento: tipoEvento, status_str: statusStr ?? null },
+          extra: { event: eventStr, status_raw: statusRaw },
         });
         return jsonResponse({ ok: true });
       }
@@ -728,7 +675,7 @@ Deno.serve(async (req: Request) => {
           funcao: FUNCAO,
           evento: "evento_ignorado",
           status: "ok",
-          extra: { motivo: "from_me_tipo_nao_suportado", tipo_evento: tipoEvento },
+          extra: { motivo: "from_me_tipo_nao_suportado", event: eventStr },
         });
         return jsonResponse({ ok: true });
       }
@@ -781,9 +728,12 @@ Deno.serve(async (req: Request) => {
             extra: {
               motivo: "cliente_lid_desconhecido",
               via_tentada: resolved.via_tentada,
-              telefone_mask: mascararNumero(payload.phone as string | undefined),
+              telefone_mask: mascararNumero(
+                (payload.sender_pn as string | undefined) ??
+                  (payload.chatid as string | undefined),
+              ),
               chat_lid_mask: mascararLid(
-                (payload as { chatLid?: string }).chatLid ?? null,
+                (payload as { sender_lid?: string }).sender_lid ?? null,
               ),
             },
           });
@@ -898,11 +848,12 @@ Deno.serve(async (req: Request) => {
       });
 
       // Mídia: mesmo fluxo do inbound.
-      if (TIPOS_COM_DOWNLOAD.has(parsedExt.tipo) && parsedExt.media_url) {
+      if (TIPOS_COM_DOWNLOAD.has(parsedExt.tipo)) {
         const tarefa = baixarESalvarMidia({
           mensagemId: mensagemExtId,
           atendimentoId: atendExt.id,
           clientId: clienteExt.id,
+          zapiMessageId,
           urlOriginal: parsedExt.media_url,
           tipo: parsedExt.tipo,
           metaInicial: parsedExt.media_metadata ?? {},
@@ -925,9 +876,8 @@ Deno.serve(async (req: Request) => {
         status: "ok",
         extra: {
           motivo: "tipo_nao_suportado",
-          tipo_evento: tipoEvento,
-          keys_top: Object.keys(payload),
-          message_type: (payload as { messageType?: unknown }).messageType ?? null,
+          event: eventStr,
+          message_type: (payload.messageType as string | undefined) ?? null,
         },
       });
       return jsonResponse({ ok: true });
@@ -956,10 +906,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // 3c.2) Resolve / cria cliente (E.164 ou LID — ADR-045).
-    const senderName =
-      (payload.senderName as string | undefined) ??
-        (payload.chatName as string | undefined) ??
-        null;
+    const senderName = (payload.senderName as string | undefined) ?? null;
 
     const resolvedIn = await resolverClienteIdent(payload, supabase, {
       permitirCriar: true,
@@ -974,7 +921,12 @@ Deno.serve(async (req: Request) => {
           evento: "criar_cliente_erro",
           status: "erro",
           erro_msg: resolvedIn.detalhe,
-          extra: { telefone_mask: mascararNumero(payload.phone as string | undefined) },
+          extra: {
+            telefone_mask: mascararNumero(
+              (payload.sender_pn as string | undefined) ??
+                (payload.chatid as string | undefined),
+            ),
+          },
         });
       } else {
         // Inbound só com LID e sem cliente prévio: não dá para criar (CHECK E.164).
@@ -985,7 +937,7 @@ Deno.serve(async (req: Request) => {
           extra: {
             motivo: "inbound_lid_sem_cliente",
             via_tentada: resolvedIn.via_tentada,
-            chat_lid_mask: mascararLid((payload as { chatLid?: string }).chatLid ?? null),
+            chat_lid_mask: mascararLid((payload as { sender_lid?: string }).sender_lid ?? null),
           },
         });
       }
@@ -1280,11 +1232,12 @@ Deno.serve(async (req: Request) => {
     });
 
     // 3c.5) Background: download da mídia para o Storage.
-    if (TIPOS_COM_DOWNLOAD.has(parsed.tipo) && parsed.media_url) {
+    if (TIPOS_COM_DOWNLOAD.has(parsed.tipo)) {
       const tarefa = baixarESalvarMidia({
         mensagemId,
         atendimentoId: atend.id,
         clientId: cliente.id,
+        zapiMessageId,
         urlOriginal: parsed.media_url,
         tipo: parsed.tipo,
         metaInicial: parsed.media_metadata ?? {},
@@ -1299,7 +1252,7 @@ Deno.serve(async (req: Request) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log({ funcao: FUNCAO, evento: "erro_inesperado", status: "erro", erro_msg: msg.slice(0, 200) });
-    // 200 mesmo assim — Z-API não deve reenviar.
+    // 200 mesmo assim — a uazapi não deve reenviar.
     return jsonResponse({ ok: true, erro_interno: true });
   }
 });
@@ -1310,9 +1263,46 @@ interface DownloadParams {
   mensagemId: string;
   atendimentoId: string;
   clientId: string;
-  urlOriginal: string;
+  // `id` (owner:messageid) da mensagem uazapi — usado no POST /message/download.
+  zapiMessageId: string;
+  // URL direta da mídia (data.fileURL), quando presente — tentada primeiro.
+  urlOriginal: string | null;
   tipo: TipoMensagem;
   metaInicial: Record<string, unknown>;
+}
+
+// Baixa os bytes da mídia: tenta data.fileURL (http/https) direto; se falhar,
+// cai para POST /message/download da uazapi (retorna base64).
+async function obterBytesMidia(
+  urlOriginal: string | null,
+  zapiMessageId: string,
+): Promise<{ buf: Uint8Array; contentType: string | null; fonte: string }> {
+  // 1) Tentativa direta via fileURL (se http/https).
+  if (urlOriginal && /^https?:\/\//i.test(urlOriginal)) {
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 25000);
+      const resp = await fetch(urlOriginal, { signal: ctrl.signal });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        const contentType = resp.headers.get("content-type");
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        if (buf.byteLength > 0) return { buf, contentType, fonte: "fileURL" };
+      }
+    } catch {
+      // cai para o download da uazapi
+    }
+  }
+
+  // 2) POST /message/download (base64).
+  const res = await baixarMidiaMensagem(zapiMessageId);
+  if (!res.base64) {
+    throw new Error("uazapi /message/download sem base64");
+  }
+  const bin = atob(res.base64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return { buf, contentType: res.mimetype ?? null, fonte: "message_download" };
 }
 
 async function baixarESalvarMidia(p: DownloadParams): Promise<void> {
@@ -1327,15 +1317,12 @@ async function baixarESalvarMidia(p: DownloadParams): Promise<void> {
     extra: { tipo: p.tipo },
   });
   try {
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 25000);
-    const resp = await fetch(p.urlOriginal, { signal: ctrl.signal });
-    clearTimeout(timeout);
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status} ao baixar mídia`);
-    }
-    const contentType = resp.headers.get("content-type") ?? (p.metaInicial.mime_type as string | null) ?? "application/octet-stream";
-    const buf = new Uint8Array(await resp.arrayBuffer());
+    const { buf, contentType: ctDetectado, fonte } = await obterBytesMidia(
+      p.urlOriginal,
+      p.zapiMessageId,
+    );
+    const contentType = ctDetectado ??
+      (p.metaInicial.mime_type as string | null) ?? "application/octet-stream";
 
     const fallbackExtPorTipo: Record<TipoMensagem, string> = {
       imagem: "bin",
@@ -1377,7 +1364,7 @@ async function baixarESalvarMidia(p: DownloadParams): Promise<void> {
       mensagem_id: p.mensagemId,
       atendimento_id: p.atendimentoId,
       duracao_ms: t(),
-      extra: { tamanho_bytes: buf.byteLength, mime: contentType },
+      extra: { tamanho_bytes: buf.byteLength, mime: contentType, fonte },
     });
   } catch (err) {
     const motivo = err instanceof Error ? err.message.slice(0, 140) : "falha desconhecida";
