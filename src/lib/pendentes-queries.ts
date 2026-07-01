@@ -60,7 +60,7 @@ export async function fetchPendentes(): Promise<PendenteRow[]> {
     .select(`
       id, status, current_department_id, subject_id, created_at, last_message_at,
       triagem_started_at, transferred_count, escalated_from_user_id,
-      client:clients!inner ( id, nome, numero_whatsapp ),
+      client:clients!atendimentos_client_id_fkey!inner ( id, nome, numero_whatsapp ),
       department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
       subject:subjects!atendimentos_subject_id_fkey ( id, nome )
     `)

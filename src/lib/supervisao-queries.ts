@@ -46,7 +46,7 @@ export async function fetchSupervisao(): Promise<SupervisaoRow[]> {
     .select(`
       id, status, current_department_id, subject_id, assigned_to,
       created_at, last_message_at, closed_at,
-      client:clients!inner ( id, nome, numero_whatsapp ),
+      client:clients!atendimentos_client_id_fkey!inner ( id, nome, numero_whatsapp ),
       department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
       subject:subjects!atendimentos_subject_id_fkey ( id, nome ),
       assigned:users!atendimentos_assigned_to_fkey ( id, nome )
