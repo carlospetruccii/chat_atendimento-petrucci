@@ -27,9 +27,10 @@ import { iniciarCronometro, log } from "../_shared/logger.ts";
 import {
   enviarMidia,
   enviarTexto,
+  extrairMessageId,
   type TipoMidia,
   ZapiError,
-} from "../_shared/zapi-client.ts";
+} from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "send-whatsapp-message";
 
@@ -62,12 +63,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 // Mapeia erros técnicos da Z-API em mensagens curtas e legíveis para o atendente.
 function motivoLegivel(err: unknown): string {
   if (err instanceof ZapiError) {
-    if (err.status === 429) return "Z-API indisponível (limite de requisições)";
+    if (err.status === 429) return "WhatsApp indisponível (limite de requisições)";
     if (err.status === 401 || err.status === 403) {
-      return "Z-API recusou a credencial";
+      return "WhatsApp recusou a credencial (verifique a conexão)";
     }
-    if (err.status === 404) return "Recurso não encontrado na Z-API";
-    if (err.status >= 500) return "Z-API indisponível";
+    if (err.status === 404) return "Recurso não encontrado no WhatsApp";
+    if (err.status >= 500) return "WhatsApp indisponível";
     try {
       const j = JSON.parse(err.body) as { error?: string; message?: string };
       const msg = j.error ?? j.message;
@@ -76,11 +77,11 @@ function motivoLegivel(err: unknown): string {
       // ignora
     }
     if (err.status === 400) return "Dados inválidos para envio (verifique número/mídia)";
-    return `Erro Z-API (HTTP ${err.status})`;
+    return `Erro no envio (HTTP ${err.status})`;
   }
   if (err instanceof Error) {
     if (err.name === "TimeoutError" || /timeout/i.test(err.message)) {
-      return "Tempo esgotado ao chamar Z-API";
+      return "Tempo esgotado ao enviar";
     }
     return err.message.slice(0, 140);
   }
@@ -333,10 +334,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const zapiMessageId =
-        (respostaZapi as { messageId?: string; id?: string } | null)?.messageId ??
-          (respostaZapi as { id?: string } | null)?.id ??
-          null;
+      const zapiMessageId = extrairMessageId(respostaZapi);
 
       const { error: errUpd } = await supabase
         .from("mensagens")

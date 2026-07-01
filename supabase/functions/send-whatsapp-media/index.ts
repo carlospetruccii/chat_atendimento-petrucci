@@ -11,7 +11,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
-import { enviarMidia, ZapiError, type TipoMidia } from "../_shared/zapi-client.ts";
+import { enviarMidia, extrairMessageId, ZapiError, type TipoMidia } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "send-whatsapp-media";
 const BUCKET = "mensagens-midia";
@@ -67,15 +67,15 @@ function extDoArquivo(nome: string, mime: string): string {
 
 function motivoLegivel(err: unknown): string {
   if (err instanceof ZapiError) {
-    if (err.status === 429) return "Z-API indisponível (limite de requisições)";
-    if (err.status === 401 || err.status === 403) return "Z-API recusou a credencial";
-    if (err.status >= 500) return "Z-API indisponível";
+    if (err.status === 429) return "WhatsApp indisponível (limite de requisições)";
+    if (err.status === 401 || err.status === 403) return "WhatsApp recusou a credencial (verifique a conexão)";
+    if (err.status >= 500) return "WhatsApp indisponível";
     try {
       const j = JSON.parse(err.body) as { error?: string; message?: string };
       const msg = j.error ?? j.message;
       if (msg && typeof msg === "string") return msg.slice(0, 140);
     } catch { /* ignore */ }
-    return `Erro Z-API (HTTP ${err.status})`;
+    return `Erro no envio (HTTP ${err.status})`;
   }
   if (err instanceof Error) return err.message.slice(0, 140);
   return "Falha desconhecida no envio";
@@ -242,19 +242,16 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         if (quoted?.zapi_message_id) quotedZapiMessageId = quoted.zapi_message_id as string;
       }
-      const dataUri = `data:${mimeType};base64,${arquivoB64}`;
-      const respostaZapi = await enviarMidia({
+      const respostaUazapi = await enviarMidia({
         telefone: numeroWhatsapp,
         tipo,
-        url: dataUri,
+        url: mediaUrlSigned,
         caption: caption ?? undefined,
         fileName: tipo === "document" ? nomeArquivo : undefined,
         extension: tipo === "document" ? ext : undefined,
         quotedZapiMessageId,
       });
-      const zapiMessageId =
-        (respostaZapi as { messageId?: string; id?: string } | null)?.messageId ??
-          (respostaZapi as { id?: string } | null)?.id ?? null;
+      const zapiMessageId = extrairMessageId(respostaUazapi);
 
       const { error: errUpd } = await supabase
         .from("mensagens")
