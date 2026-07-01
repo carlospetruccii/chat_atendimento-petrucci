@@ -13,7 +13,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
-import { baixarMidiaMensagem } from "../_shared/uazapi-client.ts";
+import { baixarMidiaMensagem, buscarNomeContato } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "webhook-zapi-receive";
 const BUCKET = "mensagens-midia";
@@ -719,12 +719,48 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ ok: true, duplicada: true });
       }
 
+      // Nome do contato: em fromMe o senderName é o NOSSO nome; o nome do
+      // contato (destinatário) vem no objeto `chat` do envelope. Testamos os
+      // campos mais comuns da uazapi de forma defensiva (ignorando valores
+      // puramente numéricos, que seriam o próprio telefone).
+      const chatObj = (envelope.chat && typeof envelope.chat === "object")
+        ? (envelope.chat as Record<string, unknown>)
+        : {};
+      const escolherNome = (...vals: unknown[]): string | null => {
+        for (const v of vals) {
+          if (typeof v === "string" && v.trim() && !/^\+?\d[\d\s-]*$/.test(v.trim())) {
+            return v.trim();
+          }
+        }
+        return null;
+      };
+      let nomeContato = escolherNome(
+        chatObj.wa_contactName,
+        chatObj.wa_name,
+        chatObj.name,
+        chatObj.lead_name,
+        chatObj.pushName,
+        chatObj.verifiedName,
+        (payload as Record<string, unknown>).chatName,
+        (payload as Record<string, unknown>).pushName,
+      );
+      // O webhook fromMe normalmente NÃO traz o nome do destinatário. Buscamos
+      // sob demanda na uazapi (POST /chat/details) pelo número do chatid.
+      if (!nomeContato) {
+        const numeroChat = normalizarNumero(
+          (payload.chatid as string | undefined) ?? null,
+        );
+        if (numeroChat) {
+          nomeContato = await buscarNomeContato(numeroChat);
+        }
+      }
+
       // Cliente = o DESTINATÁRIO (chatid), pois em fromMe o remetente é a
       // empresa. permitirCriar: se você iniciou uma conversa nova pelo celular
-      // com alguém que ainda não é cliente, criamos o cliente aqui.
+      // com alguém que ainda não é cliente, criamos o cliente aqui (com o nome).
       const resolved = await resolverClienteIdent(payload, supabase, {
         permitirCriar: true,
-        senderName: null,
+        senderName: nomeContato,
         preferChatid: true,
       });
       if ("erro" in resolved) {
@@ -793,9 +829,10 @@ Deno.serve(async (req: Request) => {
       }
 
       // #2 — Conversa iniciada pelo celular com cliente sem atendimento aberto:
-      // cria um atendimento visível para admins/supervisão. status 'pendente'
-      // (NÃO 'em_triagem') para o bot não iniciar triagem; sem dono, então
-      // aparece na Inbox de quem vê tudo e na tela de Pendentes.
+      // cria um atendimento visível SÓ para admins/supervisão. status
+      // 'em_atendimento' SEM dono (assigned_to null): quem vê tudo (admin)
+      // enxerga na Inbox; colaborador comum não (só vê o que é dele) e NÃO
+      // entra em Pendentes (que lista pendente/em_triagem). E o bot não mexe.
       if (!atendExt) {
         // Departamento é obrigatório fora de em_triagem (CHECK do banco).
         // Preferência: config 'triagem_departamento_default' → "Outros"
@@ -841,13 +878,14 @@ Deno.serve(async (req: Request) => {
           .from("atendimentos")
           .insert({
             client_id: clienteExt.id,
-            status: "pendente",
+            status: "em_atendimento",
             current_department_id: deptExt,
             assigned_to: null,
             subject_id: null,
             triagem_estagio: "concluida",
             triagem_started_at: agoraIso,
             triagem_finished_at: agoraIso,
+            first_response_at: agoraIso,
           })
           .select("id, current_department_id")
           .single();

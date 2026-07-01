@@ -349,3 +349,28 @@ export async function configurarWebhook(params: ConfigurarWebhookParams): Promis
 export async function verWebhook(): Promise<unknown> {
   return await chamar("GET", "/webhook");
 }
+
+// ————————————————————————————————————————————————————————————————
+// CONTATO (nome / detalhes do chat)
+// ————————————————————————————————————————————————————————————————
+
+// Busca o nome do contato via POST /chat/details. Usado quando iniciamos uma
+// conversa pelo celular (fromMe): o webhook não traz o nome do destinatário,
+// mas este endpoint devolve o pushname/nome salvo. Retorna null se não houver
+// nome utilizável (ignora vazio e valores puramente numéricos = telefone).
+export async function buscarNomeContato(numero: string): Promise<string | null> {
+  try {
+    const r = (await chamar("POST", "/chat/details", {
+      number: soDigitos(numero),
+    })) as Record<string, unknown>;
+    const candidatos = [r.name, r.wa_name, r.wa_contactName, r.lead_fullName, r.lead_name];
+    for (const v of candidatos) {
+      if (typeof v === "string" && v.trim() && !/^\+?\d[\d\s-]*$/.test(v.trim())) {
+        return v.trim();
+      }
+    }
+  } catch {
+    // best-effort: sem nome não é erro fatal
+  }
+  return null;
+}

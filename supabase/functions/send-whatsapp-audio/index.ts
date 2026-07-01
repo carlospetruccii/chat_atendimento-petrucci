@@ -1,8 +1,11 @@
 // Edge Function: send-whatsapp-audio
 // Recebe áudio gravado pelo atendente, faz upload no bucket privado
-// `mensagens-midia/outbound/{atendimento_id}/{uuid}.ogg`, insere a mensagem
-// (tipo='audio', status_envio='aguardando_envio') e dispara envio via Z-API
-// como **PTT (voice note)**, usando data URI com mime audio/ogg;codecs=opus.
+// `mensagens-midia/outbound/{atendimento_id}/{uuid}.{ext}` com o content-type
+// REAL do que foi gravado (WebM/Opus na maioria dos navegadores), insere a
+// mensagem (tipo='audio') e dispara o envio como **PTT (voice note)**. A uazapi
+// transcodifica para OGG/Opus — o que só ocorre se o arquivo estiver rotulado
+// com o formato de origem correto (rotular WebM como .ogg pulava a conversão e
+// quebrava a reprodução no app do celular).
 //
 // Contrato:
 //   POST { atendimento_id, audio_base64, mime_type, duracao_seg }
@@ -41,6 +44,29 @@ function decodeBase64(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+// Extensão + content-type REAIS do áudio gravado. É crucial rotular certo: o
+// navegador grava WebM/Opus, e a uazapi só transcodifica para a nota de voz
+// OGG/Opus (que o app do WhatsApp no celular exige) quando reconhece o formato
+// de origem. Rotular WebM como ".ogg" fazia a uazapi repassar os bytes crus →
+// tocava no WhatsApp Web, mas dava "formato não suportado" no celular.
+function audioExtType(mime: string): { ext: string; contentType: string } {
+  const base = (mime.split(";")[0] || "").trim().toLowerCase();
+  switch (base) {
+    case "audio/ogg":
+      return { ext: "ogg", contentType: "audio/ogg" };
+    case "audio/mpeg":
+      return { ext: "mp3", contentType: "audio/mpeg" };
+    case "audio/aac":
+      return { ext: "aac", contentType: "audio/aac" };
+    case "audio/mp4":
+    case "audio/x-m4a":
+      return { ext: "m4a", contentType: "audio/mp4" };
+    case "audio/webm":
+    default:
+      return { ext: "webm", contentType: "audio/webm" };
+  }
 }
 
 function motivoLegivel(err: unknown): string {
@@ -123,12 +149,13 @@ Deno.serve(async (req: Request) => {
     ?.numero_whatsapp?.replace(/\D/g, "");
   if (!numeroWhatsapp) return jsonResponse({ ok: false, erro: "cliente_sem_numero" }, 422);
 
-  // 5) Upload no bucket privado
+  // 5) Upload no bucket privado (extensão/content-type reais do que foi gravado)
+  const { ext, contentType } = audioExtType(mimeType);
   const bytes = decodeBase64(audioBase64);
   const uuid = crypto.randomUUID();
-  const storagePath = `outbound/${atendimentoId}/${uuid}.ogg`;
+  const storagePath = `outbound/${atendimentoId}/${uuid}.${ext}`;
   const { error: errUp } = await supabase.storage.from(BUCKET).upload(storagePath, bytes, {
-    contentType: "audio/ogg",
+    contentType,
     upsert: false,
   });
   if (errUp) {
