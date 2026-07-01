@@ -44,14 +44,23 @@ const STATUS_STYLE: Record<ColaboradorRow["status"], { label: string; bg: string
   inativo: { label: "Inativo", bg: "#F3F4F6", fg: "#6B7280" },
 };
 
+type PapelForm = "administrador" | "colaborador";
+
 interface FormState {
   nome: string;
   email: string;
   password: string;
+  role: PapelForm;
   department_id: string;
   ativo: boolean;
   disponivel: boolean;
 }
+
+const PAPEL_LABEL: Record<"dono" | "administrador" | "colaborador", string> = {
+  dono: "Dono",
+  administrador: "Administrador",
+  colaborador: "Colaborador",
+};
 
 export function ColaboradoresTab() {
   const qc = useQueryClient();
@@ -73,6 +82,7 @@ export function ColaboradoresTab() {
     nome: "",
     email: "",
     password: "",
+    role: "colaborador",
     department_id: "",
     ativo: true,
     disponivel: true,
@@ -83,11 +93,7 @@ export function ColaboradoresTab() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return colaboradores.filter((c) => {
-      if (
-        q &&
-        !c.nome.toLowerCase().includes(q) &&
-        !(c.email ?? "").toLowerCase().includes(q)
-      )
+      if (q && !c.nome.toLowerCase().includes(q) && !(c.email ?? "").toLowerCase().includes(q))
         return false;
       if (filterDept !== "Todos" && c.department_id !== filterDept) return false;
       if (filterStatus !== "Todos" && c.status !== filterStatus) return false;
@@ -101,6 +107,7 @@ export function ColaboradoresTab() {
       nome: "",
       email: "",
       password: "",
+      role: "colaborador",
       department_id: depts[0]?.id ?? "",
       ativo: true,
       disponivel: true,
@@ -115,6 +122,7 @@ export function ColaboradoresTab() {
       nome: c.nome,
       email: c.email ?? "",
       password: "",
+      role: c.role === "colaborador" ? "colaborador" : "administrador",
       department_id: c.department_id ?? "",
       ativo: c.ativo,
       disponivel: c.disponivel,
@@ -164,19 +172,22 @@ export function ColaboradoresTab() {
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = "E-mail inválido";
       if (!form.password || form.password.length < 8) e.password = "Mínimo 8 caracteres";
     }
-    if (!form.department_id) e.department_id = "Departamento é obrigatório";
+    // Departamento é obrigatório só para colaborador (admin não tem departamento).
+    if (form.role === "colaborador" && !form.department_id)
+      e.department_id = "Departamento é obrigatório";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
 
   function save() {
     if (!validate()) return;
+    const isColab = form.role === "colaborador";
     if (editing) {
       updateMut.mutate({
         id: editing.id,
         input: {
           nome: form.nome,
-          department_id: form.department_id,
+          department_id: isColab ? form.department_id : null,
           ativo: form.ativo,
           disponivel: form.disponivel,
         },
@@ -186,7 +197,8 @@ export function ColaboradoresTab() {
         nome: form.nome.trim(),
         email: form.email.trim(),
         password: form.password,
-        department_id: form.department_id,
+        role: form.role,
+        department_id: isColab ? form.department_id : null,
       });
     }
   }
@@ -295,11 +307,9 @@ export function ColaboradoresTab() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-foreground">
                       {c.nome}
-                      {c.is_superadmin && (
-                        <span className="ml-1 text-[10px] font-medium text-primary">
-                          (admin)
-                        </span>
-                      )}
+                      <span className="ml-1 text-[10px] font-medium text-primary">
+                        ({PAPEL_LABEL[c.role ?? "colaborador"]})
+                      </span>
                     </p>
                     <p className="truncate text-xs text-muted-foreground">{c.email ?? "—"}</p>
                   </div>
@@ -308,16 +318,18 @@ export function ColaboradoresTab() {
                 <div className="my-4 border-t border-border" />
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium"
-                    style={{ backgroundColor: `${c.department_cor}22`, color: c.department_cor }}
-                  >
+                  {c.department_id && (
                     <span
-                      className="inline-block h-2 w-2 rounded-full"
-                      style={{ backgroundColor: c.department_cor }}
-                    />
-                    {c.department_nome}
-                  </span>
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium"
+                      style={{ backgroundColor: `${c.department_cor}22`, color: c.department_cor }}
+                    >
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: c.department_cor }}
+                      />
+                      {c.department_nome}
+                    </span>
+                  )}
                   <span
                     className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
                     style={{ backgroundColor: stStyle.bg, color: stStyle.fg }}
@@ -416,43 +428,61 @@ export function ColaboradoresTab() {
               {!editing && (
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-foreground">
-                    Senha inicial
+                    Senha temporária
                   </label>
                   <input
-                    type="password"
+                    type="text"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
                       errors.password ? "border-destructive" : "border-border"
                     }`}
                   />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    A pessoa será obrigada a trocá-la no primeiro acesso.
+                  </p>
                   {errors.password && (
                     <p className="mt-1 text-xs text-destructive">{errors.password}</p>
                   )}
                 </div>
               )}
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">
-                  Departamento
-                </label>
-                <select
-                  value={form.department_id}
-                  onChange={(e) => setForm({ ...form, department_id: e.target.value })}
-                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                    errors.department_id ? "border-destructive" : "border-border"
-                  }`}
-                >
-                  <option value="">Selecione...</option>
-                  {depts.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.nome}
-                    </option>
-                  ))}
-                </select>
-                {errors.department_id && (
-                  <p className="mt-1 text-xs text-destructive">{errors.department_id}</p>
-                )}
-              </div>
+              {!editing && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">Papel</label>
+                  <select
+                    value={form.role}
+                    onChange={(e) => setForm({ ...form, role: e.target.value as PapelForm })}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="colaborador">Colaborador (atendente de um departamento)</option>
+                    <option value="administrador">Administrador (acesso total)</option>
+                  </select>
+                </div>
+              )}
+              {form.role === "colaborador" && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-foreground">
+                    Departamento
+                  </label>
+                  <select
+                    value={form.department_id}
+                    onChange={(e) => setForm({ ...form, department_id: e.target.value })}
+                    className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                      errors.department_id ? "border-destructive" : "border-border"
+                    }`}
+                  >
+                    <option value="">Selecione...</option>
+                    {depts.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.nome}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.department_id && (
+                    <p className="mt-1 text-xs text-destructive">{errors.department_id}</p>
+                  )}
+                </div>
+              )}
 
               {editing && (
                 <>
@@ -512,17 +542,14 @@ export function ColaboradoresTab() {
         </div>
       )}
 
-      <AlertDialog
-        open={!!confirmTarget}
-        onOpenChange={(open) => !open && setConfirmTarget(null)}
-      >
+      <AlertDialog open={!!confirmTarget} onOpenChange={(open) => !open && setConfirmTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Desativar colaborador?</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmTarget?.nome} não poderá mais acessar o sistema. Os atendimentos atribuídos
-              a ele serão liberados automaticamente para pendentes do departamento. Esta ação pode
-              ser revertida.
+              {confirmTarget?.nome} não poderá mais acessar o sistema. Os atendimentos atribuídos a
+              ele serão liberados automaticamente para pendentes do departamento. Esta ação pode ser
+              revertida.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

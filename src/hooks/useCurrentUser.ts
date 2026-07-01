@@ -28,7 +28,7 @@ export interface UseCurrentUserResult {
  * então buscamos o perfil pelo id da sessão. As permissões vêm do sistema antigo
  * (`is_superadmin` + `user_permissions`), que é o que as telas ainda checam.
  *
- * dono/administrador → `is_superadmin = true` (enxergam tudo, incl. Configurações e Equipe).
+ * dono/administrador → `is_superadmin = true` (enxergam tudo, incl. Configurações).
  * colaborador        → `is_superadmin = false` + departamento (só Inbox e Pendentes).
  */
 async function fetchCurrentUser(userId: string): Promise<CurrentUserProfile | null> {

@@ -18,7 +18,6 @@ import { Route as AlmoreMembrosCompanyIdRouteImport } from './routes/almore-memb
 import { Route as AppSupervisaoRouteImport } from './routes/_app.supervisao'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
-import { Route as AppEquipeRouteImport } from './routes/_app.equipe'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
 import { Route as AppConexaoRouteImport } from './routes/_app.conexao'
@@ -68,11 +67,6 @@ const AppInboxRoute = AppInboxRouteImport.update({
   path: '/inbox',
   getParentRoute: () => AppRoute,
 } as any)
-const AppEquipeRoute = AppEquipeRouteImport.update({
-  id: '/equipe',
-  path: '/equipe',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -103,7 +97,6 @@ export interface FileRoutesByFullPath {
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
-  '/equipe': typeof AppEquipeRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
@@ -117,7 +110,6 @@ export interface FileRoutesByTo {
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
-  '/equipe': typeof AppEquipeRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
@@ -134,7 +126,6 @@ export interface FileRoutesById {
   '/_app/conexao': typeof AppConexaoRoute
   '/_app/configuracoes': typeof AppConfiguracoesRoute
   '/_app/dashboard': typeof AppDashboardRoute
-  '/_app/equipe': typeof AppEquipeRoute
   '/_app/inbox': typeof AppInboxRoute
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/supervisao': typeof AppSupervisaoRoute
@@ -152,7 +143,6 @@ export interface FileRouteTypes {
     | '/conexao'
     | '/configuracoes'
     | '/dashboard'
-    | '/equipe'
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
@@ -166,7 +156,6 @@ export interface FileRouteTypes {
     | '/conexao'
     | '/configuracoes'
     | '/dashboard'
-    | '/equipe'
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
@@ -182,7 +171,6 @@ export interface FileRouteTypes {
     | '/_app/conexao'
     | '/_app/configuracoes'
     | '/_app/dashboard'
-    | '/_app/equipe'
     | '/_app/inbox'
     | '/_app/pendentes'
     | '/_app/supervisao'
@@ -263,13 +251,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInboxRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/equipe': {
-      id: '/_app/equipe'
-      path: '/equipe'
-      fullPath: '/equipe'
-      preLoaderRoute: typeof AppEquipeRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -306,7 +287,6 @@ interface AppRouteChildren {
   AppConexaoRoute: typeof AppConexaoRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
   AppDashboardRoute: typeof AppDashboardRoute
-  AppEquipeRoute: typeof AppEquipeRoute
   AppInboxRoute: typeof AppInboxRoute
   AppPendentesRoute: typeof AppPendentesRoute
   AppSupervisaoRoute: typeof AppSupervisaoRoute
@@ -318,7 +298,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppConexaoRoute: AppConexaoRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,
   AppDashboardRoute: AppDashboardRoute,
-  AppEquipeRoute: AppEquipeRoute,
   AppInboxRoute: AppInboxRoute,
   AppPendentesRoute: AppPendentesRoute,
   AppSupervisaoRoute: AppSupervisaoRoute,

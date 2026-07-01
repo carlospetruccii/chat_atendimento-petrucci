@@ -16,11 +16,7 @@ export interface DepartmentRow {
 export async function fetchDepartments(): Promise<DepartmentRow[]> {
   const [deptsRes, usersRes] = await Promise.all([
     supabase.from("departments").select("id, nome, cor, ativo").order("nome"),
-    supabase
-      .from("users")
-      .select("department_id")
-      .eq("ativo", true)
-      .eq("is_system_user", false),
+    supabase.from("users").select("department_id").eq("ativo", true).eq("is_system_user", false),
   ]);
   if (deptsRes.error) throw deptsRes.error;
   if (usersRes.error) throw usersRes.error;
@@ -63,10 +59,7 @@ export async function checkDepartmentDeletable(
     return { ok: false, reason: "Departamento de sistema não pode ser excluído." };
 
   const [usersRes, atendRes] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("department_id", id),
+    supabase.from("users").select("id", { count: "exact", head: true }).eq("department_id", id),
     supabase
       .from("atendimentos")
       .select("id", { count: "exact", head: true })
@@ -132,11 +125,7 @@ export async function fetchSubjects(): Promise<SubjectRow[]> {
   });
 }
 
-export async function createSubject(input: {
-  nome: string;
-  cor: string;
-  department_id: string;
-}) {
+export async function createSubject(input: { nome: string; cor: string; department_id: string }) {
   const { error } = await supabase.from("subjects").insert({
     nome: input.nome.trim(),
     cor: input.cor,
@@ -160,9 +149,7 @@ export async function updateSubject(
   if (error) throw error;
 }
 
-export async function checkSubjectDeletable(
-  id: string,
-): Promise<{ ok: boolean; reason?: string }> {
+export async function checkSubjectDeletable(id: string): Promise<{ ok: boolean; reason?: string }> {
   const { count, error } = await supabase
     .from("atendimentos")
     .select("id", { count: "exact", head: true })
@@ -187,6 +174,8 @@ export async function deleteSubject(id: string) {
 
 export type ColaboradorStatus = "ativo" | "indisponivel" | "inativo";
 
+export type PapelColaborador = "dono" | "administrador" | "colaborador";
+
 export interface ColaboradorRow {
   id: string;
   nome: string;
@@ -194,6 +183,7 @@ export interface ColaboradorRow {
   ativo: boolean;
   disponivel: boolean;
   is_superadmin: boolean;
+  role: PapelColaborador | null;
   department_id: string | null;
   department_nome: string;
   department_cor: string;
@@ -202,16 +192,27 @@ export interface ColaboradorRow {
 }
 
 export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
-  const { data, error } = await supabase
-    .from("users")
-    .select(
-      "id, nome, email, ativo, disponivel, is_superadmin, department_id, created_at, departments:department_id(nome, cor)",
-    )
-    .eq("is_system_user", false)
-    .order("nome");
-  if (error) throw error;
+  // Papel canônico vem de company_members (query à parte: o embed reverso não
+  // está nos tipos gerados). is_superadmin permanece para o gate das telas.
+  const [usersRes, membersRes] = await Promise.all([
+    supabase
+      .from("users")
+      .select(
+        "id, nome, email, ativo, disponivel, is_superadmin, department_id, created_at, departments:department_id(nome, cor)",
+      )
+      .eq("is_system_user", false)
+      .order("nome"),
+    supabase.from("company_members").select("user_id, role").eq("ativo", true),
+  ]);
+  if (usersRes.error) throw usersRes.error;
+  if (membersRes.error) throw membersRes.error;
 
-  return (data ?? []).map((u) => {
+  const roleByUser = new Map<string, PapelColaborador>();
+  for (const m of membersRes.data ?? []) {
+    roleByUser.set(m.user_id as string, m.role as PapelColaborador);
+  }
+
+  return (usersRes.data ?? []).map((u) => {
     const dept = u.departments as { nome: string; cor: string } | null;
     let status: ColaboradorStatus = "inativo";
     if (u.ativo) status = u.disponivel ? "ativo" : "indisponivel";
@@ -222,6 +223,7 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
       ativo: u.ativo,
       disponivel: u.disponivel,
       is_superadmin: u.is_superadmin,
+      role: roleByUser.get(u.id) ?? (u.is_superadmin ? "administrador" : "colaborador"),
       department_id: u.department_id,
       department_nome: dept?.nome ?? "—",
       department_cor: dept?.cor ?? FALLBACK_COR,
@@ -256,12 +258,19 @@ export async function criarColaborador(input: {
   nome: string;
   email: string;
   password: string;
-  department_id: string;
+  role: "administrador" | "colaborador";
+  department_id: string | null;
 }) {
   const { data, error } = await supabase.functions.invoke("criar-colaborador", {
     body: input,
   });
-  if (error) throw error;
+  if (error) {
+    // A edge function devolve o motivo no corpo mesmo em erro HTTP.
+    const ctx = (error as { context?: { body?: unknown } }).context;
+    throw new Error(
+      (typeof ctx?.body === "string" && ctx.body) || error.message || "Falha ao criar",
+    );
+  }
   if (data?.error) throw new Error(data.error);
   return data;
 }
@@ -287,13 +296,7 @@ export const TEMPLATE_VARS: Record<string, string[]> = {
   triagem_pergunta_assunto: ["departamento", "lista_assuntos"],
   triagem_erro_formato: [],
   triagem_lembrete_sem_resposta: [],
-  notificacao_luana: [
-    "nome_cliente",
-    "telefone",
-    "departamento",
-    "assunto",
-    "tempo_aguardando",
-  ],
+  notificacao_luana: ["nome_cliente", "telefone", "departamento", "assunto", "tempo_aguardando"],
   encerramento: [],
   fora_horario: [],
   repasse: [],
@@ -343,7 +346,7 @@ export async function fetchTemplates(): Promise<TemplateRow[]> {
     ativo: t.ativo,
     updated_at: t.updated_at,
     updated_by: t.updated_by,
-    updated_by_nome: t.updated_by ? nameMap.get(t.updated_by) ?? null : null,
+    updated_by_nome: t.updated_by ? (nameMap.get(t.updated_by) ?? null) : null,
   }));
 }
 
@@ -525,7 +528,7 @@ export async function deleteHoliday(id: string) {
 
 // ============ Tempos (system_config) ============
 
-export type TempoUnit = "segundos" | "minutos" | "" /* sem unidade */;
+export type TempoUnit = "segundos" | "minutos" | ""; /* sem unidade */
 
 export interface TempoMeta {
   chave: string;
@@ -657,8 +660,14 @@ export async function fetchRoutings(): Promise<RoutingRow[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r) => {
-    const s = r.subjects as unknown as { nome: string; departments: { nome: string; cor: string } | null } | null;
-    const u = r.users as unknown as { nome: string; departments: { nome: string; cor: string } | null } | null;
+    const s = r.subjects as unknown as {
+      nome: string;
+      departments: { nome: string; cor: string } | null;
+    } | null;
+    const u = r.users as unknown as {
+      nome: string;
+      departments: { nome: string; cor: string } | null;
+    } | null;
     return {
       id: r.id,
       ativo: r.ativo,
@@ -727,10 +736,7 @@ export async function createRouting(input: { subject_id: string; user_id: string
   }
 }
 
-export async function updateRouting(
-  id: string,
-  input: { user_id?: string; ativo?: boolean },
-) {
+export async function updateRouting(id: string, input: { user_id?: string; ativo?: boolean }) {
   const patch: { user_id?: string; ativo?: boolean } = {};
   if (input.user_id !== undefined) patch.user_id = input.user_id;
   if (input.ativo !== undefined) patch.ativo = input.ativo;
