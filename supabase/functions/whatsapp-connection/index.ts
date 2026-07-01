@@ -22,6 +22,7 @@ import {
   desconectarInstancia,
   statusInstancia,
   UazapiError,
+  verWebhook,
 } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "whatsapp-connection";
@@ -127,6 +128,21 @@ Deno.serve(async (req: Request) => {
       await desconectarInstancia();
       log({ funcao: FUNCAO, evento: "disconnect", status: "ok", duracao_ms: cron() });
       return jsonResponse({ ok: true });
+    }
+
+    // Diagnóstico: lê a config de webhook viva na instância uazapi.
+    if (action === "webhook_info") {
+      const info = await verWebhook();
+      log({ funcao: FUNCAO, evento: "webhook_info", status: "ok", duracao_ms: cron() });
+      return jsonResponse({ ok: true, webhook: info });
+    }
+
+    // (Re)aplica a config correta de webhook (idempotente). Útil quando o número
+    // foi conectado fora da nossa tela e a config nunca foi empurrada.
+    if (action === "webhook_setup") {
+      await garantirWebhook();
+      const info = await verWebhook();
+      return jsonResponse({ ok: true, webhook: info });
     }
 
     return jsonResponse({ ok: false, erro: "action_invalida" }, 400);

@@ -257,11 +257,15 @@ type ResolverErro =
 async function resolverClienteIdent(
   data: Record<string, unknown>,
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  opts: { permitirCriar: boolean; senderName: string | null },
+  opts: { permitirCriar: boolean; senderName: string | null; preferChatid?: boolean },
 ): Promise<ClienteResolvido | ResolverErro> {
   const chatid = (data.chatid as string | undefined) ?? null;
-  const senderPn = (data.sender_pn as string | undefined) ?? null;
-  const senderLid = (data.sender_lid as string | undefined) ?? null;
+  // Em mensagens fromMe (enviadas pelo celular da empresa) o REMETENTE é a
+  // empresa; o cliente é o destinatário, que vem no chatid. Nesse caso
+  // ignoramos sender_pn/sender_lid (dados do nosso próprio número) e
+  // identificamos o cliente exclusivamente pelo chatid.
+  const senderPn = opts.preferChatid ? null : ((data.sender_pn as string | undefined) ?? null);
+  const senderLid = opts.preferChatid ? null : ((data.sender_lid as string | undefined) ?? null);
   // LID normalizado: preferir sender_lid; senão o chatid quando for @lid.
   const chatLidNorm = extrairLid(senderLid) ??
     (chatid && String(chatid).includes("@lid") ? extrairLid(chatid) : null);
@@ -715,10 +719,13 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ ok: true, duplicada: true });
       }
 
-      // Localiza cliente via E.164 OU LID (ADR-045).
+      // Cliente = o DESTINATÁRIO (chatid), pois em fromMe o remetente é a
+      // empresa. permitirCriar: se você iniciou uma conversa nova pelo celular
+      // com alguém que ainda não é cliente, criamos o cliente aqui.
       const resolved = await resolverClienteIdent(payload, supabase, {
-        permitirCriar: false,
+        permitirCriar: true,
         senderName: null,
+        preferChatid: true,
       });
       if ("erro" in resolved) {
         if (resolved.erro === "sem_telefone") {
@@ -729,19 +736,17 @@ Deno.serve(async (req: Request) => {
             extra: { motivo: "from_me_sem_telefone" },
           });
         } else if (resolved.erro === "lid_desconhecido") {
+          // Só cai aqui em chat LID sem E.164 conhecido: não dá para criar
+          // cliente (CHECK exige E.164). Fica visível quando o cliente responder.
           log({
             funcao: FUNCAO,
             evento: "evento_ignorado",
             status: "ok",
             extra: {
-              motivo: "cliente_lid_desconhecido",
+              motivo: "from_me_lid_sem_e164",
               via_tentada: resolved.via_tentada,
-              telefone_mask: mascararNumero(
-                (payload.sender_pn as string | undefined) ??
-                  (payload.chatid as string | undefined),
-              ),
               chat_lid_mask: mascararLid(
-                (payload as { sender_lid?: string }).sender_lid ?? null,
+                extrairLid((payload.chatid as string | undefined) ?? null),
               ),
             },
           });
@@ -757,8 +762,7 @@ Deno.serve(async (req: Request) => {
       }
       const clienteExt = { id: resolved.id };
 
-      // Exige atendimento ativo desse cliente — não criamos triagem a partir
-      // de uma mensagem outbound externa.
+      // Procura atendimento ativo desse cliente (para anexar a mensagem nele).
       let atendExt = (await supabase
         .from("atendimentos")
         .select("id, current_department_id")
@@ -788,15 +792,91 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      // #2 — Conversa iniciada pelo celular com cliente sem atendimento aberto:
+      // cria um atendimento visível para admins/supervisão. status 'pendente'
+      // (NÃO 'em_triagem') para o bot não iniciar triagem; sem dono, então
+      // aparece na Inbox de quem vê tudo e na tela de Pendentes.
       if (!atendExt) {
+        // Departamento é obrigatório fora de em_triagem (CHECK do banco).
+        // Preferência: config 'triagem_departamento_default' → "Outros"
+        // (catch-all) → primeiro departamento ativo.
+        const { data: cfgDept } = await supabase
+          .from("system_config")
+          .select("valor")
+          .eq("chave", "triagem_departamento_default")
+          .maybeSingle();
+        let deptExt = (cfgDept?.valor ?? null) as string | null;
+        if (!deptExt) {
+          const { data: dOutros } = await supabase
+            .from("departments")
+            .select("id")
+            .eq("ativo", true)
+            .ilike("nome", "outros")
+            .limit(1)
+            .maybeSingle();
+          deptExt = (dOutros?.id as string | undefined) ?? null;
+        }
+        if (!deptExt) {
+          const { data: dPrim } = await supabase
+            .from("departments")
+            .select("id")
+            .eq("ativo", true)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          deptExt = (dPrim?.id as string | undefined) ?? null;
+        }
+        if (!deptExt) {
+          log({
+            funcao: FUNCAO,
+            evento: "externo_sem_departamento",
+            status: "erro",
+            client_id: clienteExt.id,
+            extra: { motivo: "nenhum_departamento_ativo" },
+          });
+          return jsonResponse({ ok: true });
+        }
+        const agoraIso = new Date().toISOString();
+        const { data: novoExt, error: errNovoExt } = await supabase
+          .from("atendimentos")
+          .insert({
+            client_id: clienteExt.id,
+            status: "pendente",
+            current_department_id: deptExt,
+            assigned_to: null,
+            subject_id: null,
+            triagem_estagio: "concluida",
+            triagem_started_at: agoraIso,
+            triagem_finished_at: agoraIso,
+          })
+          .select("id, current_department_id")
+          .single();
+        if (errNovoExt || !novoExt) {
+          log({
+            funcao: FUNCAO,
+            evento: "criar_atendimento_externo_erro",
+            status: "erro",
+            client_id: clienteExt.id,
+            erro_msg: errNovoExt?.message,
+          });
+          return jsonResponse({ ok: true });
+        }
+        atendExt = novoExt as { id: string; current_department_id: string | null };
+        await supabase.from("timeline_events").insert({
+          atendimento_id: atendExt.id,
+          tipo_evento: "iniciado_atendimento",
+          actor_user_id: null,
+          to_department_id: atendExt.current_department_id,
+          payload: { origem: "mensagem_externa_celular" },
+        });
         log({
           funcao: FUNCAO,
-          evento: "evento_ignorado",
+          evento: "atendimento_externo_criado",
           status: "ok",
+          atendimento_id: atendExt.id,
           client_id: clienteExt.id,
-          extra: { motivo: "externo_sem_atendimento_ativo" },
+          extra: { dept: atendExt.current_department_id },
         });
-        return jsonResponse({ ok: true });
       }
 
       const { data: msgExt, error: errExt } = await supabase
