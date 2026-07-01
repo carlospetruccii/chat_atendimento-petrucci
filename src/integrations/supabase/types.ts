@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       atendimentos: {
@@ -22,6 +47,7 @@ export type Database = {
           close_reason: Database["public"]["Enums"]["close_reason"] | null
           closed_at: string | null
           closed_by_user_id: string | null
+          company_id: string
           created_at: string
           current_department_id: string | null
           escalated_from_department_id: string | null
@@ -47,6 +73,7 @@ export type Database = {
           close_reason?: Database["public"]["Enums"]["close_reason"] | null
           closed_at?: string | null
           closed_by_user_id?: string | null
+          company_id?: string
           created_at?: string
           current_department_id?: string | null
           escalated_from_department_id?: string | null
@@ -72,6 +99,7 @@ export type Database = {
           close_reason?: Database["public"]["Enums"]["close_reason"] | null
           closed_at?: string | null
           closed_by_user_id?: string | null
+          company_id?: string
           created_at?: string
           current_department_id?: string | null
           escalated_from_department_id?: string | null
@@ -106,10 +134,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "atendimentos_client_same_company_fk"
+            columns: ["client_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
             foreignKeyName: "atendimentos_closed_by_user_id_fkey"
             columns: ["closed_by_user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atendimentos_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
@@ -118,6 +160,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "departments"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atendimentos_dept_same_company_fk"
+            columns: ["current_department_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id", "company_id"]
           },
           {
             foreignKeyName: "atendimentos_escalated_from_department_id_fkey"
@@ -140,10 +189,18 @@ export type Database = {
             referencedRelation: "subjects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "atendimentos_subject_same_company_fk"
+            columns: ["subject_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id", "company_id"]
+          },
         ]
       }
       business_hours: {
         Row: {
+          company_id: string
           created_at: string
           dia_semana: number
           fim: string
@@ -152,6 +209,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          company_id?: string
           created_at?: string
           dia_semana: number
           fim: string
@@ -160,6 +218,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          company_id?: string
           created_at?: string
           dia_semana?: number
           fim?: string
@@ -167,12 +226,21 @@ export type Database = {
           inicio?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "business_hours_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       cleanup_log: {
         Row: {
           acao: string
           client_id: string | null
+          company_id: string
           executed_at: string
           id: string
           message_id: string | null
@@ -185,6 +253,7 @@ export type Database = {
         Insert: {
           acao: string
           client_id?: string | null
+          company_id?: string
           executed_at?: string
           id?: string
           message_id?: string | null
@@ -197,6 +266,7 @@ export type Database = {
         Update: {
           acao?: string
           client_id?: string | null
+          company_id?: string
           executed_at?: string
           id?: string
           message_id?: string | null
@@ -206,11 +276,20 @@ export type Database = {
           zapi_message_id?: string | null
           zapi_response?: Json | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "cleanup_log_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       clients: {
         Row: {
           chat_lid: string | null
+          company_id: string
           created_at: string
           id: string
           nome: string | null
@@ -219,6 +298,7 @@ export type Database = {
         }
         Insert: {
           chat_lid?: string | null
+          company_id?: string
           created_at?: string
           id?: string
           nome?: string | null
@@ -227,17 +307,189 @@ export type Database = {
         }
         Update: {
           chat_lid?: string | null
+          company_id?: string
           created_at?: string
           id?: string
           nome?: string | null
           numero_whatsapp?: string
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: "clients_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      companies: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          updated_at: string
+          whatsapp_phone: string | null
+          zapi_client_token: string | null
+          zapi_instance_id: string | null
+          zapi_token: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          updated_at?: string
+          whatsapp_phone?: string | null
+          zapi_client_token?: string | null
+          zapi_instance_id?: string | null
+          zapi_token?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+          whatsapp_phone?: string | null
+          zapi_client_token?: string | null
+          zapi_instance_id?: string | null
+          zapi_token?: string | null
+        }
         Relationships: []
+      }
+      company_invitations: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          department_id: string | null
+          email: string
+          id: string
+          nome: string
+          role: Database["public"]["Enums"]["company_role"]
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          department_id?: string | null
+          email: string
+          id?: string
+          nome: string
+          role: Database["public"]["Enums"]["company_role"]
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          department_id?: string | null
+          email?: string
+          id?: string
+          nome?: string
+          role?: Database["public"]["Enums"]["company_role"]
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_invitations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_invitations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_invitations_dept_same_company_fk"
+            columns: ["department_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      company_members: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          created_at: string
+          created_by: string | null
+          department_id: string | null
+          id: string
+          role: Database["public"]["Enums"]["company_role"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          department_id?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["company_role"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          department_id?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["company_role"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_members_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_members_dept_same_company_fk"
+            columns: ["department_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       config_audit_log: {
         Row: {
           campo: string
+          company_id: string
           created_at: string
           entidade: string
           entidade_id: string
@@ -248,6 +500,7 @@ export type Database = {
         }
         Insert: {
           campo: string
+          company_id?: string
           created_at?: string
           entidade: string
           entidade_id: string
@@ -258,6 +511,7 @@ export type Database = {
         }
         Update: {
           campo?: string
+          company_id?: string
           created_at?: string
           entidade?: string
           entidade_id?: string
@@ -267,6 +521,13 @@ export type Database = {
           valor_novo?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "config_audit_log_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "config_audit_log_user_id_fkey"
             columns: ["user_id"]
@@ -279,6 +540,7 @@ export type Database = {
       departments: {
         Row: {
           ativo: boolean
+          company_id: string
           cor: string
           created_at: string
           id: string
@@ -287,6 +549,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          company_id?: string
           cor?: string
           created_at?: string
           id?: string
@@ -295,17 +558,27 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          company_id?: string
           cor?: string
           created_at?: string
           id?: string
           nome?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "departments_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       especialista_routing: {
         Row: {
           ativo: boolean
+          company_id: string
           created_at: string
           created_by: string | null
           id: string
@@ -315,6 +588,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          company_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -324,6 +598,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          company_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -332,6 +607,20 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "esp_routing_subject_same_company_fk"
+            columns: ["subject_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "especialista_routing_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "especialista_routing_created_by_fkey"
             columns: ["created_by"]
@@ -357,6 +646,7 @@ export type Database = {
       }
       holidays: {
         Row: {
+          company_id: string
           created_at: string
           data: string
           descricao: string | null
@@ -366,6 +656,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          company_id?: string
           created_at?: string
           data: string
           descricao?: string | null
@@ -375,6 +666,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          company_id?: string
           created_at?: string
           data?: string
           descricao?: string | null
@@ -383,12 +675,21 @@ export type Database = {
           inicio_override?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "holidays_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       mensagens: {
         Row: {
           atendimento_id: string
           client_id: string
+          company_id: string
           content: string | null
           created_at: string
           department_id: string | null
@@ -410,6 +711,7 @@ export type Database = {
         Insert: {
           atendimento_id: string
           client_id: string
+          company_id?: string
           content?: string | null
           created_at?: string
           department_id?: string | null
@@ -431,6 +733,7 @@ export type Database = {
         Update: {
           atendimento_id?: string
           client_id?: string
+          company_id?: string
           content?: string | null
           created_at?: string
           department_id?: string | null
@@ -450,6 +753,13 @@ export type Database = {
           zapi_message_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "mensagens_atend_same_company_fk"
+            columns: ["atendimento_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "atendimentos"
+            referencedColumns: ["id", "company_id"]
+          },
           {
             foreignKeyName: "mensagens_atendimento_id_fkey"
             columns: ["atendimento_id"]
@@ -472,11 +782,32 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "mensagens_client_same_company_fk"
+            columns: ["client_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "mensagens_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "mensagens_department_id_fkey"
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mensagens_dept_same_company_fk"
+            columns: ["department_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id", "company_id"]
           },
           {
             foreignKeyName: "mensagens_reply_to_message_id_fkey"
@@ -497,6 +828,7 @@ export type Database = {
       notificacoes_luana: {
         Row: {
           atendimento_id: string
+          company_id: string
           created_at: string
           id: string
           lida: boolean
@@ -504,6 +836,7 @@ export type Database = {
         }
         Insert: {
           atendimento_id: string
+          company_id?: string
           created_at?: string
           id?: string
           lida?: boolean
@@ -511,6 +844,7 @@ export type Database = {
         }
         Update: {
           atendimento_id?: string
+          company_id?: string
           created_at?: string
           id?: string
           lida?: boolean
@@ -531,11 +865,37 @@ export type Database = {
             referencedRelation: "vw_pendentes"
             referencedColumns: ["atendimento_id"]
           },
+          {
+            foreignKeyName: "notificacoes_luana_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      platform_config: {
+        Row: {
+          chave: string
+          updated_at: string
+          valor: string
+        }
+        Insert: {
+          chave: string
+          updated_at?: string
+          valor: string
+        }
+        Update: {
+          chave?: string
+          updated_at?: string
+          valor?: string
+        }
+        Relationships: []
       }
       subjects: {
         Row: {
           ativo: boolean
+          company_id: string
           cor: string
           created_at: string
           department_id: string
@@ -545,6 +905,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          company_id?: string
           cor?: string
           created_at?: string
           department_id: string
@@ -554,6 +915,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          company_id?: string
           cor?: string
           created_at?: string
           department_id?: string
@@ -563,17 +925,32 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "subjects_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "subjects_department_id_fkey"
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "subjects_dept_same_company_fk"
+            columns: ["department_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id", "company_id"]
+          },
         ]
       }
       system_config: {
         Row: {
           chave: string
+          company_id: string
           descricao: string | null
           tipo: Database["public"]["Enums"]["tipo_system_config"]
           updated_at: string
@@ -582,6 +959,7 @@ export type Database = {
         }
         Insert: {
           chave: string
+          company_id?: string
           descricao?: string | null
           tipo: Database["public"]["Enums"]["tipo_system_config"]
           updated_at?: string
@@ -590,6 +968,7 @@ export type Database = {
         }
         Update: {
           chave?: string
+          company_id?: string
           descricao?: string | null
           tipo?: Database["public"]["Enums"]["tipo_system_config"]
           updated_at?: string
@@ -597,6 +976,13 @@ export type Database = {
           valor?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "system_config_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "system_config_updated_by_fkey"
             columns: ["updated_by"]
@@ -610,6 +996,7 @@ export type Database = {
         Row: {
           ativo: boolean
           chave: string
+          company_id: string
           created_at: string
           id: string
           texto: string
@@ -619,6 +1006,7 @@ export type Database = {
         Insert: {
           ativo?: boolean
           chave: string
+          company_id?: string
           created_at?: string
           id?: string
           texto: string
@@ -628,6 +1016,7 @@ export type Database = {
         Update: {
           ativo?: boolean
           chave?: string
+          company_id?: string
           created_at?: string
           id?: string
           texto?: string
@@ -635,6 +1024,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "templates_mensagem_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "templates_mensagem_updated_by_fkey"
             columns: ["updated_by"]
@@ -648,6 +1044,7 @@ export type Database = {
         Row: {
           actor_user_id: string | null
           atendimento_id: string
+          company_id: string
           created_at: string
           from_department_id: string | null
           id: string
@@ -659,6 +1056,7 @@ export type Database = {
         Insert: {
           actor_user_id?: string | null
           atendimento_id: string
+          company_id?: string
           created_at?: string
           from_department_id?: string | null
           id?: string
@@ -670,6 +1068,7 @@ export type Database = {
         Update: {
           actor_user_id?: string | null
           atendimento_id?: string
+          company_id?: string
           created_at?: string
           from_department_id?: string | null
           id?: string
@@ -679,6 +1078,13 @@ export type Database = {
           to_department_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "timeline_atend_same_company_fk"
+            columns: ["atendimento_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "atendimentos"
+            referencedColumns: ["id", "company_id"]
+          },
           {
             foreignKeyName: "timeline_events_actor_user_id_fkey"
             columns: ["actor_user_id"]
@@ -699,6 +1105,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "vw_pendentes"
             referencedColumns: ["atendimento_id"]
+          },
+          {
+            foreignKeyName: "timeline_events_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "timeline_events_from_department_id_fkey"
@@ -878,8 +1291,12 @@ export type Database = {
         Args: { p_atendimento_id: string; p_user_id: string }
         Returns: boolean
       }
+      auth_enforcement_enabled: { Args: never; Returns: boolean }
+      can_manage_config_in: { Args: { p_company_id: string }; Returns: boolean }
+      can_view_all_in: { Args: { p_company_id: string }; Returns: boolean }
       claim_pendente: { Args: { p_atendimento_id: string }; Returns: boolean }
       cron_reativar_bot: { Args: never; Returns: Json }
+      current_department_in: { Args: { p_company_id: string }; Returns: string }
       current_user_can_view_all: { Args: never; Returns: boolean }
       current_user_department: { Args: never; Returns: string }
       current_user_is_superadmin: { Args: never; Returns: boolean }
@@ -893,11 +1310,15 @@ export type Database = {
       }
       esta_em_horario_comercial: { Args: { ts: string }; Returns: boolean }
       has_permission: { Args: { flag: string }; Returns: boolean }
+      is_member_of: { Args: { p_company_id: string }; Returns: boolean }
+      is_owner_of: { Args: { p_company_id: string }; Returns: boolean }
       payload_notificacao_luana: {
         Args: { p_atendimento_id: string }
         Returns: Json
       }
-      pendentes_abertos_a_todos: { Args: never; Returns: boolean }
+      pendentes_abertos_a_todos:
+        | { Args: never; Returns: boolean }
+        | { Args: { p_company_id: string }; Returns: boolean }
       proximo_horario_abertura: { Args: { ts: string }; Returns: string }
       repassar_atendimento: {
         Args: {
@@ -919,6 +1340,7 @@ export type Database = {
         | "automatico_inatividade"
         | "migracao_inicial"
         | "triagem_expirada_dia"
+      company_role: "dono" | "administrador" | "colaborador"
       direction_mensagem: "inbound" | "outbound"
       sender_type: "cliente" | "atendente" | "bot" | "sistema" | "externo"
       status_atendimento:
@@ -1088,6 +1510,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       close_reason: [
@@ -1097,6 +1522,7 @@ export const Constants = {
         "migracao_inicial",
         "triagem_expirada_dia",
       ],
+      company_role: ["dono", "administrador", "colaborador"],
       direction_mensagem: ["inbound", "outbound"],
       sender_type: ["cliente", "atendente", "bot", "sistema", "externo"],
       status_atendimento: [
