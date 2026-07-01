@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   MessageCircle,
@@ -7,26 +7,27 @@ import {
   BarChart,
   Settings,
   Users,
+  UserCog,
   Smartphone,
   Moon,
   Sun,
+  LogOut,
   type LucideIcon,
 } from "lucide-react";
 import { useCurrentUser, type CurrentUserProfile } from "@/hooks/useCurrentUser";
 import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/integrations/supabase/client";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-type MenuGate =
-  | undefined
-  | { superadminOnly: true }
-  | { anyOf: string[] }
-  | { clientesFlag: true };
+type MenuGate = undefined | { superadminOnly: true } | { anyOf: string[] } | { clientesFlag: true };
 
 type MenuItem = {
   title: string;
@@ -37,16 +38,31 @@ type MenuItem = {
 };
 
 const menuItems: MenuItem[] = [
-  { title: "Dashboard", url: "/dashboard", icon: BarChart, gate: { anyOf: ["view_all_departments"] } },
+  {
+    title: "Dashboard",
+    url: "/dashboard",
+    icon: BarChart,
+    gate: { anyOf: ["view_all_departments"] },
+  },
   { title: "Inbox", url: "/inbox", icon: MessageCircle },
   { title: "Pendentes", url: "/pendentes", icon: Clock, badgeKey: "pendentes" },
   { title: "Clientes", url: "/clientes", icon: Users, gate: { clientesFlag: true } },
   { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
-  { title: "Conexão do WhatsApp", url: "/conexao", icon: Smartphone, gate: { superadminOnly: true } },
+  { title: "Equipe", url: "/equipe", icon: UserCog, gate: { superadminOnly: true } },
+  {
+    title: "Conexão do WhatsApp",
+    url: "/conexao",
+    icon: Smartphone,
+    gate: { superadminOnly: true },
+  },
   { title: "Configurações", url: "/configuracoes", icon: Settings, gate: { superadminOnly: true } },
 ];
 
-function canSee(item: MenuItem, user: CurrentUserProfile | null, clientesVisivel: boolean): boolean {
+function canSee(
+  item: MenuItem,
+  user: CurrentUserProfile | null,
+  clientesVisivel: boolean,
+): boolean {
   if (!item.gate) return true;
   if (!user) return false;
   if ("superadminOnly" in item.gate) return user.isSuperadmin;
@@ -54,7 +70,9 @@ function canSee(item: MenuItem, user: CurrentUserProfile | null, clientesVisivel
     return user.isSuperadmin || item.gate.anyOf.some((f) => user.permissions.includes(f));
   }
   if ("clientesFlag" in item.gate) {
-    return user.isSuperadmin || user.permissions.includes("view_all_departments") || clientesVisivel;
+    return (
+      user.isSuperadmin || user.permissions.includes("view_all_departments") || clientesVisivel
+    );
   }
   return false;
 }
@@ -73,6 +91,12 @@ export function AppSidebar() {
   const { user, loading } = useCurrentUser();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
+
+  async function handleSair() {
+    await supabase.auth.signOut();
+    navigate({ to: "/login" });
+  }
 
   const clientesFlagQ = useQuery({
     queryKey: ["system_config", "clientes_visivel_para_todos"],
@@ -168,19 +192,39 @@ export function AppSidebar() {
             </TooltipContent>
           </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
-                aria-label={user?.nome ?? "Usuário"}
-              >
-                {loading || !user ? "··" : initials(user.nome)}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {loading || !user ? "Carregando..." : user.nome}
-            </TooltipContent>
-          </Tooltip>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                    aria-label={user?.nome ?? "Usuário"}
+                  >
+                    {loading || !user ? "··" : initials(user.nome)}
+                  </button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {loading || !user ? "Carregando..." : user.nome}
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent side="right" align="end" className="w-56">
+              <DropdownMenuLabel className="flex flex-col gap-0.5">
+                <span className="truncate text-sm font-medium">{user?.nome ?? "—"}</span>
+                {user?.email && (
+                  <span className="truncate text-xs font-normal text-muted-foreground">
+                    {user.email}
+                  </span>
+                )}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSair}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </aside>
     </TooltipProvider>

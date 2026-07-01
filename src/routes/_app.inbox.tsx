@@ -144,8 +144,8 @@ function InboxPage() {
     queryKey: ["inbox", "conversations", user?.id, canViewAll],
     queryFn: () =>
       listInboxConversations({
-        userId: user.id,
-        isSuperadmin: user.isSuperadmin,
+        userId: user!.id,
+        isSuperadmin: user!.isSuperadmin,
         canViewAll,
       }),
     enabled: !!user,
@@ -290,9 +290,18 @@ function InboxPage() {
     };
   }, [user, queryClient]);
 
-  // Loading da sessão/usuário é tratado no layout pai (_app.tsx).
-
+  // A sessão é garantida pelo layout pai (_app.tsx); aqui ainda pode faltar o
+  // PERFIL (users) por um instante — seguramos a tela até ele chegar, para que
+  // o envio e as ações sempre carreguem a identidade de quem está logado.
   const chatItems = agruparMensagens(chat.messages, atendimentoMetas);
+
+  if (!user) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
 
   const handleSend = async () => {

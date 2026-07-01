@@ -1,6 +1,12 @@
 // Edge Function: criar-colaborador
-// Cria um usuário no Supabase Auth + linha em public.users.
+// Cria um usuário no Supabase Auth + linha em public.users + company_members.
 // Apenas superadmin OU usuário com permissão 'manage_users' pode chamar.
+//
+// Papéis (single-tenant; seguem dono/administrador/colaborador):
+//   - 'administrador' → is_superadmin = true, sem departamento (enxerga tudo).
+//   - 'colaborador'   → is_superadmin = false, departamento obrigatório.
+// A pessoa entra com uma senha TEMPORÁRIA e é obrigada a trocá-la no 1º acesso
+// (marcador em user_metadata.must_change_password = true).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const CORS = {
@@ -57,7 +63,13 @@ Deno.serve(async (req) => {
   }
   if (!allowed) return json(403, { error: "Sem permissão para criar colaboradores" });
 
-  let body: { nome?: string; email?: string; password?: string; department_id?: string };
+  let body: {
+    nome?: string;
+    email?: string;
+    password?: string;
+    role?: string;
+    department_id?: string | null;
+  };
   try {
     body = await req.json();
   } catch {
@@ -66,18 +78,46 @@ Deno.serve(async (req) => {
   const nome = body.nome?.trim();
   const email = body.email?.trim().toLowerCase();
   const password = body.password;
-  const department_id = body.department_id;
+  // Compat: sem role explícito, mantém o comportamento antigo (colaborador).
+  const role = (body.role ?? "colaborador").trim();
+  const isAdmin = role === "administrador";
+  const department_id = isAdmin ? null : body.department_id;
 
-  if (!nome || !email || !password || !department_id) {
-    return json(400, { error: "Campos obrigatórios: nome, email, password, department_id" });
+  if (role !== "administrador" && role !== "colaborador") {
+    return json(400, { error: "Papel inválido (use 'administrador' ou 'colaborador')" });
+  }
+  if (!nome || !email || !password) {
+    return json(400, { error: "Campos obrigatórios: nome, email, password" });
+  }
+  if (!isAdmin && !department_id) {
+    return json(400, { error: "Colaborador exige um departamento" });
   }
   if (password.length < 8) return json(400, { error: "Senha deve ter pelo menos 8 caracteres" });
 
-  // Cria no Auth
+  // Empresa do chamador (single-tenant: há uma só). Usada para o company_members.
+  const { data: callerMember } = await admin
+    .from("company_members")
+    .select("company_id")
+    .eq("user_id", callerId)
+    .eq("ativo", true)
+    .maybeSingle();
+  let companyId = callerMember?.company_id as string | undefined;
+  if (!companyId) {
+    const { data: anyCompany } = await admin
+      .from("companies")
+      .select("id")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    companyId = anyCompany?.id as string | undefined;
+  }
+
+  // Cria no Auth (com marcador de senha temporária)
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
+    user_metadata: { must_change_password: true },
   });
   if (createErr || !created.user) {
     return json(400, { error: createErr?.message ?? "Falha ao criar usuário no Auth" });
@@ -92,15 +132,29 @@ Deno.serve(async (req) => {
     department_id,
     ativo: true,
     disponivel: true,
-    is_superadmin: false,
+    is_superadmin: isAdmin,
     is_system_user: false,
   });
 
   if (insertErr) {
-    // rollback Auth
-    await admin.auth.admin.deleteUser(newId);
+    await admin.auth.admin.deleteUser(newId); // rollback Auth
     return json(400, { error: `Falha ao criar registro: ${insertErr.message}` });
   }
 
-  return json(200, { id: newId, nome, email });
+  // Vínculo com a empresa (papel canônico). Não bloqueia o cadastro se falhar:
+  // com a trava multi-empresa desligada, o company_members não afeta a operação.
+  if (companyId) {
+    const { error: memberErr } = await admin.from("company_members").insert({
+      company_id: companyId,
+      user_id: newId,
+      role: isAdmin ? "administrador" : "colaborador",
+      department_id,
+      created_by: callerId,
+    });
+    if (memberErr) {
+      console.warn("[criar-colaborador] company_members falhou:", memberErr.message);
+    }
+  }
+
+  return json(200, { id: newId, nome, email, role });
 });

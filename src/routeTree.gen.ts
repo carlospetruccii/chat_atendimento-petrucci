@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TrocarSenhaRouteImport } from './routes/trocar-senha'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AlmoreRouteImport } from './routes/almore'
 import { Route as AppRouteImport } from './routes/_app'
@@ -17,11 +18,17 @@ import { Route as AlmoreMembrosCompanyIdRouteImport } from './routes/almore-memb
 import { Route as AppSupervisaoRouteImport } from './routes/_app.supervisao'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
+import { Route as AppEquipeRouteImport } from './routes/_app.equipe'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
 import { Route as AppConexaoRouteImport } from './routes/_app.conexao'
 import { Route as AppClientesRouteImport } from './routes/_app.clientes'
 
+const TrocarSenhaRoute = TrocarSenhaRouteImport.update({
+  id: '/trocar-senha',
+  path: '/trocar-senha',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -61,6 +68,11 @@ const AppInboxRoute = AppInboxRouteImport.update({
   path: '/inbox',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEquipeRoute = AppEquipeRouteImport.update({
+  id: '/equipe',
+  path: '/equipe',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -86,10 +98,12 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
+  '/trocar-senha': typeof TrocarSenhaRoute
   '/clientes': typeof AppClientesRoute
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
+  '/equipe': typeof AppEquipeRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
@@ -98,10 +112,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
+  '/trocar-senha': typeof TrocarSenhaRoute
   '/clientes': typeof AppClientesRoute
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
+  '/equipe': typeof AppEquipeRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
@@ -113,10 +129,12 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
+  '/trocar-senha': typeof TrocarSenhaRoute
   '/_app/clientes': typeof AppClientesRoute
   '/_app/conexao': typeof AppConexaoRoute
   '/_app/configuracoes': typeof AppConfiguracoesRoute
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/equipe': typeof AppEquipeRoute
   '/_app/inbox': typeof AppInboxRoute
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/supervisao': typeof AppSupervisaoRoute
@@ -129,10 +147,12 @@ export interface FileRouteTypes {
     | '/'
     | '/almore'
     | '/login'
+    | '/trocar-senha'
     | '/clientes'
     | '/conexao'
     | '/configuracoes'
     | '/dashboard'
+    | '/equipe'
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
@@ -141,10 +161,12 @@ export interface FileRouteTypes {
   to:
     | '/almore'
     | '/login'
+    | '/trocar-senha'
     | '/clientes'
     | '/conexao'
     | '/configuracoes'
     | '/dashboard'
+    | '/equipe'
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
@@ -155,10 +177,12 @@ export interface FileRouteTypes {
     | '/_app'
     | '/almore'
     | '/login'
+    | '/trocar-senha'
     | '/_app/clientes'
     | '/_app/conexao'
     | '/_app/configuracoes'
     | '/_app/dashboard'
+    | '/_app/equipe'
     | '/_app/inbox'
     | '/_app/pendentes'
     | '/_app/supervisao'
@@ -170,11 +194,19 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AlmoreRoute: typeof AlmoreRoute
   LoginRoute: typeof LoginRoute
+  TrocarSenhaRoute: typeof TrocarSenhaRoute
   AlmoreMembrosCompanyIdRoute: typeof AlmoreMembrosCompanyIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/trocar-senha': {
+      id: '/trocar-senha'
+      path: '/trocar-senha'
+      fullPath: '/trocar-senha'
+      preLoaderRoute: typeof TrocarSenhaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -231,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInboxRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/equipe': {
+      id: '/_app/equipe'
+      path: '/equipe'
+      fullPath: '/equipe'
+      preLoaderRoute: typeof AppEquipeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -267,6 +306,7 @@ interface AppRouteChildren {
   AppConexaoRoute: typeof AppConexaoRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
   AppDashboardRoute: typeof AppDashboardRoute
+  AppEquipeRoute: typeof AppEquipeRoute
   AppInboxRoute: typeof AppInboxRoute
   AppPendentesRoute: typeof AppPendentesRoute
   AppSupervisaoRoute: typeof AppSupervisaoRoute
@@ -278,6 +318,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppConexaoRoute: AppConexaoRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,
   AppDashboardRoute: AppDashboardRoute,
+  AppEquipeRoute: AppEquipeRoute,
   AppInboxRoute: AppInboxRoute,
   AppPendentesRoute: AppPendentesRoute,
   AppSupervisaoRoute: AppSupervisaoRoute,
@@ -290,6 +331,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AlmoreRoute: AlmoreRoute,
   LoginRoute: LoginRoute,
+  TrocarSenhaRoute: TrocarSenhaRoute,
   AlmoreMembrosCompanyIdRoute: AlmoreMembrosCompanyIdRoute,
 }
 export const routeTree = rootRouteImport

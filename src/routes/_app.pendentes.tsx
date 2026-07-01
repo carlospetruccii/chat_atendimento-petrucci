@@ -151,7 +151,7 @@ function PendentesPage() {
 
   const claimMutation = useMutation({
     mutationFn: async (vars: { atendimentoId: string; assignTo: string }) => {
-      const won = await claimAtendimento(vars.atendimentoId, vars.assignTo, user.id);
+      const won = await claimAtendimento(vars.atendimentoId, vars.assignTo, user!.id);
       return { won, ...vars };
     },
     onSuccess: (res) => {
@@ -214,7 +214,7 @@ function PendentesPage() {
     return list;
   }, [items, dept, subject, wait, sortBy, search]);
 
-  if (userLoading) {
+  if (userLoading || !user) {
     return (
       <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">
         Carregando...
