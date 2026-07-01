@@ -194,7 +194,7 @@ export function HorarioTab() {
         <div className="border-b border-border p-6">
           <h3 className="text-base font-semibold text-foreground">Horário comercial</h3>
           <p className="mt-1 text-sm text-muted-foreground max-w-3xl">
-            Defina os horários em que a BPMax atende. Mensagens fora destes horários disparam o
+            Defina os horários em que a Almore atende. Mensagens fora destes horários disparam o
             template de fora-de-horário.
           </p>
         </div>

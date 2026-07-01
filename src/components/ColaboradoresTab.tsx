@@ -214,7 +214,7 @@ export function ColaboradoresTab() {
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Cadastre e gerencie os colaboradores que atendem clientes da BPMax.
+            Cadastre e gerencie os colaboradores que atendem clientes da Almore.
           </p>
         </div>
         <button

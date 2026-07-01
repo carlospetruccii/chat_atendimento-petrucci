@@ -34,7 +34,7 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Chat Atendimento" },
       { name: "description", content: "Plataforma interna de atendimento via WhatsApp." },
-      { name: "author", content: "BPMax" },
+      { name: "author", content: "Almore" },
       { property: "og:title", content: "Chat Atendimento" },
       { property: "og:description", content: "Plataforma interna de atendimento via WhatsApp." },
       { property: "og:type", content: "website" },

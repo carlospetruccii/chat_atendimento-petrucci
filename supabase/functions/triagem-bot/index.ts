@@ -214,7 +214,7 @@ async function enviarEPersistir(at: Atendimento, telefone: string, texto: string
 
 // Limite do WhatsApp para mensagens interativas tipo "List".
 const LIST_MAX_OPCOES = 10;
-const LIST_TITULO = "Atendimento BPMax";
+const LIST_TITULO = "Atendimento Almore";
 
 /**
  * Limpa do template os placeholders de "lista numerada" — quando a mensagem
