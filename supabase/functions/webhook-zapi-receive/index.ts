@@ -75,9 +75,16 @@ interface ParsedMensagem {
 // da uazapi (o `data` do evento). Campos: messageType, text, fileURL,
 // buttonOrListid, content (objeto rico). Mantém o MESMO shape interno de saída.
 function parseMensagem(p: Record<string, unknown>): ParsedMensagem | null {
-  const messageType = (p.messageType as string | undefined) ?? null;
-  const texto = typeof p.text === "string" ? (p.text as string) : null;
-  const fileURL = typeof p.fileURL === "string" && p.fileURL ? (p.fileURL as string) : null;
+  // Tipo pela combinação messageType + type + mediaType (uazapi manda
+  // "Conversation"/"text" para texto e algo com image/video/audio/… para mídia).
+  const rawTipo = [p.messageType, p.type, p.mediaType]
+    .filter((x) => typeof x === "string" && x)
+    .join(" ");
+  const texto = typeof p.text === "string" && p.text
+    ? (p.text as string)
+    : (typeof p.content === "string" ? (p.content as string) : null);
+  const fileURL = ([p.fileURL, p.mediaUrl, p.url]
+    .find((x) => typeof x === "string" && /^https?:\/\//i.test(x as string)) as string | undefined) ?? null;
   const buttonOrListid =
     typeof p.buttonOrListid === "string" && p.buttonOrListid.trim() !== ""
       ? (p.buttonOrListid as string)
@@ -99,7 +106,7 @@ function parseMensagem(p: Record<string, unknown>): ParsedMensagem | null {
     };
   }
 
-  const tipo = mapMessageType(messageType);
+  const tipo = mapMessageType(rawTipo);
 
   // Tipos com mídia: media_url aponta para fileURL (quando presente); o
   // download real (via /message/download) roda em background e substitui.
@@ -480,18 +487,9 @@ Deno.serve(async (req: Request) => {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
 
-  // 1) Validação de origem: segredo na query string (?secret=...).
-  const expectedSecret = Deno.env.get("UAZAPI_WEBHOOK_SECRET");
-  if (expectedSecret) {
-    const querySecret = new URL(req.url).searchParams.get("secret");
-    if (querySecret !== expectedSecret) {
-      log({ funcao: FUNCAO, evento: "secret_invalido", status: "erro", duracao_ms: cron() });
-      return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
-    }
-  } else {
-    // Fase de bring-up: sem secret configurado, permite mas avisa.
-    log({ funcao: FUNCAO, evento: "webhook_sem_secret_configurado", status: "ok" });
-  }
+  // 1) A validação de origem é feita APÓS o parse do corpo, comparando o `token`
+  // que a uazapi envia no payload com o secret UAZAPI_TOKEN (ver 2b). A uazapi
+  // inclui o token da instância no corpo — mais confiável que query string.
 
   // 2) Parse do envelope.
   let envelope: Record<string, unknown>;
@@ -503,10 +501,23 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: true, ignorado: "payload_invalido" });
   }
 
-  // Envelope uazapi: { event, instance, data }. Seja defensivo: se `data`
-  // não vier, usa o próprio envelope como fonte (alguns setups mandam flat).
-  const eventStr = (envelope.event as string | undefined) ?? null;
-  const payload = ((envelope.data && typeof envelope.data === "object")
+  // 2b) Validação de origem: a uazapi inclui o token da instância no corpo
+  // (`token`). Conferimos contra o secret UAZAPI_TOKEN — é o jeito real como a
+  // uazapi entrega e não depende de query string.
+  const expectedToken = Deno.env.get("UAZAPI_TOKEN");
+  const bodyToken = typeof envelope.token === "string" ? (envelope.token as string) : null;
+  if (expectedToken && bodyToken !== expectedToken) {
+    log({ funcao: FUNCAO, evento: "token_invalido", status: "erro", duracao_ms: cron() });
+    return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+  }
+
+  // Formato REAL da uazapi (confirmado em produção): envelope
+  //   { EventType, chat, message, owner, token, instanceName, ... }
+  // O tipo do evento vem em `EventType`; a mensagem em `message`.
+  const eventStr = ((envelope.EventType ?? envelope.event) as string | undefined) ?? null;
+  const payload = ((envelope.message && typeof envelope.message === "object")
+    ? envelope.message
+    : (envelope.data && typeof envelope.data === "object")
     ? envelope.data
     : envelope) as Record<string, unknown>;
 
