@@ -7,6 +7,7 @@ import {
   BarChart,
   Settings,
   Users,
+  Smartphone,
   Moon,
   Sun,
   type LucideIcon,
@@ -41,6 +42,7 @@ const menuItems: MenuItem[] = [
   { title: "Pendentes", url: "/pendentes", icon: Clock, badgeKey: "pendentes" },
   { title: "Clientes", url: "/clientes", icon: Users, gate: { clientesFlag: true } },
   { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
+  { title: "Conexão do WhatsApp", url: "/conexao", icon: Smartphone, gate: { superadminOnly: true } },
   { title: "Configurações", url: "/configuracoes", icon: Settings, gate: { superadminOnly: true } },
 ];
 

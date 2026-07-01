@@ -1,6 +1,11 @@
 project_id = "hfcfkxozzbrzzrejtbdj"
 
-# Endpoint público chamado pela Z-API: valida origem por header Client-Token,
-# não por JWT do Supabase.
+# Endpoint público chamado pela uazapi (webhook de recebimento): valida origem
+# por um secret na query (?secret=UAZAPI_WEBHOOK_SECRET), não por JWT do Supabase.
 [functions.webhook-zapi-receive]
+verify_jwt = false
+
+# Backend da tela de conexão do WhatsApp — chamado pelo frontend com a chave
+# pública (modo interno/aberto). O token da instância fica só no servidor.
+[functions.whatsapp-connection]
 verify_jwt = false

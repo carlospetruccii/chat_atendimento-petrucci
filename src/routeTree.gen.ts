@@ -19,6 +19,7 @@ import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
+import { Route as AppConexaoRouteImport } from './routes/_app.conexao'
 import { Route as AppClientesRouteImport } from './routes/_app.clientes'
 
 const LoginRoute = LoginRouteImport.update({
@@ -70,6 +71,11 @@ const AppConfiguracoesRoute = AppConfiguracoesRouteImport.update({
   path: '/configuracoes',
   getParentRoute: () => AppRoute,
 } as any)
+const AppConexaoRoute = AppConexaoRouteImport.update({
+  id: '/conexao',
+  path: '/conexao',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppClientesRoute = AppClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/clientes': typeof AppClientesRoute
+  '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
   '/inbox': typeof AppInboxRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/clientes': typeof AppClientesRoute
+  '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
   '/inbox': typeof AppInboxRoute
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/_app/clientes': typeof AppClientesRoute
+  '/_app/conexao': typeof AppConexaoRoute
   '/_app/configuracoes': typeof AppConfiguracoesRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/inbox': typeof AppInboxRoute
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/clientes'
+    | '/conexao'
     | '/configuracoes'
     | '/dashboard'
     | '/inbox'
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/clientes'
+    | '/conexao'
     | '/configuracoes'
     | '/dashboard'
     | '/inbox'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/_app/clientes'
+    | '/_app/conexao'
     | '/_app/configuracoes'
     | '/_app/dashboard'
     | '/_app/inbox'
@@ -233,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConfiguracoesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/conexao': {
+      id: '/_app/conexao'
+      path: '/conexao'
+      fullPath: '/conexao'
+      preLoaderRoute: typeof AppConexaoRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/clientes': {
       id: '/_app/clientes'
       path: '/clientes'
@@ -245,6 +264,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppClientesRoute: typeof AppClientesRoute
+  AppConexaoRoute: typeof AppConexaoRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppInboxRoute: typeof AppInboxRoute
@@ -255,6 +275,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppClientesRoute: AppClientesRoute,
+  AppConexaoRoute: AppConexaoRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppInboxRoute: AppInboxRoute,
