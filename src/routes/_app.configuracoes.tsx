@@ -5,7 +5,6 @@ import { TemposTab } from "@/components/TemposTab";
 import { HorarioTab } from "@/components/HorarioTab";
 import { TemplatesTab } from "@/components/TemplatesTab";
 import { ColaboradoresTab } from "@/components/ColaboradoresTab";
-import { PermissoesTab } from "@/components/PermissoesTab";
 import { DepartamentosTab } from "@/components/DepartamentosTab";
 import { AssuntosTab } from "@/components/AssuntosTab";
 import { RoteamentoTab } from "@/components/RoteamentoTab";
@@ -24,7 +23,6 @@ const BASE_TABS = [
   "Horário",
   "Templates",
   "Colaboradores",
-  "Permissões",
   "Operação",
 ];
 
@@ -72,7 +70,6 @@ function ConfiguracoesPage() {
         {active === "Horário" && <HorarioTab />}
         {active === "Templates" && <TemplatesTab />}
         {active === "Colaboradores" && <ColaboradoresTab />}
-        {active === "Permissões" && <PermissoesTab />}
         {active === "Operação" && <OperacaoTab />}
         {!tabs.includes(active) && <EmBreve name={active} />}
       </div>
