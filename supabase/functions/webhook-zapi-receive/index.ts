@@ -108,38 +108,35 @@ function parseMensagem(p: Record<string, unknown>): ParsedMensagem | null {
 
   const tipo = mapMessageType(rawTipo);
 
-  // Tipos com mídia: media_url aponta para fileURL (quando presente); o
-  // download real (via /message/download) roda em background e substitui.
+  // Conteúdo rico da uazapi para mídia (URL .enc, mimetype, fileName, seconds…).
+  const c = (p.content && typeof p.content === "object")
+    ? (p.content as Record<string, unknown>)
+    : {};
+  const mime = typeof c.mimetype === "string" ? (c.mimetype as string) : null;
+  const fileName = typeof c.fileName === "string"
+    ? (c.fileName as string)
+    : (typeof c.title === "string" ? (c.title as string) : null);
+  // media_url precisa ser NÃO-NULO (constraint mensagens_media_url_chk). A URL real
+  // do WhatsApp é criptografada (.enc) e é baixada via /message/download em background;
+  // usamos um placeholder que NÃO é http (o download vai direto pela API) — depois
+  // substituído pelo caminho no bucket.
+  const mediaUrlInicial = fileURL ?? "pending:uazapi";
+
   switch (tipo) {
     case "imagem":
     case "video":
-      return {
-        tipo,
-        content: texto ?? null,
-        media_url: fileURL,
-        media_metadata: { mime_type: null },
-      };
+      return { tipo, content: texto ?? null, media_url: mediaUrlInicial, media_metadata: { mime_type: mime } };
     case "audio":
       return {
         tipo,
         content: null,
-        media_url: fileURL,
-        media_metadata: { mime_type: null },
+        media_url: mediaUrlInicial,
+        media_metadata: { mime_type: mime, duracao_seg: typeof c.seconds === "number" ? (c.seconds as number) : null },
       };
     case "sticker":
-      return {
-        tipo,
-        content: null,
-        media_url: fileURL,
-        media_metadata: { mime_type: null },
-      };
+      return { tipo, content: null, media_url: mediaUrlInicial, media_metadata: { mime_type: mime } };
     case "documento":
-      return {
-        tipo,
-        content: null,
-        media_url: fileURL,
-        media_metadata: { mime_type: null, file_name: null },
-      };
+      return { tipo, content: texto ?? null, media_url: mediaUrlInicial, media_metadata: { mime_type: mime, file_name: fileName } };
     case "localizacao": {
       const content = (p.content ?? null) as Record<string, unknown> | null;
       const latitude = (content?.latitude ?? content?.degreesLatitude ?? null) as number | null;
@@ -1288,32 +1285,42 @@ async function obterBytesMidia(
   urlOriginal: string | null,
   zapiMessageId: string,
 ): Promise<{ buf: Uint8Array; contentType: string | null; fonte: string }> {
-  // 1) Tentativa direta via fileURL (se http/https).
-  if (urlOriginal && /^https?:\/\//i.test(urlOriginal)) {
-    try {
-      const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 25000);
-      const resp = await fetch(urlOriginal, { signal: ctrl.signal });
-      clearTimeout(timeout);
-      if (resp.ok) {
-        const contentType = resp.headers.get("content-type");
-        const buf = new Uint8Array(await resp.arrayBuffer());
-        if (buf.byteLength > 0) return { buf, contentType, fonte: "fileURL" };
+  // 1) /message/download — fonte confiável (bytes DECODIFICADOS via base64Data).
+  try {
+    const res = await baixarMidiaMensagem(zapiMessageId);
+    if (res.base64) {
+      const bin = atob(res.base64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      if (buf.byteLength > 0) {
+        return { buf, contentType: res.mimetype ?? null, fonte: "message_download_base64" };
       }
-    } catch {
-      // cai para o download da uazapi
     }
+    // 2) fileURL hospedada e decodificada pela uazapi (não é .enc).
+    if (res.url && /^https?:\/\//i.test(res.url)) {
+      const r = await fetch(res.url);
+      if (r.ok) {
+        const buf = new Uint8Array(await r.arrayBuffer());
+        if (buf.byteLength > 0) {
+          return { buf, contentType: r.headers.get("content-type") ?? res.mimetype ?? null, fonte: "message_download_url" };
+        }
+      }
+    }
+  } catch {
+    // cai para a tentativa direta abaixo
   }
 
-  // 2) POST /message/download (base64).
-  const res = await baixarMidiaMensagem(zapiMessageId);
-  if (!res.base64) {
-    throw new Error("uazapi /message/download sem base64");
+  // 3) Último recurso: urlOriginal, só se for http (a .enc não serve; placeholder é ignorado).
+  if (urlOriginal && /^https?:\/\//i.test(urlOriginal)) {
+    const resp = await fetch(urlOriginal);
+    if (resp.ok) {
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      if (buf.byteLength > 0) {
+        return { buf, contentType: resp.headers.get("content-type"), fonte: "url_original" };
+      }
+    }
   }
-  const bin = atob(res.base64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return { buf, contentType: res.mimetype ?? null, fonte: "message_download" };
+  throw new Error("não foi possível obter os bytes da mídia (/message/download)");
 }
 
 async function baixarESalvarMidia(p: DownloadParams): Promise<void> {

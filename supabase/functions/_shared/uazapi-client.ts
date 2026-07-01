@@ -259,7 +259,7 @@ export async function baixarMidiaMensagem(id: string): Promise<BaixarMidiaResult
     return_base64: true,
   })) as Record<string, unknown>;
   return {
-    base64: (resp.base64 ?? resp.fileBase64 ?? resp.data) as string | undefined,
+    base64: (resp.base64Data ?? resp.base64 ?? resp.fileBase64 ?? resp.data) as string | undefined,
     mimetype: (resp.mimetype ?? resp.mimeType) as string | undefined,
     fileName: (resp.fileName ?? resp.filename) as string | undefined,
     url: (resp.fileURL ?? resp.url ?? resp.link) as string | undefined,
