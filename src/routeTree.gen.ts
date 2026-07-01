@@ -13,6 +13,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AlmoreRouteImport } from './routes/almore'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
+import { Route as AlmoreMembrosCompanyIdRouteImport } from './routes/almore-membros.$companyId'
 import { Route as AppSupervisaoRouteImport } from './routes/_app.supervisao'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
@@ -38,6 +39,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppRoute,
+} as any)
+const AlmoreMembrosCompanyIdRoute = AlmoreMembrosCompanyIdRouteImport.update({
+  id: '/almore-membros/$companyId',
+  path: '/almore-membros/$companyId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppSupervisaoRoute = AppSupervisaoRouteImport.update({
   id: '/supervisao',
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
+  '/almore-membros/$companyId': typeof AlmoreMembrosCompanyIdRoute
 }
 export interface FileRoutesByTo {
   '/almore': typeof AlmoreRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
+  '/almore-membros/$companyId': typeof AlmoreMembrosCompanyIdRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/_app/inbox': typeof AppInboxRoute
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/supervisao': typeof AppSupervisaoRoute
+  '/almore-membros/$companyId': typeof AlmoreMembrosCompanyIdRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
+    | '/almore-membros/$companyId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/almore'
@@ -127,6 +137,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
+    | '/almore-membros/$companyId'
     | '/'
   id:
     | '__root__'
@@ -139,6 +150,7 @@ export interface FileRouteTypes {
     | '/_app/inbox'
     | '/_app/pendentes'
     | '/_app/supervisao'
+    | '/almore-membros/$companyId'
     | '/_app/'
   fileRoutesById: FileRoutesById
 }
@@ -146,6 +158,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AlmoreRoute: typeof AlmoreRoute
   LoginRoute: typeof LoginRoute
+  AlmoreMembrosCompanyIdRoute: typeof AlmoreMembrosCompanyIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -177,6 +190,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/almore-membros/$companyId': {
+      id: '/almore-membros/$companyId'
+      path: '/almore-membros/$companyId'
+      fullPath: '/almore-membros/$companyId'
+      preLoaderRoute: typeof AlmoreMembrosCompanyIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/supervisao': {
       id: '/_app/supervisao'
@@ -249,6 +269,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AlmoreRoute: AlmoreRoute,
   LoginRoute: LoginRoute,
+  AlmoreMembrosCompanyIdRoute: AlmoreMembrosCompanyIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
