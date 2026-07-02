@@ -7,7 +7,6 @@ import {
   BarChart,
   Settings,
   BookUser,
-  Smartphone,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -45,12 +44,6 @@ const menuItems: MenuItem[] = [
   { title: "Pendentes", url: "/pendentes", icon: Clock, badgeKey: "pendentes" },
   { title: "Contatos", url: "/contatos", icon: BookUser },
   { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
-  {
-    title: "Conexão do WhatsApp",
-    url: "/conexao",
-    icon: Smartphone,
-    gate: { superadminOnly: true },
-  },
   { title: "Configurações", url: "/configuracoes", icon: Settings, gate: { superadminOnly: true } },
 ];
 

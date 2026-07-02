@@ -8,6 +8,7 @@ import { ColaboradoresTab } from "@/components/ColaboradoresTab";
 import { DepartamentosTab } from "@/components/DepartamentosTab";
 import { OperacaoTab } from "@/components/OperacaoTab";
 import { GoogleContatosTab } from "@/components/GoogleContatosTab";
+import { ConexaoWhatsAppTab } from "@/components/ConexaoWhatsAppTab";
 
 export const Route = createFileRoute("/_app/configuracoes")({
   staticData: { title: "Configurações" },
@@ -22,6 +23,7 @@ const BASE_TABS = [
   "Colaboradores",
   "Operação",
   "Contatos Google",
+  "Conexão do WhatsApp",
 ];
 
 function EmBreve({ name }: { name: string }) {
@@ -68,6 +70,7 @@ function ConfiguracoesPage() {
         {active === "Colaboradores" && <ColaboradoresTab />}
         {active === "Operação" && <OperacaoTab />}
         {active === "Contatos Google" && <GoogleContatosTab />}
+        {active === "Conexão do WhatsApp" && <ConexaoWhatsAppTab />}
         {!tabs.includes(active) && <EmBreve name={active} />}
       </div>
     </>

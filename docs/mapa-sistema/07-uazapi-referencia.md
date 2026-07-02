@@ -50,7 +50,7 @@ nome antigo, mantida por ser cosmética).
   `connection` (estado). Mensagem enviada pelo celular por fora = `fromMe:true` +
   `wasSentByApi:false` → registrada como `externo`. Grupos são ignorados.
 
-## Conexão / QR code (tela "Conexão do WhatsApp")
+## Conexão / QR code (aba "Conexão do WhatsApp" em Configurações)
 | Ação | Endpoint | Retorno |
 |------|----------|---------|
 | Conectar / QR | `POST /instance/connect` (sem `phone`) | `{ instance:{ qrcode (base64 PNG) }, connected, loggedIn }` |

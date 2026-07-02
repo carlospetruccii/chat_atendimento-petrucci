@@ -1,21 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  CheckCircle2,
-  Loader2,
-  QrCode,
-  RefreshCw,
-  Smartphone,
-  WifiOff,
-} from "lucide-react";
+import { CheckCircle2, Loader2, QrCode, RefreshCw, Smartphone, WifiOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-
-export const Route = createFileRoute("/_app/conexao")({
-  staticData: { title: "Conexão do WhatsApp" },
-  component: ConexaoPage,
-});
 
 interface StatusResp {
   ok: boolean;
@@ -46,7 +33,7 @@ async function chamar<T>(action: "status" | "connect" | "disconnect"): Promise<T
   return data as T;
 }
 
-function ConexaoPage() {
+export function ConexaoWhatsAppTab() {
   const qc = useQueryClient();
   const [qr, setQr] = useState<string | null>(null);
   const [paircode, setPaircode] = useState<string | null>(null);
@@ -108,13 +95,13 @@ function ConexaoPage() {
   const numero = statusQ.data?.numero;
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="max-w-2xl">
       <div className="mb-6 flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent">
           <Smartphone className="h-5 w-5 text-primary" strokeWidth={1.75} />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-foreground">Conexão do WhatsApp</h1>
+          <h2 className="text-base font-semibold text-foreground">Conexão do WhatsApp</h2>
           <p className="text-sm text-muted-foreground">
             Conecte o número da Almore escaneando o QR code com o celular.
           </p>
@@ -131,10 +118,10 @@ function ConexaoPage() {
       {/* uazapi ainda não configurada no servidor */}
       {!statusQ.isLoading && naoConfig && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-          <h2 className="text-base font-semibold">WhatsApp ainda não configurado</h2>
+          <h3 className="text-base font-semibold">WhatsApp ainda não configurado</h3>
           <p className="mt-1 text-sm">
-            As credenciais da conta uazapi ainda não foram cadastradas no servidor.
-            Assim que forem, esta tela permitirá escanear o QR code e conectar o número.
+            As credenciais da conta uazapi ainda não foram cadastradas no servidor. Assim que forem,
+            esta aba permitirá escanear o QR code e conectar o número.
           </p>
         </div>
       )}
@@ -145,7 +132,7 @@ function ConexaoPage() {
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-6 w-6 text-emerald-500" />
             <div>
-              <h2 className="text-base font-semibold text-foreground">Conectado</h2>
+              <h3 className="text-base font-semibold text-foreground">Conectado</h3>
               <p className="text-sm text-muted-foreground">
                 {statusQ.data?.profileName ? `${statusQ.data.profileName} · ` : ""}
                 {numero ? `+${numero}` : "número ativo"}
@@ -159,7 +146,11 @@ function ConexaoPage() {
               disabled={disconnectM.isPending}
               className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
             >
-              {disconnectM.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
+              {disconnectM.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <WifiOff className="h-4 w-4" />
+              )}
               Desconectar
             </button>
             <button
@@ -179,7 +170,7 @@ function ConexaoPage() {
           <div className="flex items-center gap-3">
             <WifiOff className="h-6 w-6 text-muted-foreground" />
             <div>
-              <h2 className="text-base font-semibold text-foreground">Desconectado</h2>
+              <h3 className="text-base font-semibold text-foreground">Desconectado</h3>
               <p className="text-sm text-muted-foreground">
                 Escaneie o QR code para conectar o número da Almore.
               </p>
@@ -193,12 +184,17 @@ function ConexaoPage() {
               </div>
               <ol className="mt-4 max-w-sm list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
                 <li>Abra o WhatsApp no celular da Almore.</li>
-                <li>Toque em <strong>Aparelhos conectados</strong>.</li>
-                <li>Toque em <strong>Conectar um aparelho</strong> e escaneie este código.</li>
+                <li>
+                  Toque em <strong>Aparelhos conectados</strong>.
+                </li>
+                <li>
+                  Toque em <strong>Conectar um aparelho</strong> e escaneie este código.
+                </li>
               </ol>
               {paircode && (
                 <p className="mt-3 text-sm text-muted-foreground">
-                  Ou use o código de pareamento: <span className="font-mono font-semibold text-foreground">{paircode}</span>
+                  Ou use o código de pareamento:{" "}
+                  <span className="font-mono font-semibold text-foreground">{paircode}</span>
                 </p>
               )}
               <button
@@ -207,7 +203,11 @@ function ConexaoPage() {
                 disabled={connectM.isPending}
                 className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
               >
-                {connectM.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {connectM.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
                 Gerar novo QR code
               </button>
             </div>
@@ -219,7 +219,11 @@ function ConexaoPage() {
                 disabled={connectM.isPending}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                {connectM.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                {connectM.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <QrCode className="h-4 w-4" />
+                )}
                 Gerar QR code
               </button>
             </div>

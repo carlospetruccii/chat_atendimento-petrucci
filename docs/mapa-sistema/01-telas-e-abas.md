@@ -245,8 +245,9 @@ sistema), só a **tela** de cadastro foi aposentada.
 
 **Arquivos:** `src/routes/_app.configuracoes.tsx` + um componente por aba + `src/lib/configuracoes-queries.ts`
 
-Central de ajustes do sistema. Só superadmin acessa. São **7 abas**, nesta ordem:
-**Departamentos, Tempos, Horário, Templates, Colaboradores, Operação, Contatos Google.**
+Central de ajustes do sistema. Só superadmin acessa. São **8 abas**, nesta ordem:
+**Departamentos, Tempos, Horário, Templates, Colaboradores, Operação, Contatos Google,
+Conexão do WhatsApp.**
 
 ### Aba 1 — Departamentos
 Gerencia os setores de atendimento. Tabela: `departments`.
@@ -310,6 +311,19 @@ navegador**.
 | **Atualizar agora** | Força uma sincronização (incremental) na hora. |
 | **Desconectar** | Revoga o acesso e limpa os tokens (os contatos já baixados permanecem até a próxima sincronização). |
 | **Status** | Mostra o e‑mail conectado, a contagem de contatos e a data/situação da última sincronização. |
+
+### Aba 8 — Conexão do WhatsApp
+Conecta o número da Almore via QR code (uazapi). Antes vivia como item próprio na
+barra lateral (`/conexao`); agora é a última aba de Configurações. **Arquivo:**
+`src/components/ConexaoWhatsAppTab.tsx`, função `whatsapp-connection`. Ver detalhes
+dos endpoints em [07-uazapi-referencia.md](07-uazapi-referencia.md#conexão--qr-code-tela-conexão-do-whatsapp).
+
+| Controle | O que faz |
+|----------|-----------|
+| **Gerar QR code / Gerar novo QR code** | Chama `connect` e mostra o QR (ou código de pareamento) para escanear no celular da Almore. |
+| **Atualizar** | Refaz o `status` na hora, sem esperar o polling. |
+| **Desconectar** | Encerra a sessão do número conectado. |
+| **Status** | Mostra conectado/desconectado, nome do perfil e número; polling automático (mais rápido enquanto não conectado). |
 
 Estados: se os **secrets** `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` não estiverem no
 servidor, a aba mostra "**integração ainda não configurada**"; conectado e com a lista

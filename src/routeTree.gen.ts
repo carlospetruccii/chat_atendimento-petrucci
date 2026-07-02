@@ -21,7 +21,6 @@ import { Route as AppInboxRouteImport } from './routes/_app.inbox'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppContatosRouteImport } from './routes/_app.contatos'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
-import { Route as AppConexaoRouteImport } from './routes/_app.conexao'
 
 const TrocarSenhaRoute = TrocarSenhaRouteImport.update({
   id: '/trocar-senha',
@@ -82,18 +81,12 @@ const AppConfiguracoesRoute = AppConfiguracoesRouteImport.update({
   path: '/configuracoes',
   getParentRoute: () => AppRoute,
 } as any)
-const AppConexaoRoute = AppConexaoRouteImport.update({
-  id: '/conexao',
-  path: '/conexao',
-  getParentRoute: () => AppRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
-  '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/contatos': typeof AppContatosRoute
   '/dashboard': typeof AppDashboardRoute
@@ -106,7 +99,6 @@ export interface FileRoutesByTo {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
-  '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
   '/contatos': typeof AppContatosRoute
   '/dashboard': typeof AppDashboardRoute
@@ -122,7 +114,6 @@ export interface FileRoutesById {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
-  '/_app/conexao': typeof AppConexaoRoute
   '/_app/configuracoes': typeof AppConfiguracoesRoute
   '/_app/contatos': typeof AppContatosRoute
   '/_app/dashboard': typeof AppDashboardRoute
@@ -139,7 +130,6 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
-    | '/conexao'
     | '/configuracoes'
     | '/contatos'
     | '/dashboard'
@@ -152,7 +142,6 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
-    | '/conexao'
     | '/configuracoes'
     | '/contatos'
     | '/dashboard'
@@ -167,7 +156,6 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
-    | '/_app/conexao'
     | '/_app/configuracoes'
     | '/_app/contatos'
     | '/_app/dashboard'
@@ -272,18 +260,10 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConfiguracoesRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/conexao': {
-      id: '/_app/conexao'
-      path: '/conexao'
-      fullPath: '/conexao'
-      preLoaderRoute: typeof AppConexaoRouteImport
-      parentRoute: typeof AppRoute
-    }
   }
 }
 
 interface AppRouteChildren {
-  AppConexaoRoute: typeof AppConexaoRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
   AppContatosRoute: typeof AppContatosRoute
   AppDashboardRoute: typeof AppDashboardRoute
@@ -294,7 +274,6 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppConexaoRoute: AppConexaoRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,
   AppContatosRoute: AppContatosRoute,
   AppDashboardRoute: AppDashboardRoute,
