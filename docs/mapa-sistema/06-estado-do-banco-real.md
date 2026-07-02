@@ -45,6 +45,45 @@
 
 ---
 
+## Atualização — 02/07/2026 (fim do dia): sementes faltantes e bot no ar
+
+Ao ligar o bot pela primeira vez neste projeto, apareceram **falhas silenciosas**
+causadas por **sementes que nunca foram versionadas** (existiam no projeto anterior, mas
+o projeto novo foi criado do zero). Todas corrigidas com migrations **idempotentes** e
+aplicadas em produção:
+
+- **`system_config` — chaves faltantes.** Não existiam `bot_ativo`, `bot_ativacao_programada`
+  nem `clientes_visivel_para_todos`. Sem `bot_ativo`, o botão de ligar o bot fazia
+  `UPDATE` em **0 linhas** (não persistia) e o kill‑switch tratava como desligado. Criadas
+  em `20260702175500_seed_system_config_faltantes.sql`. **Atenção:** a PK de `system_config`
+  é composta **`(company_id, chave)`** → o `ON CONFLICT` precisa citar as duas colunas.
+  → corrige a nota anterior de que "`bot_ativo` continua não existindo". **O bot foi ligado
+  e está operando.**
+- **Usuários de sistema faltantes.** Não existiam `00000000‑…‑001` (Bot) nem `…‑002`
+  (Sistema). A triagem‑bot grava as mensagens do robô com `sent_by_user_id = 001`, e
+  `mensagens.sent_by_user_id` tem **FK** para `users(id)`: sem o usuário‑bot, **todo envio
+  do bot falhava na persistência** (FK 23503) → o estágio da triagem não avançava → o cron
+  reenviava as boas‑vindas a cada 10 s (**loop**), sem gravar nada no sistema. Criados em
+  `20260702182000_seed_usuarios_sistema.sql` (`is_system_user = true` exige `email NULL`,
+  por CHECK).
+
+**Correções de fluxo (Edge Functions, mesmo dia):**
+- **Encerrar atendimento em triagem sem departamento.** A CHECK
+  `atendimentos_dept_required_after_triagem_chk` não permitia sair de `em_triagem` sem
+  departamento; encerrar um atendimento ainda em triagem estourava 400. Passou a permitir
+  também `status = 'encerrado'` (`20260702174500_fix_encerrar_triagem_sem_departamento.sql`).
+- **Encerramento manual é definitivo.** No `webhook‑zapi‑receive`, uma mensagem nova do
+  cliente após um encerramento **manual** agora inicia **triagem nova** (antes reabria o
+  atendimento se ele tivesse conversa "externa" antiga). A reabertura automática no caminho
+  inbound só vale para encerramento **automático por inatividade**. O caminho `fromMe`
+  seguiu igual.
+- **Triagem por clique na lista.** A resposta da lista interativa (uazapi) chega com
+  `content` vazio e o departamento em `media_metadata.selected_id` (`dep_<uuid>`). A
+  `triagem‑bot` passou a **ler o `media_metadata`** e resolver o departamento pelo clique
+  (fonte confiável), preenchendo o `content` vazio com o nome do departamento escolhido.
+
+---
+
 ## Manchete: o banco está praticamente vazio (é um projeto novo)
 
 A conclusão mais importante, e que **muda o plano de "limpeza"**:

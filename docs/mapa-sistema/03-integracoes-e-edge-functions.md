@@ -52,6 +52,12 @@ função mais importante do backend. Cuida de três situações:
 1. **Mensagem nova do cliente** — encontra/cria o cliente, encontra/cria o atendimento
    (ou **reabre** um recém‑encerrado, ou começa um novo em `em_triagem`), grava a
    mensagem e, em segundo plano, **baixa a mídia** para o cofre `mensagens-midia`.
+   > **Reabertura x encerramento manual (02/07/2026).** A reabertura automática só vale
+   > quando o atendimento foi **encerrado automaticamente por inatividade**. Se o atendente
+   > **encerrou manualmente** (clicou em "Encerrar"), uma mensagem nova do cliente inicia
+   > uma **triagem nova** — não reabre. (Antes, um encerramento manual era reaberto caso o
+   > atendimento tivesse conversa "externa" antiga, o que confundia o operador.) O caminho
+   > `fromMe` mantém a reabertura por conversa externa.
 2. **Confirmação de status** — quando uma mensagem que enviamos foi entregue/lida/falhou,
    atualiza o status daquela mensagem.
 3. **Mensagem enviada por fora** (`fromMe`) — quando alguém respondeu o cliente pelo
@@ -71,10 +77,16 @@ Roda sozinho (a cada ~10s, se o bot estiver ligado). Desde 02/07/2026 a triagem 
    (`triagem_boas_vindas`) e o **menu de departamentos** como lista numerada/interativa
    ("Ver setores", template `triagem_pergunta_departamento`), montada com os departamentos
    ativos cadastrados.
-2. Cliente **responde o número** (ou o nome, ou parte dele) → o bot **confirma**
+2. Cliente **escolhe o departamento** — clicando numa opção da **lista interativa**
+   ("Ver setores") **ou** respondendo o **número/nome** (ou parte dele) → o bot **confirma**
    (`triagem_confirmacao`: *"Certo! Te encaminhei para X…"*) e o atendimento **cai na
    Pendentes daquele departamento**, para um atendente pegar (o mesmo fluxo de Pendentes
    que já existia).
+   > **Clique na lista (02/07/2026).** Quando o cliente **clica** numa opção, a uazapi manda
+   > a resposta com o **texto vazio** e o id da opção em `media_metadata.selected_id`
+   > (`dep_<uuid>`). O bot identifica o departamento por esse id (**fonte confiável**), antes
+   > do texto, e **preenche** o texto vazio da mensagem com o nome do departamento escolhido,
+   > para o Inbox exibir a escolha em vez de uma mensagem em branco.
 3. Resposta **inválida** (número que não existe, texto solto) → o bot repete o menu de
    forma curta e educada (`triagem_erro_formato`).
 
@@ -96,11 +108,13 @@ nunca é processada duas vezes) e uma **trava anti-loop** (para em 10 tentativas
 
 **Leitura do lote inteiro (não só a primeira mensagem).** No estágio "aguardando
 departamento", o bot pega **todas as mensagens recebidas desde a última processada** (até
-50, em ordem cronológica) e procura a **primeira que resolve um departamento** (número,
-nome exato ou parcial). Assim, se o cliente escreve "oi", depois "queria saber de X",
-depois "2", o bot acha o "2" no meio. Mensagem **atrasada** entra no lote seguinte (não se
-perde); mensagem **só de mídia** (áudio/foto) é ignorada **sem gastar tentativa**; e nada
-válido no lote conta como **uma** tentativa e repete o menu. Depois de encaminhar (o
+50, em ordem cronológica) e procura a **primeira que resolve um departamento** — por
+**clique** na lista (id `dep_<uuid>`) ou por **texto** (número, nome exato ou parcial).
+Assim, se o cliente escreve "oi", depois "queria saber de X", depois "2", o bot acha o "2"
+no meio. Mensagem **atrasada** entra no lote seguinte (não se perde); mensagem **só de
+mídia** (áudio/foto) é ignorada **sem gastar tentativa**; e nada válido no lote — inclusive
+um **clique que não casou** com departamento ativo — conta como **uma** tentativa e repete
+o menu (`triagem_erro_formato`). Depois de encaminhar (o
 atendimento sai de `em_triagem`), o bot **não toca mais** na conversa — mensagens
 seguintes viram conversa normal para o atendente, sem conflito.
 
