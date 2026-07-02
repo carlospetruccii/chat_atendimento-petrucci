@@ -42,3 +42,6 @@ supabase/.branches
 
 # Lockfile alternativo (o projeto usa bun.lock)
 package-lock.json
+
+# Claude Code preview/tooling
+.claude/

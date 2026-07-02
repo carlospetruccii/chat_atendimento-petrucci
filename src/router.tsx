@@ -1,4 +1,5 @@
 import { createRouter, useRouter } from "@tanstack/react-router";
+import { QueryClient } from "@tanstack/react-query";
 import { routeTree } from "./routeTree.gen";
 
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
@@ -55,9 +56,13 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
 }
 
 export const getRouter = () => {
+  // Um QueryClient por instância de router (1 por request no SSR, 1 no cliente).
+  // Precisa ir no context: o __root faz <QueryClientProvider client={context.queryClient}>.
+  // Sem isso, o client chega undefined e o React Query quebra em client.mount().
+  const queryClient = new QueryClient();
   const router = createRouter({
     routeTree,
-    context: {},
+    context: { queryClient },
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
     defaultErrorComponent: DefaultErrorComponent,
