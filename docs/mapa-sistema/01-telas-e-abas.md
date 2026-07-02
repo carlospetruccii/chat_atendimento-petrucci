@@ -15,8 +15,7 @@ ela mostra e o que ela grava quando você salva.
 - [Pendentes](#pendentes)
 - [Supervisão](#supervisão)
 - [Dashboard](#dashboard)
-- [Clientes](#clientes)
-- [Agenda (contatos do Google)](#agenda-contatos-do-google)
+- [Contatos](#contatos)
 - [Configurações](#configurações) — 7 abas
 - [Telas internas da Almore (workspaces)](#telas-internas-da-almore-workspaces)
 
@@ -34,8 +33,7 @@ tiver permissão:
 | **Dashboard** | `/dashboard` | Superadmin ou quem tem `view_all_departments` |
 | **Inbox** | `/inbox` | Todos |
 | **Pendentes** | `/pendentes` | Todos (mostra um **selo com a contagem** de pendentes, atualizado a cada 30s) |
-| **Clientes** | `/clientes` | Superadmin, ou `view_all_departments`, ou se a config `clientes_visivel_para_todos` estiver ligada |
-| **Agenda** | `/agenda` | Todos (lista os contatos da agenda do Google) |
+| **Contatos** | `/contatos` | Todos (lista os contatos do Google) |
 | **Supervisão** | `/supervisao` | Superadmin ou `view_all_departments` |
 | **Configurações** | `/configuracoes` | Apenas superadmin |
 
@@ -213,47 +211,32 @@ Dashboard não grava nada.
 
 ---
 
-## Clientes
+## Contatos
 
-**Arquivos:** `src/routes/_app.clientes.tsx`, `src/components/ClientesTab.tsx`, `src/components/clientes/*`, `src/lib/clientes-queries.ts`
-
-Cadastro de clientes (as pessoas que falam com a empresa pelo WhatsApp). Tem busca por
-nome/telefone e paginação de 50 em 50. A tabela mostra nome, telefone (formatado),
-"cliente desde", último atendimento e total de atendimentos.
-
-**Botões** (só aparecem para quem pode gerenciar):
-
-| Botão | O que faz |
-|-------|-----------|
-| **Adicionar cliente** | Abre um formulário (nome + telefone). Salva via função `cadastrar-cliente` (modo "single"). Se o telefone já existia, avisa e **atualiza** o cadastro. |
-| **Importar CSV/TXT** | Abre um assistente: você sobe um arquivo (`nome, telefone` por linha), vê uma **prévia**, confirma e recebe um **relatório** (quantos criados, atualizados e a lista de erros por linha). Usa `cadastrar-cliente` (modo "csv_batch", até 5000 linhas). |
-| **Editar** (lápis, por linha) | Altera nome/telefone. Atualiza direto a tabela `clients`. Bloqueia se o telefone já pertencer a outro cliente. |
-
----
-
-## Agenda (contatos do Google)
-
-**Arquivos:** `src/routes/_app.agenda.tsx`, `src/lib/agenda-queries.ts`,
+**Arquivos:** `src/routes/_app.contatos.tsx`, `src/lib/contatos-queries.ts`,
 `src/components/inbox/IniciarAtendimentoDialog.tsx` (reaproveitado)
 
-A **agenda** lista os contatos sincronizados da **conta Google da Almore** (tabela
-`agenda_contatos`). Serve para **iniciar uma conversa nova** a partir de um contato salvo.
+A tela **Contatos** lista os contatos sincronizados da **conta Google da Almore** (tabela
+`contatos`). Serve para **iniciar uma conversa nova** a partir de um contato salvo.
+Substituiu a antiga tela "Clientes" (que fazia um cadastro local no banco) — a tabela
+`clients` e os helpers `clientes-queries.ts` continuam existindo (são o núcleo do
+sistema), só a **tela** de cadastro foi aposentada.
 
 - **Busca** por nome ou número (com 300ms de debounce) e **paginação** de 50 em 50.
 - Cada contato mostra nome, número (formatado) e um botão **"Conversar"**. Ao clicar, o
   sistema **garante que existe um cliente** com aquele número (cria/atualiza via
-  `cadastrar-cliente`, usando o nome da agenda) e abre o diálogo **"Iniciar atendimento"**
+  `cadastrar-cliente`, usando o nome do contato) e abre o diálogo **"Iniciar atendimento"**
   já com o contato escolhido — daí segue o mesmo fluxo de `iniciar-atendimento`.
 - Contatos **sem número de WhatsApp** aparecem, mas o botão "Conversar" fica desabilitado.
 - **"Atualizar agora"** (quando conectado) força uma sincronização na hora.
-- **Estados amigáveis:** "agenda não conectada" (aponta para Configurações › Agenda
-  Google), "sem contatos ainda" (normal quando a agenda do Google está vazia) e "nenhum
-  resultado" para a busca.
+- **Estados amigáveis:** "conta Google não conectada" (aponta para Configurações ›
+  Contatos Google), "sem contatos ainda" (normal quando a lista do Google está vazia) e
+  "nenhum resultado" para a busca.
 
-> **Precedência de nome.** O nome salvo na agenda do Google tem **prioridade** sobre o
-> nome público do WhatsApp. No Inbox, se o número da conversa casa com um contato da
-> agenda, aparece o nome salvo; se não casa, segue o número (ou o nome público do
-> WhatsApp, como antes). Ver [Integrações](03-integracoes-e-edge-functions.md).
+> **Precedência de nome.** O nome salvo no contato do Google tem **prioridade** sobre o
+> nome público do WhatsApp. No Inbox, se o número da conversa casa com um contato,
+> aparece o nome salvo; se não casa, segue o número (ou o nome público do WhatsApp, como
+> antes). Ver [Integrações](03-integracoes-e-edge-functions.md).
 
 ---
 
@@ -262,7 +245,7 @@ A **agenda** lista os contatos sincronizados da **conta Google da Almore** (tabe
 **Arquivos:** `src/routes/_app.configuracoes.tsx` + um componente por aba + `src/lib/configuracoes-queries.ts`
 
 Central de ajustes do sistema. Só superadmin acessa. São **7 abas**, nesta ordem:
-**Departamentos, Tempos, Horário, Templates, Colaboradores, Operação, Agenda Google.**
+**Departamentos, Tempos, Horário, Templates, Colaboradores, Operação, Contatos Google.**
 
 ### Aba 1 — Departamentos
 Gerencia os setores de atendimento. Tabela: `departments`.
@@ -311,13 +294,12 @@ O **painel de controle do robô** (só superadmin). Tudo aqui é guardado em `sy
 | **Estado do bot** (liga/desliga) | O **kill‑switch** geral. Desligado, param: triagem automática, mensagens de fora de horário, encerramento automático e reenvios. **Continuam:** receber mensagens (webhook) e o envio manual pelo atendente. Ao religar, o sistema **ignora o acúmulo antigo** (carimba `bot_ativado_em`). |
 | **Reativação programada** (calendário) | Agenda uma data para religar o bot sozinho. Pode cancelar. |
 | **Pendentes abertos a todos** (modo emergência) | Enquanto a triagem está desligada, deixa todos os departamentos verem os pendentes uns dos outros. |
-| **Aba Clientes para colaboradores** | Mostra/esconde a tela de Clientes para quem não é supervisor. |
 | **Reiniciar triagem ao virar o dia** | Se o cliente volta noutro dia, encerra a triagem antiga e começa uma nova. |
 | **Lembrete na triagem sem resposta** + **tempo (min)** | Liga o lembrete automático quando o cliente para de responder na triagem, e define após quantos minutos. |
 
-### Aba 7 — Agenda Google
-Conecta a agenda de **contatos do Google** (People API). **Arquivos:**
-`src/components/GoogleAgendaTab.tsx`, `src/lib/agenda-queries.ts`, função
+### Aba 7 — Contatos Google
+Conecta os **contatos do Google** (People API). **Arquivos:**
+`src/components/GoogleContatosTab.tsx`, `src/lib/contatos-queries.ts`, função
 `google-contacts`. Tudo passa pela Edge Function — **nenhum token do Google fica no
 navegador**.
 
@@ -329,7 +311,7 @@ navegador**.
 | **Status** | Mostra o e‑mail conectado, a contagem de contatos e a data/situação da última sincronização. |
 
 Estados: se os **secrets** `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` não estiverem no
-servidor, a aba mostra "**integração ainda não configurada**"; conectado e com a agenda
+servidor, a aba mostra "**integração ainda não configurada**"; conectado e com a lista
 do Google vazia, mostra "**sem contatos ainda**" (é normal). Depois de conectado, a
 sincronização é **contínua** (cron a cada 15 min) — contato novo/editado no Google
 aparece sozinho.

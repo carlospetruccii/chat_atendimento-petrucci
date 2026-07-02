@@ -50,11 +50,11 @@ o mapa completo em linguagem simples.
 | **config_audit_log** | Registro de **quem mudou o quê** nas configurações. Append‑only. |
 | **cleanup_log** | Registro de uma **limpeza de mensagens** já feita (guarda `zapi_message_id` e `zapi_response`). Ligada a uma função pontual — ver [Riscos](05-dados-de-exemplo-e-riscos.md). |
 
-### Agenda do Google (People API)
+### Contatos do Google (People API)
 | Tabela | Para que serve |
 |--------|----------------|
 | **google_integration** | A **conexão com a conta Google** (uma linha por empresa). Guarda os **tokens** (`access_token`, `refresh_token`, `token_expiry`), o `sync_token` da People API (sincronização incremental), o e‑mail conectado e o estado da última sincronização. **RLS sem policy para o papel autenticado → só o backend (service_role) lê** — o frontend nunca vê os tokens. |
-| **agenda_contatos** | Os **contatos sincronizados** da agenda do Google. Colunas: `google_resource_name` (id estável do contato no Google, chave do upsert), `nome`, `numero_whatsapp` (E.164 normalizado, pode ser nulo), `numero_raw`, `emails`. Leitura liberada como `clients`; **escrita só pelo backend** (o sync roda na Edge Function). Índice por número para o casamento no Inbox. |
+| **contatos** | Os **contatos sincronizados** do Google. Colunas: `google_resource_name` (id estável do contato no Google, chave do upsert), `nome`, `numero_whatsapp` (E.164 normalizado, pode ser nulo), `numero_raw`, `emails`. Leitura liberada como `clients`; **escrita só pelo backend** (o sync roda na Edge Function). Índice por número para o casamento no Inbox. |
 
 E o **cofre de mídia**: um "bucket" de Storage chamado **`mensagens-midia`** (privado)
 onde ficam os arquivos de áudio, imagem, vídeo e documento. Não é uma tabela — os
@@ -107,7 +107,7 @@ Isto é o que decide o que é "multi‑empresa":
 `clients`, `atendimentos`, `mensagens`, `timeline_events`,
 `system_config`, `templates_mensagem`, `business_hours`, `holidays`,
 `notificacoes_admin`, `config_audit_log`, `cleanup_log`,
-`google_integration`, `agenda_contatos`.
+`google_integration`, `contatos`.
 
 **NÃO têm `company_id`** (são globais):
 - **users** e **user_permissions** — o usuário é global; a ligação com a empresa é feita
