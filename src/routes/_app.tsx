@@ -8,6 +8,7 @@ import {
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
+import { NotificationsManager } from "@/components/NotificationsManager";
 import { useAuthSession } from "@/hooks/useAuthSession";
 
 export interface AppRouteStaticData {
@@ -56,6 +57,7 @@ function AppLayoutRoute() {
 
   return (
     <div className="flex h-screen w-full bg-background">
+      <NotificationsManager />
       <AppSidebar />
       <main
         key={pathname}
