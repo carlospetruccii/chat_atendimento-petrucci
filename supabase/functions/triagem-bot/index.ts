@@ -40,7 +40,12 @@ interface Atendimento {
 }
 
 interface Departamento { id: string; nome: string; }
-interface InboundMsg { id: string; content: string | null; created_at: string; }
+interface InboundMsg {
+  id: string;
+  content: string | null;
+  created_at: string;
+  media_metadata?: Record<string, unknown> | null;
+}
 
 interface Config {
   delaySeg: number;
@@ -77,6 +82,29 @@ function identificarPorTexto<T extends { id: string; nome: string }>(texto: stri
     if (inc.length === 1) return inc[0].id;
   }
   return null;
+}
+
+// Resolve o departamento a partir do CLIQUE numa opção da lista interativa.
+// A uazapi devolve o id da opção em media_metadata.selected_id no formato
+// "dep_<uuid>" (ver opcoesDeDepartamentos). É a fonte mais confiável: o texto
+// (content) da resposta de lista costuma chegar vazio. Só resolve se o
+// departamento ainda estiver ativo (presente em `deps`).
+function deptDoSelectedId(
+  meta: Record<string, unknown> | null | undefined,
+  deps: Departamento[],
+): string | null {
+  if (!ehListReply(meta)) return null;
+  const sel = typeof meta!.selected_id === "string" ? (meta!.selected_id as string) : null;
+  if (!sel || !sel.startsWith("dep_")) return null;
+  const deptId = sel.slice(4);
+  return deps.some((d) => d.id === deptId) ? deptId : null;
+}
+
+// Indica se a inbound é resposta de uma lista interativa (clique numa opção),
+// mesmo que não resolva para um departamento ativo. Serve para contá-la como
+// tentativa (dispara "não entendi") em vez de tratá-la como pura mídia.
+function ehListReply(meta: Record<string, unknown> | null | undefined): boolean {
+  return !!meta && (meta as { kind?: unknown }).kind === "list_reply";
 }
 
 async function carregarConfig(): Promise<Config> {
@@ -121,7 +149,7 @@ async function carregarTemplates(chaves: string[]): Promise<Map<string, string>>
 
 async function ultimaMsgInbound(atendimentoId: string): Promise<InboundMsg | null> {
   const supabase = getSupabaseAdmin();
-  const { data } = await supabase.from("mensagens").select("id, content, created_at")
+  const { data } = await supabase.from("mensagens").select("id, content, created_at, media_metadata")
     .eq("atendimento_id", atendimentoId).eq("direction", "inbound")
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   return data as InboundMsg | null;
@@ -145,7 +173,7 @@ async function inboundsDesdeUltimaProcessada(
       .select("created_at").eq("id", lastProcessedId).maybeSingle();
     cutoff = (ref as { created_at: string } | null)?.created_at ?? null;
   }
-  let q = supabase.from("mensagens").select("id, content, created_at")
+  let q = supabase.from("mensagens").select("id, content, created_at, media_metadata")
     .eq("atendimento_id", atendimentoId).eq("direction", "inbound");
   if (cutoff) q = q.gt("created_at", cutoff);
   const { data, error } = await q.order("created_at", { ascending: true }).limit(50);
@@ -448,26 +476,44 @@ async function processarAguardandoDepartamento(
   const lote = novas.length > 0 ? novas : [inbound];
   const ultimoIdLote = lote[lote.length - 1].id;
 
-  // Procura a primeira inbound de texto que resolve para um departamento.
+  // Procura a primeira inbound que resolve para um departamento. Prioridade:
+  // (1) clique numa opção da lista interativa (media_metadata.selected_id) —
+  //     fonte confiável, pois o content textual pode chegar vazio;
+  // (2) texto livre (número / nome exato / prefixo / substring).
   let deptId: string | null = null;
+  let msgResolvidaId: string | null = null;
+  let resolvidoPorClique = false;
   let textosVistos = 0;
   for (const m of lote) {
-    if (!m.content || !m.content.trim()) continue;
+    const viaClique = deptDoSelectedId(m.media_metadata, deps);
+    if (viaClique) { deptId = viaClique; msgResolvidaId = m.id; resolvidoPorClique = true; break; }
+    const temTexto = !!(m.content && m.content.trim());
+    // Resposta de lista que não resolveu conta como tentativa (dispara "não
+    // entendi"); pura mídia (sticker/áudio etc.) é ignorada sem consumir tentativa.
+    if (!temTexto && !ehListReply(m.media_metadata)) continue;
     textosVistos++;
-    const r = identificarPorTexto(m.content, deps);
-    if (r) { deptId = r; break; }
+    if (temTexto) {
+      const r = identificarPorTexto(m.content ?? "", deps);
+      if (r) { deptId = r; msgResolvidaId = m.id; break; }
+    }
   }
 
   if (deptId) {
+    const nome = await nomeDept(deptId);
+    // A resposta de lista chega com content vazio; grava o nome do departamento
+    // escolhido para a inbox exibir a opção em vez de uma mensagem vazia.
+    if (resolvidoPorClique && msgResolvidaId) {
+      await supabase.from("mensagens").update({ content: nome }).eq("id", msgResolvidaId);
+    }
     const telefone = await getTelefone(at.client_id);
-    if (telefone) await enviarConfirmacao(at, telefone, templates, await nomeDept(deptId));
+    if (telefone) await enviarConfirmacao(at, telefone, templates, nome);
     await finalizarTriagem(at, deptId, ultimoIdLote);
     log({ funcao: FUNCAO, evento: "departamento_identificado", status: "ok",
-      atendimento_id: at.id, duracao_ms: cron(), extra: { dept_id: deptId } });
+      atendimento_id: at.id, duracao_ms: cron(), extra: { dept_id: deptId, via: resolvidoPorClique ? "clique" : "texto" } });
     return;
   }
 
-  // Sem texto algum no lote → não consome tentativa, só marca como processado.
+  // Sem texto nem clique no lote → não consome tentativa, só marca como processado.
   if (textosVistos === 0) {
     await marcarInboundProcessada(at.id, ultimoIdLote);
     log({ funcao: FUNCAO, evento: "departamento_apenas_midia", status: "ok",
