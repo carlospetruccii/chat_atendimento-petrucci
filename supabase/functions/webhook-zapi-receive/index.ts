@@ -353,9 +353,14 @@ async function temAtividadeExterna(
 // merece reabertura automática: ou foi encerrado por inatividade, ou tem
 // conversa externa registrada (atendente respondeu pelo WhatsApp pessoal).
 // Retorna { id, current_department_id, assigned_to, close_reason } ou null.
+//
+// opts.apenasInatividade: quando true, só reabre encerramentos automáticos por
+// inatividade (ignora a heurística de conversa externa). Usado no caminho
+// inbound do cliente, onde um encerramento manual deve cair em triagem nova.
 async function buscarEncerradoReabrivel(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   clientId: string,
+  opts?: { apenasInatividade?: boolean },
 ): Promise<
   {
     id: string;
@@ -384,6 +389,9 @@ async function buscarEncerradoReabrivel(
     close_reason: string | null;
   }>) {
     if (c.close_reason === "automatico_inatividade") return c;
+    // Inbound: encerramento manual (ou qualquer não-inatividade) é definitivo →
+    // cai em triagem nova. A heurística de conversa externa só vale no fromMe.
+    if (opts?.apenasInatividade) continue;
     if (await temAtividadeExterna(supabase, c.id)) return c;
   }
   return null;
@@ -1245,7 +1253,12 @@ Deno.serve(async (req: Request) => {
     // ou se foi encerrado por inatividade. Evita que um cliente sendo
     // atendido pelo WhatsApp pessoal volte para a triagem do bot.
     if (!atend) {
-      const enc = await buscarEncerradoReabrivel(supabase, cliente.id);
+      // Inbound do cliente: encerramento manual é definitivo. Só reabre
+      // automaticamente encerramentos por inatividade; qualquer outra coisa
+      // (inclusive close manual com conversa externa antiga) inicia triagem nova.
+      const enc = await buscarEncerradoReabrivel(supabase, cliente.id, {
+        apenasInatividade: true,
+      });
       if (enc) {
         const reaberto = await reabrirAtendimentoEncerrado(
           supabase,
