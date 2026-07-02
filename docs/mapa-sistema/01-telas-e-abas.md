@@ -37,8 +37,9 @@ tiver permissão:
 | **Supervisão** | `/supervisao` | Superadmin ou `view_all_departments` |
 | **Configurações** | `/configuracoes` | Apenas superadmin |
 
-Na barra lateral também há: o **botão de tema** (alterna claro/escuro, lembra a escolha
-no navegador) e o **avatar do usuário** (mostra as iniciais do nome).
+Na barra lateral também há o **avatar do usuário** (mostra as iniciais do nome). O
+sistema usa **somente o tema claro** — não há botão para alternar para o tema escuro
+(o CSS do tema escuro continua no código, só não há mais UI para ativá-lo).
 
 A **barra de topo** (TopBar) mostra o título da página, um sininho de notificação (hoje
 é **apenas visual, sem função**) e o avatar. **Não há botão de logout nem troca de

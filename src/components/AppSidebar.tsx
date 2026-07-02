@@ -8,8 +8,6 @@ import {
   Settings,
   BookUser,
   Smartphone,
-  Moon,
-  Sun,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -82,7 +80,7 @@ function initials(name: string): string {
 export function AppSidebar() {
   const { user, loading } = useCurrentUser();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { theme, toggleTheme } = useTheme();
+  useTheme();
   const navigate = useNavigate();
 
   async function handleSair() {
@@ -148,26 +146,6 @@ export function AppSidebar() {
         </nav>
 
         <div className="flex flex-col items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                aria-label={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
-              >
-                {theme === "dark" ? (
-                  <Sun className="h-5 w-5" strokeWidth={1.75} />
-                ) : (
-                  <Moon className="h-5 w-5" strokeWidth={1.75} />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {theme === "dark" ? "Tema claro" : "Tema escuro"}
-            </TooltipContent>
-          </Tooltip>
-
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
