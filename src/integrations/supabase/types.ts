@@ -14,99 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      agenda_contatos: {
-        Row: {
-          company_id: string
-          created_at: string
-          emails: Json
-          etag: string | null
-          google_resource_name: string
-          id: string
-          nome: string | null
-          numero_raw: string | null
-          numero_whatsapp: string | null
-          updated_at: string
-        }
-        Insert: {
-          company_id?: string
-          created_at?: string
-          emails?: Json
-          etag?: string | null
-          google_resource_name: string
-          id?: string
-          nome?: string | null
-          numero_raw?: string | null
-          numero_whatsapp?: string | null
-          updated_at?: string
-        }
-        Update: {
-          company_id?: string
-          created_at?: string
-          emails?: Json
-          etag?: string | null
-          google_resource_name?: string
-          id?: string
-          nome?: string | null
-          numero_raw?: string | null
-          numero_whatsapp?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      google_integration: {
-        Row: {
-          access_token: string | null
-          company_id: string
-          connected: boolean
-          connected_email: string | null
-          contacts_count: number
-          created_at: string
-          id: string
-          last_sync_at: string | null
-          last_sync_error: string | null
-          last_sync_status: string | null
-          refresh_token: string | null
-          scope: string | null
-          sync_token: string | null
-          token_expiry: string | null
-          updated_at: string
-        }
-        Insert: {
-          access_token?: string | null
-          company_id?: string
-          connected?: boolean
-          connected_email?: string | null
-          contacts_count?: number
-          created_at?: string
-          id?: string
-          last_sync_at?: string | null
-          last_sync_error?: string | null
-          last_sync_status?: string | null
-          refresh_token?: string | null
-          scope?: string | null
-          sync_token?: string | null
-          token_expiry?: string | null
-          updated_at?: string
-        }
-        Update: {
-          access_token?: string | null
-          company_id?: string
-          connected?: boolean
-          connected_email?: string | null
-          contacts_count?: number
-          created_at?: string
-          id?: string
-          last_sync_at?: string | null
-          last_sync_error?: string | null
-          last_sync_status?: string | null
-          refresh_token?: string | null
-          scope?: string | null
-          sync_token?: string | null
-          token_expiry?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       atendimentos: {
         Row: {
           assigned_at: string | null
@@ -1169,7 +1076,6 @@ export type Database = {
           last_message_at: string | null
           nome_cliente: string | null
           numero_whatsapp: string | null
-          subject_nome: string | null
           tempo_aguardando_minutos: number | null
           transferred_count: number | null
         }
