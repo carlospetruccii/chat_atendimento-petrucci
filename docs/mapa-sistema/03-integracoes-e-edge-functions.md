@@ -155,6 +155,24 @@ Cria/atualiza clientes — um por vez ("single") ou em lote por planilha ("csv_b
 Cria um novo atendente: gera o acesso no Supabase Auth **e** a linha em `users`. Usada
 pela aba **Colaboradores**. Exige ser superadmin ou ter `manage_users`.
 
+#### 9b. `google-contacts` — agenda do Google (People API)
+Backend da integração com a **agenda de contatos do Google** (feita em 02/07/2026).
+Compartilha o helper `_shared/google-people.ts`. Ações (`POST { action }`):
+- **`status`** — devolve se está configurado (secrets presentes), conectado, e‑mail,
+  contagem de contatos e situação da última sincronização (o frontend nunca vê os tokens).
+- **`auth_url`** — monta a URL de consentimento do Google (escopo `contacts.readonly`,
+  `access_type=offline` para receber o refresh token).
+- **`sync`** — sincroniza a agenda: **completa** na 1ª vez, **incremental** depois (via
+  `syncToken`); se o `syncToken` expira (410) refaz do zero. Faz upsert em
+  `agenda_contatos` (e apaga os removidos). É **no‑op** se não houver conta conectada.
+- **`disconnect`** — revoga o acesso e limpa os tokens.
+- **Callback OAuth** (`GET ?code`) — o Google redireciona o navegador para cá; a função
+  troca o `code` por tokens, guarda em `google_integration`, roda o 1º sync e volta ao app.
+
+`verify_jwt = false` (o callback é um GET do navegador, sem JWT). Os secrets
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` ficam só no servidor. Ver a tela
+[Agenda / aba Agenda Google](01-telas-e-abas.md).
+
 ### Tarefas automáticas (crons)
 
 #### 10. `cron-bot-reactivation`
@@ -188,6 +206,7 @@ Elas são agendadas pelo próprio Postgres (pg_cron). Desde 02/07/2026 os jobs e
 | `cron-notificacao-admin` | a cada **5 minutos** | Sim |
 | `cron-encerramento-automatico` | a cada **30 minutos** | Sim |
 | `cron-bot-reactivation` | **1x/dia** (03:00 UTC = 00:00 BRT) | — (é justamente quem religa) |
+| `google-agenda-sync` → `google-contacts` (`sync`) | a cada **15 minutos** | Não (independe do bot; no‑op se a conta Google não estiver conectada) — migration `20260702120500_google_agenda_cron.sql` |
 
 > "Depende do bot ligado" = respeita o **kill‑switch** (`bot_ativo`). Com o bot desligado
 > pela aba **Operação**, essas automações pausam; só o **recebimento** (webhook) e o
@@ -210,6 +229,7 @@ Configurados no Supabase (nunca no código do frontend):
 | `ZAPI_TOKEN` | Autentica na Z‑API. |
 | `ZAPI_CLIENT_TOKEN` | Valida que quem chama o webhook é mesmo a Z‑API. |
 | `CLEANUP_CONFIRM_TOKEN` | Senha extra para rodar a função de limpeza pontual. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Credenciais OAuth da agenda do Google (People API). Sem elas, a aba **Agenda Google** mostra "não configurado". |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Conexão com o banco (injetados automaticamente). |
 
 > Note que as credenciais do WhatsApp existem **em dois lugares**: nesses segredos
