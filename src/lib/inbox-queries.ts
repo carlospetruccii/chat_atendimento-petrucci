@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { fetchAgendaNamesByNumbers } from "@/lib/agenda-queries";
+import { fetchContatoNamesByNumbers } from "@/lib/contatos-queries";
 
 export type AtendimentoStatus =
   | "em_triagem"
@@ -123,11 +123,11 @@ export async function listInboxConversations(
     }
   }
 
-  // Precedência de nome: agenda do Google > nome público WhatsApp > número.
+  // Precedência de nome: contato do Google > nome público WhatsApp > número.
   const numeros = rows
     .map((r) => (r.client as { numero_whatsapp?: string } | null)?.numero_whatsapp)
     .filter((n): n is string => Boolean(n));
-  const agendaNames = await fetchAgendaNamesByNumbers(numeros);
+  const contatoNames = await fetchContatoNamesByNumbers(numeros);
 
   return rows.map((r) => {
     const client = r.client as { id: string; nome: string | null; numero_whatsapp: string };
@@ -152,7 +152,7 @@ export async function listInboxConversations(
       id: r.id,
       clientId: client.id,
       clientNome:
-        agendaNames.get(client.numero_whatsapp) ?? client.nome ?? client.numero_whatsapp,
+        contatoNames.get(client.numero_whatsapp) ?? client.nome ?? client.numero_whatsapp,
       clientNumero: client.numero_whatsapp,
       status: r.status as AtendimentoStatus,
       departmentId: r.current_department_id,

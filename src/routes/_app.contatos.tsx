@@ -13,9 +13,9 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   googleStatus,
   googleSync,
-  listAgendaContatos,
-  type AgendaContato,
-} from "@/lib/agenda-queries";
+  listContatos,
+  type Contato,
+} from "@/lib/contatos-queries";
 import {
   cadastrarClienteSingle,
   formatTelefoneBR,
@@ -23,9 +23,9 @@ import {
 } from "@/lib/clientes-queries";
 import { IniciarAtendimentoDialog } from "@/components/inbox/IniciarAtendimentoDialog";
 
-export const Route = createFileRoute("/_app/agenda")({
-  staticData: { title: "Agenda" },
-  component: AgendaPage,
+export const Route = createFileRoute("/_app/contatos")({
+  staticData: { title: "Contatos" },
+  component: ContatosPage,
 });
 
 const PAGE_SIZE = 50;
@@ -40,7 +40,7 @@ function initials(nome: string): string {
     .toUpperCase();
 }
 
-function AgendaPage() {
+function ContatosPage() {
   const qc = useQueryClient();
   const { user } = useCurrentUser();
   const canViewAll = !!user && (user.isSuperadmin || user.permissions.includes("view_all_departments"));
@@ -66,25 +66,25 @@ function AgendaPage() {
   const statusQ = useQuery({ queryKey: ["google-status"], queryFn: googleStatus });
 
   const listaQ = useQuery({
-    queryKey: ["agenda-contatos", debounced, page],
-    queryFn: () => listAgendaContatos({ search: debounced, page, pageSize: PAGE_SIZE }),
+    queryKey: ["contatos", debounced, page],
+    queryFn: () => listContatos({ search: debounced, page, pageSize: PAGE_SIZE }),
   });
 
   const syncM = useMutation({
     mutationFn: googleSync,
     onSuccess: (r) => {
       if (r.ok) {
-        toast.success(`Agenda atualizada · ${r.total ?? 0} contato(s).`);
-        qc.invalidateQueries({ queryKey: ["agenda-contatos"] });
+        toast.success(`Contatos atualizados · ${r.total ?? 0} contato(s).`);
+        qc.invalidateQueries({ queryKey: ["contatos"] });
         qc.invalidateQueries({ queryKey: ["google-status"] });
       } else {
         toast.error(r.detalhe ?? "Não foi possível atualizar. Conecte a conta em Configurações.");
       }
     },
-    onError: () => toast.error("Falha ao atualizar a agenda."),
+    onError: () => toast.error("Falha ao atualizar os contatos."),
   });
 
-  async function iniciarConversa(contato: AgendaContato) {
+  async function iniciarConversa(contato: Contato) {
     if (!contato.numero_whatsapp) {
       toast.error("Este contato não tem um número de WhatsApp válido.");
       return;
@@ -92,7 +92,7 @@ function AgendaPage() {
     setPreparandoId(contato.id);
     try {
       // Garante que existe um cliente com esse número (cria/atualiza) e usa o
-      // nome da agenda. Depois abre o diálogo já com o cliente escolhido.
+      // nome do contato. Depois abre o diálogo já com o cliente escolhido.
       const nome = contato.nome?.trim() || contato.numero_raw || contato.numero_whatsapp;
       const resp = await cadastrarClienteSingle(nome, contato.numero_whatsapp);
       setInitialClient({
@@ -112,7 +112,7 @@ function AgendaPage() {
   const total = listaQ.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const conectado = Boolean(statusQ.data?.connected);
-  const contatosNaAgenda = statusQ.data?.contacts_count ?? 0;
+  const contatosSincronizados = statusQ.data?.contacts_count ?? 0;
 
   return (
     <div className="mx-auto max-w-4xl p-6">
@@ -122,7 +122,7 @@ function AgendaPage() {
             <BookUser className="h-5 w-5 text-primary" strokeWidth={1.75} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-foreground">Agenda</h1>
+            <h1 className="text-lg font-semibold text-foreground">Contatos</h1>
             <p className="text-sm text-muted-foreground">
               Contatos da conta Google da Almore. Escolha um para iniciar uma conversa.
             </p>
@@ -157,11 +157,11 @@ function AgendaPage() {
       </div>
 
       {/* Não conectado */}
-      {!statusQ.isLoading && !conectado && contatosNaAgenda === 0 && total === 0 && (
+      {!statusQ.isLoading && !conectado && contatosSincronizados === 0 && total === 0 && (
         <div className="rounded-2xl border border-border bg-card p-8 text-center">
           <p className="text-sm text-muted-foreground">
-            A agenda do Google ainda não foi conectada. Vá em{" "}
-            <strong className="text-foreground">Configurações › Agenda Google</strong> e
+            A conta Google ainda não foi conectada. Vá em{" "}
+            <strong className="text-foreground">Configurações › Contatos Google</strong> e
             clique em “Conectar Google”.
           </p>
         </div>
@@ -171,7 +171,7 @@ function AgendaPage() {
       {!listaQ.isLoading && conectado && total === 0 && !debounced && (
         <div className="rounded-2xl border border-border bg-card p-8 text-center">
           <p className="text-sm text-muted-foreground">
-            Nenhum contato na agenda ainda. Se a agenda do Google está vazia, isto é
+            Nenhum contato ainda. Se a lista de contatos do Google está vazia, isto é
             normal — assim que você adicionar contatos lá, eles aparecem aqui sozinhos.
           </p>
         </div>

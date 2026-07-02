@@ -104,38 +104,6 @@ export function OperacaoTab() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const clientesFlagQ = useQuery({
-    queryKey: ["system_config", "clientes_visivel_para_todos"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("system_config")
-        .select("valor")
-        .eq("chave", "clientes_visivel_para_todos")
-        .maybeSingle();
-      if (error) throw error;
-      return data?.valor === "true";
-    },
-  });
-
-  const toggleClientesMut = useMutation({
-    mutationFn: async (ativo: boolean) => {
-      const { error } = await supabase
-        .from("system_config")
-        .update({ valor: ativo ? "true" : "false" })
-        .eq("chave", "clientes_visivel_para_todos");
-      if (error) throw error;
-    },
-    onSuccess: (_d, ativo) => {
-      qc.invalidateQueries({ queryKey: ["system_config", "clientes_visivel_para_todos"] });
-      toast.success(
-        ativo
-          ? "Colaboradores agora veem a aba Clientes."
-          : "Aba Clientes ocultada para colaboradores comuns.",
-      );
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const toggleReiniciaTriagemMut = useMutation({
     mutationFn: (ativo: boolean) => setTriagemReiniciaAoVirarDia(ativo),
     onSuccess: (_d, ativo) => {
@@ -291,28 +259,6 @@ export function OperacaoTab() {
                 togglePendentesMut.mutate(false);
               }
             }}
-            className="scale-125"
-          />
-        </div>
-      </div>
-
-      {/* Bloco 1.6 — Visibilidade da aba Clientes para colaboradores */}
-      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <h3 className="text-base font-semibold text-foreground">
-              Aba Clientes para colaboradores
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Quando ligado, todos os colaboradores veem a aba Clientes na barra lateral
-              (somente leitura: lista, busca e iniciar atendimento). Cadastro e importação
-              continuam restritos à administração.
-            </p>
-          </div>
-          <Switch
-            checked={clientesFlagQ.data === true}
-            disabled={toggleClientesMut.isPending || clientesFlagQ.isLoading}
-            onCheckedChange={(v) => toggleClientesMut.mutate(v)}
             className="scale-125"
           />
         </div>

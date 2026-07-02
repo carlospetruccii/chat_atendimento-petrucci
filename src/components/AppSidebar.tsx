@@ -6,7 +6,6 @@ import {
   Eye,
   BarChart,
   Settings,
-  Users,
   BookUser,
   Smartphone,
   Moon,
@@ -27,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type MenuGate = undefined | { superadminOnly: true } | { anyOf: string[] } | { clientesFlag: true };
+type MenuGate = undefined | { superadminOnly: true } | { anyOf: string[] };
 
 type MenuItem = {
   title: string;
@@ -46,8 +45,7 @@ const menuItems: MenuItem[] = [
   },
   { title: "Inbox", url: "/inbox", icon: MessageCircle },
   { title: "Pendentes", url: "/pendentes", icon: Clock, badgeKey: "pendentes" },
-  { title: "Clientes", url: "/clientes", icon: Users, gate: { clientesFlag: true } },
-  { title: "Agenda", url: "/agenda", icon: BookUser },
+  { title: "Contatos", url: "/contatos", icon: BookUser },
   { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
   {
     title: "Conexão do WhatsApp",
@@ -61,18 +59,12 @@ const menuItems: MenuItem[] = [
 function canSee(
   item: MenuItem,
   user: CurrentUserProfile | null,
-  clientesVisivel: boolean,
 ): boolean {
   if (!item.gate) return true;
   if (!user) return false;
   if ("superadminOnly" in item.gate) return user.isSuperadmin;
   if ("anyOf" in item.gate) {
     return user.isSuperadmin || item.gate.anyOf.some((f) => user.permissions.includes(f));
-  }
-  if ("clientesFlag" in item.gate) {
-    return (
-      user.isSuperadmin || user.permissions.includes("view_all_departments") || clientesVisivel
-    );
   }
   return false;
 }
@@ -98,22 +90,6 @@ export function AppSidebar() {
     navigate({ to: "/login" });
   }
 
-  const clientesFlagQ = useQuery({
-    queryKey: ["system_config", "clientes_visivel_para_todos"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("system_config")
-        .select("valor")
-        .eq("chave", "clientes_visivel_para_todos")
-        .maybeSingle();
-      if (error) throw error;
-      return data?.valor === "true";
-    },
-    initialData: true,
-    staleTime: 30_000,
-  });
-  const clientesVisivel = clientesFlagQ.data !== false;
-
   const pendentesCountQ = useQuery({
     queryKey: ["pendentes-count"],
     queryFn: async () => {
@@ -132,7 +108,7 @@ export function AppSidebar() {
   const showPlaceholders = loading && !user;
   const visible = showPlaceholders
     ? menuItems
-    : menuItems.filter((item) => canSee(item, user, clientesVisivel));
+    : menuItems.filter((item) => canSee(item, user));
 
   return (
     <TooltipProvider delayDuration={200}>

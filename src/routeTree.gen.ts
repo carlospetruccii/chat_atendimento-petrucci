@@ -19,10 +19,9 @@ import { Route as AppSupervisaoRouteImport } from './routes/_app.supervisao'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppContatosRouteImport } from './routes/_app.contatos'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
 import { Route as AppConexaoRouteImport } from './routes/_app.conexao'
-import { Route as AppClientesRouteImport } from './routes/_app.clientes'
-import { Route as AppAgendaRouteImport } from './routes/_app.agenda'
 
 const TrocarSenhaRoute = TrocarSenhaRouteImport.update({
   id: '/trocar-senha',
@@ -73,6 +72,11 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppContatosRoute = AppContatosRouteImport.update({
+  id: '/contatos',
+  path: '/contatos',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppConfiguracoesRoute = AppConfiguracoesRouteImport.update({
   id: '/configuracoes',
   path: '/configuracoes',
@@ -83,26 +87,15 @@ const AppConexaoRoute = AppConexaoRouteImport.update({
   path: '/conexao',
   getParentRoute: () => AppRoute,
 } as any)
-const AppClientesRoute = AppClientesRouteImport.update({
-  id: '/clientes',
-  path: '/clientes',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppAgendaRoute = AppAgendaRouteImport.update({
-  id: '/agenda',
-  path: '/agenda',
-  getParentRoute: () => AppRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
-  '/agenda': typeof AppAgendaRoute
-  '/clientes': typeof AppClientesRoute
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
+  '/contatos': typeof AppContatosRoute
   '/dashboard': typeof AppDashboardRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
@@ -113,10 +106,9 @@ export interface FileRoutesByTo {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
-  '/agenda': typeof AppAgendaRoute
-  '/clientes': typeof AppClientesRoute
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
+  '/contatos': typeof AppContatosRoute
   '/dashboard': typeof AppDashboardRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
@@ -130,10 +122,9 @@ export interface FileRoutesById {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
-  '/_app/agenda': typeof AppAgendaRoute
-  '/_app/clientes': typeof AppClientesRoute
   '/_app/conexao': typeof AppConexaoRoute
   '/_app/configuracoes': typeof AppConfiguracoesRoute
+  '/_app/contatos': typeof AppContatosRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/inbox': typeof AppInboxRoute
   '/_app/pendentes': typeof AppPendentesRoute
@@ -148,10 +139,9 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
-    | '/agenda'
-    | '/clientes'
     | '/conexao'
     | '/configuracoes'
+    | '/contatos'
     | '/dashboard'
     | '/inbox'
     | '/pendentes'
@@ -162,10 +152,9 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
-    | '/agenda'
-    | '/clientes'
     | '/conexao'
     | '/configuracoes'
+    | '/contatos'
     | '/dashboard'
     | '/inbox'
     | '/pendentes'
@@ -178,10 +167,9 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
-    | '/_app/agenda'
-    | '/_app/clientes'
     | '/_app/conexao'
     | '/_app/configuracoes'
+    | '/_app/contatos'
     | '/_app/dashboard'
     | '/_app/inbox'
     | '/_app/pendentes'
@@ -270,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/contatos': {
+      id: '/_app/contatos'
+      path: '/contatos'
+      fullPath: '/contatos'
+      preLoaderRoute: typeof AppContatosRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/configuracoes': {
       id: '/_app/configuracoes'
       path: '/configuracoes'
@@ -284,28 +279,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConexaoRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/clientes': {
-      id: '/_app/clientes'
-      path: '/clientes'
-      fullPath: '/clientes'
-      preLoaderRoute: typeof AppClientesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/agenda': {
-      id: '/_app/agenda'
-      path: '/agenda'
-      fullPath: '/agenda'
-      preLoaderRoute: typeof AppAgendaRouteImport
-      parentRoute: typeof AppRoute
-    }
   }
 }
 
 interface AppRouteChildren {
-  AppAgendaRoute: typeof AppAgendaRoute
-  AppClientesRoute: typeof AppClientesRoute
   AppConexaoRoute: typeof AppConexaoRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
+  AppContatosRoute: typeof AppContatosRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppInboxRoute: typeof AppInboxRoute
   AppPendentesRoute: typeof AppPendentesRoute
@@ -314,10 +294,9 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAgendaRoute: AppAgendaRoute,
-  AppClientesRoute: AppClientesRoute,
   AppConexaoRoute: AppConexaoRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,
+  AppContatosRoute: AppContatosRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppInboxRoute: AppInboxRoute,
   AppPendentesRoute: AppPendentesRoute,
@@ -337,3 +316,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

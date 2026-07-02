@@ -16,7 +16,7 @@ interface Props {
   onOpenChange: (o: boolean) => void;
   canChooseDept: boolean;
   onCreated: (atendimentoId: string) => void;
-  /** Cliente já escolhido (ex.: ao iniciar conversa a partir da Agenda). */
+  /** Cliente já escolhido (ex.: ao iniciar conversa a partir dos Contatos). */
   initialClient?: ClienteAutocompleteRow | null;
 }
 

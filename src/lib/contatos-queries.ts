@@ -61,10 +61,10 @@ export async function googleDisconnect(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Leitura da agenda (tabela agenda_contatos)
+// Leitura dos contatos (tabela contatos)
 // ---------------------------------------------------------------------------
 
-export interface AgendaContato {
+export interface Contato {
   id: string;
   nome: string | null;
   numero_whatsapp: string | null;
@@ -72,25 +72,25 @@ export interface AgendaContato {
   emails: string[];
 }
 
-export interface ListAgendaResult {
-  rows: AgendaContato[];
+export interface ListContatosResult {
+  rows: Contato[];
   total: number;
   page: number;
   pageSize: number;
 }
 
-export async function listAgendaContatos(params: {
+export async function listContatos(params: {
   search?: string;
   page?: number;
   pageSize?: number;
-}): Promise<ListAgendaResult> {
+}): Promise<ListContatosResult> {
   const page = Math.max(1, params.page ?? 1);
   const pageSize = params.pageSize ?? 50;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
   let query = supabase
-    .from("agenda_contatos")
+    .from("contatos")
     .select("id, nome, numero_whatsapp, numero_raw, emails", { count: "exact" })
     .order("nome", { ascending: true, nullsFirst: false });
 
@@ -105,7 +105,7 @@ export async function listAgendaContatos(params: {
   const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
-  const rows: AgendaContato[] = (data ?? []).map((r) => ({
+  const rows: Contato[] = (data ?? []).map((r) => ({
     id: r.id,
     nome: r.nome,
     numero_whatsapp: r.numero_whatsapp,
@@ -117,18 +117,18 @@ export async function listAgendaContatos(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Resolução de nome com precedência: agenda Google > nome público WhatsApp > número
+// Resolução de nome com precedência: contato Google > nome público WhatsApp > número
 // ---------------------------------------------------------------------------
 
 /**
  * Dado um conjunto de números (E.164, como em clients.numero_whatsapp), devolve
- * um mapa número → nome salvo na agenda do Google. Usado no Inbox para que o
- * nome da agenda tenha prioridade sobre o nome público do WhatsApp.
+ * um mapa número → nome salvo nos Contatos do Google. Usado no Inbox para que o
+ * nome do contato tenha prioridade sobre o nome público do WhatsApp.
  *
  * É aditivo e à prova de falha: se a consulta der erro, devolve um mapa vazio
  * (o Inbox segue mostrando o nome atual, sem quebrar).
  */
-export async function fetchAgendaNamesByNumbers(
+export async function fetchContatoNamesByNumbers(
   numeros: string[],
 ): Promise<Map<string, string>> {
   const mapa = new Map<string, string>();
@@ -136,7 +136,7 @@ export async function fetchAgendaNamesByNumbers(
   if (unicos.length === 0) return mapa;
   try {
     const { data, error } = await supabase
-      .from("agenda_contatos")
+      .from("contatos")
       .select("numero_whatsapp, nome")
       .in("numero_whatsapp", unicos)
       .not("nome", "is", null);
@@ -147,7 +147,7 @@ export async function fetchAgendaNamesByNumbers(
       if (num && nome && !mapa.has(num)) mapa.set(num, nome);
     }
   } catch {
-    // silencioso: nome da agenda é um "plus", nunca deve derrubar o Inbox.
+    // silencioso: nome do contato é um "plus", nunca deve derrubar o Inbox.
   }
   return mapa;
 }

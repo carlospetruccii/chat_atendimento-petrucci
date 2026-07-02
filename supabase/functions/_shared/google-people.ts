@@ -1,5 +1,5 @@
 // Cliente da Google People API — usado pela função google-contacts para
-// conectar a conta Google (OAuth) e sincronizar a agenda de contatos.
+// conectar a conta Google (OAuth) e sincronizar os contatos.
 //
 // Secrets lidos (nunca vão ao frontend):
 //   - GOOGLE_CLIENT_ID     (ID do cliente OAuth — você fornece)

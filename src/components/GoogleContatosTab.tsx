@@ -15,7 +15,7 @@ import {
   googleDisconnect,
   googleStatus,
   googleSync,
-} from "@/lib/agenda-queries";
+} from "@/lib/contatos-queries";
 
 function formatarData(iso: string | null): string {
   if (!iso) return "nunca";
@@ -32,7 +32,7 @@ function formatarData(iso: string | null): string {
   }
 }
 
-export function GoogleAgendaTab() {
+export function GoogleContatosTab() {
   const qc = useQueryClient();
 
   const statusQ = useQuery({
@@ -53,7 +53,7 @@ export function GoogleAgendaTab() {
     const params = new URLSearchParams(window.location.search);
     const g = params.get("google");
     if (g === "connected") {
-      toast.success("Conta Google conectada! Sincronizando a agenda…");
+      toast.success("Conta Google conectada! Sincronizando os contatos…");
       qc.invalidateQueries({ queryKey: ["google-status"] });
     } else if (g === "error") {
       toast.error("Não foi possível conectar a conta Google. Tente novamente.");
@@ -83,11 +83,11 @@ export function GoogleAgendaTab() {
     mutationFn: googleSync,
     onSuccess: (r) => {
       if (r.ok) {
-        toast.success(`Agenda atualizada · ${r.total ?? 0} contato(s).`);
+        toast.success(`Contatos atualizados · ${r.total ?? 0} contato(s).`);
         qc.invalidateQueries({ queryKey: ["google-status"] });
-        qc.invalidateQueries({ queryKey: ["agenda-contatos"] });
+        qc.invalidateQueries({ queryKey: ["contatos"] });
       } else {
-        toast.error(r.detalhe ?? "Falha ao atualizar a agenda.");
+        toast.error(r.detalhe ?? "Falha ao atualizar os contatos.");
       }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao atualizar."),
@@ -113,10 +113,10 @@ export function GoogleAgendaTab() {
           <BookUser className="h-5 w-5 text-primary" strokeWidth={1.75} />
         </div>
         <div>
-          <h2 className="text-base font-semibold text-foreground">Agenda do Google</h2>
+          <h2 className="text-base font-semibold text-foreground">Contatos do Google</h2>
           <p className="text-sm text-muted-foreground">
             Conecte a conta Google da Almore para trazer os contatos salvos. O nome
-            salvo na agenda aparece no Inbox no lugar do número.
+            salvo no contato aparece no Inbox no lugar do número.
           </p>
         </div>
       </div>
@@ -153,7 +153,7 @@ export function GoogleAgendaTab() {
               <h3 className="text-base font-semibold text-foreground">Conectado</h3>
               <p className="text-sm text-muted-foreground">
                 {st?.email ? `${st.email} · ` : ""}
-                {st?.contacts_count ?? 0} contato(s) na agenda
+                {st?.contacts_count ?? 0} contato(s)
               </p>
             </div>
           </div>
@@ -185,8 +185,8 @@ export function GoogleAgendaTab() {
 
           {(st?.contacts_count ?? 0) === 0 && st?.last_sync_status !== "erro" && (
             <p className="mt-3 text-sm text-muted-foreground">
-              Nenhum contato ainda — se a agenda do Google estiver vazia, isto é normal.
-              Assim que você adicionar contatos no Google, eles aparecem aqui sozinhos.
+              Nenhum contato ainda — se a lista de contatos do Google estiver vazia, isto é
+              normal. Assim que você adicionar contatos no Google, eles aparecem aqui sozinhos.
             </p>
           )}
 
@@ -225,11 +225,11 @@ export function GoogleAgendaTab() {
       {!statusQ.isLoading && !naoConfig && !conectado && (
         <div className="rounded-2xl border border-border bg-card p-6">
           <h3 className="text-base font-semibold text-foreground">
-            Conecte a agenda do Google
+            Conecte os contatos do Google
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
             Você entra com a conta Google da Almore e autoriza a leitura dos contatos.
-            A partir daí, a agenda sincroniza sozinha.
+            A partir daí, a lista sincroniza sozinha.
           </p>
           <button
             type="button"

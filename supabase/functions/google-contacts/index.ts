@@ -1,5 +1,5 @@
 // Edge Function: google-contacts
-// Backend da integração com a agenda de contatos do Google (People API).
+// Backend da integração com os contatos do Google (People API).
 //
 // Ações (POST { action }):
 //   - status      → { ok, configured, connected, email, last_sync_at, contacts_count, ... }
@@ -141,16 +141,16 @@ async function aplicarContatos(
   let afetados = 0;
   if (upserts.length > 0) {
     const { data, error } = await supabase
-      .from("agenda_contatos")
+      .from("contatos")
       .upsert(upserts, { onConflict: "company_id,google_resource_name" })
       .select("id");
-    if (error) throw new Error(`upsert_agenda: ${error.message}`);
+    if (error) throw new Error(`upsert_contatos: ${error.message}`);
     afetados = data?.length ?? 0;
   }
 
   if (removerResources.length > 0) {
     const { error } = await supabase
-      .from("agenda_contatos")
+      .from("contatos")
       .delete()
       .eq("company_id", EMPRESA_EXEMPLO_ID)
       .in("google_resource_name", removerResources);
@@ -212,9 +212,9 @@ async function sincronizar(
   atualizados = resultado.localAtualizados;
   removidos = resultado.localRemovidos;
 
-  // Conta o total atual na agenda.
+  // Conta o total atual de contatos.
   const { count } = await supabase
-    .from("agenda_contatos")
+    .from("contatos")
     .select("*", { head: true, count: "exact" })
     .eq("company_id", EMPRESA_EXEMPLO_ID);
 
