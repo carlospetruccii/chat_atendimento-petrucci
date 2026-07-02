@@ -1,8 +1,8 @@
-// Edge Function: cron-notificacao-luana
-// Roda a cada 5min via pg_cron. Notifica a Luana (WhatsApp pessoal + tabela
-// notificacoes_luana) sobre atendimentos parados em 'pendente' por mais
-// que system_config.tempo_notificacao_luana minutos. Repete a cada
-// intervalo_repeticao_notificacao_luana minutos enquanto continuar pendente.
+// Edge Function: cron-notificacao-admin
+// Roda a cada 5min via pg_cron. Notifica o Administrador (WhatsApp pessoal + tabela
+// notificacoes_admin) sobre atendimentos parados em 'pendente' por mais
+// que system_config.tempo_notificacao_admin minutos. Repete a cada
+// intervalo_repeticao_notificacao_admin minutos enquanto continuar pendente.
 //
 // Respeita kill switch (bot_ativo) e horário comercial quando
 // notificacao_apenas_horario_comercial=true.
@@ -12,7 +12,7 @@ import { botEstaAtivo } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { enviarTexto, ZapiError } from "../_shared/uazapi-client.ts";
 
-const FUNCAO = "cron-notificacao-luana";
+const FUNCAO = "cron-notificacao-admin";
 const LIMITE = 50;
 const TEMPO_DEFAULT = 60;
 const REPETICAO_DEFAULT = 30;
@@ -50,9 +50,9 @@ Deno.serve(async (_req: Request) => {
       .from("system_config")
       .select("chave,valor")
       .in("chave", [
-        "tempo_notificacao_luana",
-        "intervalo_repeticao_notificacao_luana",
-        "numero_whatsapp_luana",
+        "tempo_notificacao_admin",
+        "intervalo_repeticao_notificacao_admin",
+        "numero_whatsapp_admin",
         "notificacao_apenas_horario_comercial",
       ]);
 
@@ -60,9 +60,9 @@ Deno.serve(async (_req: Request) => {
       (cfgs ?? []).map((c) => [c.chave as string, (c.valor as string | null) ?? null]),
     );
 
-    const tempoMin = configToInt(cfgMap.get("tempo_notificacao_luana"), TEMPO_DEFAULT);
-    const repetMin = configToInt(cfgMap.get("intervalo_repeticao_notificacao_luana"), REPETICAO_DEFAULT);
-    const numeroLuana = (cfgMap.get("numero_whatsapp_luana") ?? "").trim();
+    const tempoMin = configToInt(cfgMap.get("tempo_notificacao_admin"), TEMPO_DEFAULT);
+    const repetMin = configToInt(cfgMap.get("intervalo_repeticao_notificacao_admin"), REPETICAO_DEFAULT);
+    const numeroAdmin = (cfgMap.get("numero_whatsapp_admin") ?? "").trim();
     const apenasHorarioComercial = configToBool(cfgMap.get("notificacao_apenas_horario_comercial"), true);
 
     // 3) Horário comercial
@@ -77,7 +77,7 @@ Deno.serve(async (_req: Request) => {
     }
 
     // 4) Número configurado
-    if (!numeroLuana) {
+    if (!numeroAdmin) {
       log({ funcao: FUNCAO, evento: "notificacao_sem_numero_configurado", status: "ok", duracao_ms: cron() });
       return new Response(JSON.stringify({ ok: true, acao: "sem_numero" }));
     }
@@ -86,7 +86,7 @@ Deno.serve(async (_req: Request) => {
     const { data: tpl, error: errTpl } = await supabase
       .from("templates_mensagem")
       .select("texto,ativo")
-      .eq("chave", "notificacao_luana")
+      .eq("chave", "notificacao_admin")
       .eq("ativo", true)
       .maybeSingle();
 
@@ -99,7 +99,7 @@ Deno.serve(async (_req: Request) => {
     // 6) Candidatos: pendentes ordenados por created_at ASC
     const { data: candidatos, error: errSel } = await supabase
       .from("atendimentos")
-      .select("id,created_at,client_id,current_department_id,subject_id")
+      .select("id,created_at,client_id,current_department_id")
       .eq("status", "pendente")
       .order("created_at", { ascending: true })
       .limit(LIMITE);
@@ -127,7 +127,7 @@ Deno.serve(async (_req: Request) => {
 
       // última notificação para este atendimento
       const { data: ultima } = await supabase
-        .from("notificacoes_luana")
+        .from("notificacoes_admin")
         .select("created_at")
         .eq("atendimento_id", atId)
         .order("created_at", { ascending: false })
@@ -146,8 +146,8 @@ Deno.serve(async (_req: Request) => {
 
       if (!deveNotificar) continue;
 
-      // Payload (nome, telefone, dept, assunto, tempo formatado)
-      const { data: payload, error: errPayload } = await supabase.rpc("payload_notificacao_luana", {
+      // Payload (nome, telefone, dept, tempo formatado)
+      const { data: payload, error: errPayload } = await supabase.rpc("payload_notificacao_admin", {
         p_atendimento_id: atId,
       });
 
@@ -161,14 +161,12 @@ Deno.serve(async (_req: Request) => {
         nome_cliente: string | null;
         telefone: string | null;
         departamento: string | null;
-        assunto: string | null;
         tempo_aguardando: string | null;
       };
 
       const telefone = (p.telefone ?? "").trim();
       const nomeCliente = (p.nome_cliente ?? telefone ?? "Cliente").trim();
       const departamento = (p.departamento && p.departamento !== "—") ? p.departamento : "Triagem";
-      const assunto = (p.assunto && p.assunto !== "—") ? p.assunto : "Sem assunto definido";
       const tempoAg = (p.tempo_aguardando ?? "").trim();
 
       // E.164 com '+'
@@ -178,13 +176,12 @@ Deno.serve(async (_req: Request) => {
         nome_cliente: nomeCliente,
         telefone: telefoneFmt,
         departamento,
-        assunto,
         tempo_aguardando: tempoAg,
       });
 
       // Insere registro PRIMEIRO (frontend mostra mesmo se Z-API falhar)
       const { data: notifIns, error: errIns } = await supabase
-        .from("notificacoes_luana")
+        .from("notificacoes_admin")
         .insert({ atendimento_id: atId, mensagem_texto: texto })
         .select("id")
         .single();
@@ -196,7 +193,7 @@ Deno.serve(async (_req: Request) => {
       }
 
       // Z-API: número em E.164 sem '+' (padrão da lib)
-      const telefoneZapi = numeroLuana.replace(/^\+/, "").replace(/\D/g, "");
+      const telefoneZapi = numeroAdmin.replace(/^\+/, "").replace(/\D/g, "");
 
       try {
         const resp = await enviarTexto({ telefone: telefoneZapi, mensagem: texto });

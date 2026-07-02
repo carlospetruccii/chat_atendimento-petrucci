@@ -10,8 +10,8 @@
 ## Resumo em poucos parágrafos
 
 É um sistema de **atendimento ao cliente via WhatsApp**. O cliente manda uma mensagem
-no WhatsApp; um **robô de triagem** o recebe, pergunta o setor (departamento) e o
-assunto, e encaminha a conversa para o atendente certo. Os atendentes trabalham numa
+no WhatsApp; um **robô de triagem** o recebe, pergunta o setor (departamento), e
+encaminha a conversa para o atendente certo. Os atendentes trabalham numa
 tela de **caixa de entrada** (Inbox) parecida com o WhatsApp Web: leem, respondem,
 mandam áudio, foto, vídeo e documento, repassam a conversa para colegas e encerram o
 atendimento. Supervisores acompanham tudo por um **painel** e um **quadro (kanban)**.
@@ -64,10 +64,16 @@ detalhes:
    baixa o arquivo para um cofre privado de mídia (`mensagens-midia`).
 
 2. **O robô de triagem age.** A função **`triagem-bot`** (roda sozinha a cada ~10s,
-   se o bot estiver ligado) manda a saudação, pergunta o **departamento** (como uma
-   lista de opções do WhatsApp), depois o **assunto**, e então **encaminha**: se o
-   assunto tem um especialista, vai direto pra ele (`reservado`); senão tenta o último
-   atendente que já falou com aquele cliente; se nada, fica **`pendente`** para alguém pegar.
+   se o bot estiver ligado) espera o cliente parar de mandar mensagens (uma pausa
+   controlada por `delay_anti_flood_triagem`, na aba **Tempos**) e então lê o lote todo
+   de uma vez. Manda a saudação e um **menu numerado de departamentos** (a lista
+   interativa "Ver setores" do WhatsApp); o cliente responde o número e o robô confirma
+   ("Certo! Te encaminhei para X…"). A conversa cai na fila **Pendentes** daquele
+   departamento, pronta para um atendente pegar. Bordas: com só um departamento, o menu
+   é pulado; sem nenhum, a conversa vai para uma Pendentes geral; resposta inválida
+   repete o menu. No encaminhamento, mantém-se a continuidade com o atendente do mesmo
+   dia; senão o último atendente daquele departamento; senão fica **`pendente`**. Se já
+   existe um atendimento aberto, o robô não interfere.
 
 3. **Um atendente assume.** Na tela **Pendentes**, o atendente clica em **Atender** e a
    conversa passa a ser dele. Ela aparece no **Inbox**.
@@ -78,7 +84,7 @@ detalhes:
 
 5. **Encerra.** O atendente **Encerra** (ou **Repassa** para um colega). Se a conversa
    ficar parada por muito tempo, uma tarefa automática encerra sozinha; se ficar
-   `pendente` sem ninguém pegar, a supervisão ("Luana") é avisada por WhatsApp.
+   `pendente` sem ninguém pegar, a supervisão ("Administrador") é avisada por WhatsApp.
 
 6. **O WhatsApp confirma.** Quando a mensagem é entregue/lida no celular do cliente, a
    Z‑API avisa de novo o `webhook-zapi-receive`, que atualiza o status de cada mensagem.
@@ -94,13 +100,11 @@ para ela aparecer no Inbox — e pode até reabrir um atendimento encerrado.
 | Termo | Significado |
 |-------|-------------|
 | **Atendimento** | Uma conversa/ticket entre um cliente e a empresa. Tem um status (em triagem, pendente, reservado, em atendimento, encerrado). |
-| **Triagem** | A fase inicial automática, conduzida pelo robô, que descobre departamento e assunto. |
+| **Triagem** | A fase inicial automática, conduzida pelo robô, que descobre o departamento. |
 | **Departamento** | Setor de atendimento (ex.: Administrativo, Suporte). |
-| **Assunto** | Tópico dentro de um departamento (ex.: "2ª via de boleto"). |
-| **Especialista / Roteamento** | Regra que manda todo atendimento de um certo assunto direto para um atendente específico. |
 | **Pendente** | Atendimento sem dono, esperando um atendente pegar. |
 | **Reservado** | Atendimento já atribuído a um atendente, mas ele ainda não respondeu. |
-| **Luana** | Apelido interno do papel de **supervisão** — quem vê tudo e recebe os avisos de conversas paradas. |
+| **Administrador** | O papel de **supervisão** — quem vê tudo e recebe os avisos de conversas paradas. Era chamado "Luana" antes. |
 | **Bot / Kill‑switch** | O robô de triagem e as automações. Podem ser ligados/desligados por um interruptor (`bot_ativo`) na aba **Operação**. |
 | **Z‑API** | Serviço externo usado hoje para falar com o WhatsApp. O alvo do projeto é trocar pela **uazapi**. |
 | **Modo aberto** | O estado atual: sem login, todos entram como "Operador" administrador. |

@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/popover";
 import {
   fetchDepartments,
-  fetchSubjects,
   fetchCollaborators,
 } from "@/lib/pendentes-queries";
 import {
@@ -69,7 +68,6 @@ function SupervisaoPage() {
   const [department, setDepartment] = useState<string>("all");
   const [agent, setAgent] = useState<AgentFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [subject, setSubject] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [view, setView] = useState<"tabela" | "kanban">("tabela");
@@ -92,7 +90,6 @@ function SupervisaoPage() {
   });
 
   const deptsQuery = useQuery({ queryKey: ["departments-active"], queryFn: fetchDepartments });
-  const subjectsQuery = useQuery({ queryKey: ["subjects-active"], queryFn: fetchSubjects });
   const agentsQuery = useQuery({ queryKey: ["collaborators-active"], queryFn: fetchCollaborators });
 
   // Realtime
@@ -118,13 +115,7 @@ function SupervisaoPage() {
 
   const rows = supervisaoQuery.data ?? [];
   const departments = deptsQuery.data ?? [];
-  const subjects = subjectsQuery.data ?? [];
   const agents = agentsQuery.data ?? [];
-
-  const subjectsForFilter = useMemo(() => {
-    if (department === "all") return subjects;
-    return subjects.filter((s) => s.departmentId === department);
-  }, [subjects, department]);
 
   const filtered = useMemo(() => {
     const now = Date.now();
@@ -133,7 +124,6 @@ function SupervisaoPage() {
       if (agent === "none" && r.assignedTo) return false;
       if (agent !== "all" && agent !== "none" && r.assignedTo !== agent) return false;
       if (status !== "all" && r.status !== status) return false;
-      if (subject !== "all" && r.subjectId !== subject) return false;
       if (query) {
         const q = query.toLowerCase();
         if (
@@ -153,7 +143,7 @@ function SupervisaoPage() {
       }
       return true;
     });
-  }, [rows, department, agent, status, subject, query, period, customFrom, customTo]);
+  }, [rows, department, agent, status, query, period, customFrom, customTo]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -172,7 +162,6 @@ function SupervisaoPage() {
     setDepartment("all");
     setAgent("all");
     setStatus("all");
-    setSubject("all");
     setQuery("");
     setCustomFrom("");
     setCustomTo("");
@@ -253,7 +242,7 @@ function SupervisaoPage() {
           )}
         </div>
 
-        <Select value={department} onValueChange={(v) => { setDepartment(v); setSubject("all"); }}>
+        <Select value={department} onValueChange={(v) => setDepartment(v)}>
           <SelectTrigger className="h-9 w-[180px]">
             <SelectValue placeholder="Departamento" />
           </SelectTrigger>
@@ -286,18 +275,6 @@ function SupervisaoPage() {
             <SelectItem value="all">Todos status</SelectItem>
             {STATUS_OPTIONS.map((s) => (
               <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={subject} onValueChange={setSubject}>
-          <SelectTrigger className="h-9 w-[180px]">
-            <SelectValue placeholder="Assunto" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos assuntos</SelectItem>
-            {subjectsForFilter.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -363,7 +340,6 @@ function SupervisaoPage() {
               <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Cliente</th>
                 <th className="px-4 py-3 font-medium">Departamento</th>
-                <th className="px-4 py-3 font-medium">Assunto</th>
                 <th className="px-4 py-3 font-medium">Atendente</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Última mensagem</th>
@@ -400,7 +376,6 @@ function SupervisaoPage() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.subjectNome}</td>
                   <td className="px-4 py-3">
                     {r.assignedTo ? (
                       <div className="flex items-center gap-2">

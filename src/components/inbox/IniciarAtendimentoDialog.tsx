@@ -16,6 +16,8 @@ interface Props {
   onOpenChange: (o: boolean) => void;
   canChooseDept: boolean;
   onCreated: (atendimentoId: string) => void;
+  /** Cliente já escolhido (ex.: ao iniciar conversa a partir da Agenda). */
+  initialClient?: ClienteAutocompleteRow | null;
 }
 
 interface Conflito {
@@ -32,6 +34,7 @@ export function IniciarAtendimentoDialog({
   onOpenChange,
   canChooseDept,
   onCreated,
+  initialClient,
 }: Props) {
   const navigate = useNavigate();
   const [busca, setBusca] = useState("");
@@ -53,7 +56,7 @@ export function IniciarAtendimentoDialog({
     if (open) {
       setBusca("");
       setDebounced("");
-      setSelecionado(null);
+      setSelecionado(initialClient ?? null);
       setDepartmentId("");
       setAssignedTo("");
       setConflito(null);
@@ -342,7 +345,7 @@ export function IniciarAtendimentoDialog({
             )}
           </div>
 
-          {/* Depto + assigned_to (só Luana) */}
+          {/* Depto + assigned_to (só Administrador) */}
           {canChooseDept && selecionado && (
             <>
               <div>

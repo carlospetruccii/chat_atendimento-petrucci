@@ -36,7 +36,6 @@ import {
   sendInboxAudio,
   sendInboxMedia,
   listClientAtendimentosVisiveis,
-  subjectLabel,
   initialsOf,
   statusLabel,
   FALLBACK_DEPT_COR,
@@ -183,7 +182,7 @@ function InboxPage() {
     filtered.find((c) => c.id === selected) ??
     conversations.find((c) => c.id === selected);
 
-  // Modo supervisão: Luana abriu uma conversa que NÃO está atribuída a ela
+  // Modo supervisão: Administrador abriu uma conversa que NÃO está atribuída a ela
   const supervisionMode = !!current && canViewAll && current.assignedTo !== user?.id;
 
   // Atendimentos do mesmo cliente que entram no scroll contínuo.
@@ -499,9 +498,6 @@ function InboxPage() {
                           >
                             {c.departmentNome ?? "Triagem"}
                           </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                            {subjectLabel(c.subjectNome, c.status)}
-                          </span>
                           {c.status === "em_triagem" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
                               {statusLabel(c.status)}
@@ -552,9 +548,6 @@ function InboxPage() {
                         style={deptStyle(current.departmentCor)}
                       >
                         {current.departmentNome ?? "Triagem"}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                        {subjectLabel(current.subjectNome, current.status)}
                       </span>
                       {current.status === "encerrado" && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
@@ -694,7 +687,7 @@ function InboxPage() {
                       ? "max-w-[70%]"
                       : `min-w-fit max-w-[75ch] rounded-lg px-3 py-2 text-sm shadow-sm ${bubbleColor}`;
 
-                    // Nome do remetente: somente Luana enxerga (atendente comum nunca,
+                    // Nome do remetente: somente Administrador enxerga (atendente comum nunca,
                     // nem o próprio nome — lado da bolha já indica autoria).
                     const showSenderName =
                       canViewAll &&

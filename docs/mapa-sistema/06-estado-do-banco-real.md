@@ -11,6 +11,40 @@
 
 ---
 
+## Atualização — 02/07/2026
+
+> **Este snapshot foi tirado em 01/07/2026.** Em 02/07/2026, novas consultas ao mesmo
+> projeto (`hfcfkxozzbrzzrejtbdj`) mostraram mudanças de schema e de operação. O snapshot
+> histórico abaixo foi **preservado**; esta seção resume os deltas (e há anotações inline
+> "→ atualizado em 02/07" nas tabelas afetadas).
+
+- **"Assunto" removido.** As tabelas `subjects` e `especialista_routing` foram **dropadas**
+  e a coluna `atendimentos.subject_id` foi removida. O recurso de assuntos/roteamento por
+  especialista **não existe mais**.
+- **"Luana" → "Administrador".** A tabela `notificacoes_luana` foi renomeada para
+  `notificacoes_admin`; a função `payload_notificacao_luana` virou `payload_notificacao_admin`;
+  a edge function `cron-notificacao-luana` virou `cron-notificacao-admin` (a antiga foi
+  **deletada** do projeto).
+- **5 templates de triagem** (antes 1). Foram semeados os textos:
+  `triagem_boas_vindas`, `triagem_pergunta_departamento`, `triagem_confirmacao`,
+  `triagem_erro_formato` — além do `triagem_lembrete_sem_resposta` que já existia.
+- **5 crons agendados e ATIVOS** no `pg_cron` (antes eram **zero**): `triagem-bot` (10 s),
+  `cron-retry-mensagens-falha` (2 min), `cron-notificacao-admin` (5 min),
+  `cron-encerramento-automatico` (30 min) e `cron-bot-reactivation` (diário 03:00 UTC).
+  Os jobs chamam as Edge Functions via `net.http_post`, enviando a **anon key** no header
+  `Authorization` (o gateway exige, mesmo com `verify_jwt = false`).
+- **WhatsApp CONECTADO** (uazapi) — o snapshot dizia que não havia integração conectada.
+- **Bot ainda DESLIGADO.** `system_config.bot_ativo` **continua não existindo** → pela regra
+  do kill‑switch, o bot segue efetivamente **off** até alguém ligar em
+  Configurações → Operação.
+- **Nº de tabelas: 18** (eram 20). A remoção de `subjects` e `especialista_routing` tirou 2;
+  o rename `notificacoes_luana` → `notificacoes_admin` não muda a contagem.
+- **Migrations:** subiu o total aplicado — foram adicionadas as de 02/07/2026 (templates de
+  triagem, remoção de assunto, rename Luana→Administrador, agenda de crons), além das de
+  Agenda Google que podem estar pendentes.
+
+---
+
 ## Manchete: o banco está praticamente vazio (é um projeto novo)
 
 A conclusão mais importante, e que **muda o plano de "limpeza"**:
@@ -38,7 +72,7 @@ veio limpo).
 |--------|-------:|----------|
 | companies | **1** | Semente ("Empresa Exemplo") |
 | departments | **1** | Semente ("Administrativo") |
-| templates_mensagem | **1** | Semente (`triagem_lembrete_sem_resposta`) |
+| templates_mensagem | **1** → **5** (atualizado em 02/07) | Semente (`triagem_lembrete_sem_resposta`); em 02/07 foram semeados +4 textos de triagem |
 | system_config | **5** | Sementes (ver abaixo) |
 | users | **0** | — |
 | **auth.users** (contas de login) | **0** | — |
@@ -46,12 +80,12 @@ veio limpo).
 | atendimentos | **0** | — |
 | mensagens | **0** | — |
 | mídias no cofre `mensagens-midia` | **0** | — |
-| subjects (assuntos) | **0** | — |
-| especialista_routing | **0** | — |
+| ~~subjects (assuntos)~~ | — | **Tabela REMOVIDA em 02/07** (drop) |
+| ~~especialista_routing~~ | — | **Tabela REMOVIDA em 02/07** (drop) |
 | business_hours (horário) | **0** | — |
 | holidays (feriados) | **0** | — |
 | timeline_events | **0** | — |
-| notificacoes_luana | **0** | — |
+| notificacoes_admin | **0** | — (renomeada de `notificacoes_luana` em 02/07) |
 | cleanup_log | **0** | — |
 | company_members | **0** | — |
 | company_invitations | **0** | — |
@@ -84,9 +118,9 @@ desenvolvimento sobreviveu à migração para este projeto.
 |------|---------------|
 | **Empresa** | 1 linha: "Empresa Exemplo" (`11111111‑…`), ativa, **sem** número de WhatsApp e **sem** credenciais. |
 | **Departamentos** | 1: "Administrativo" (cor roxa) — semente. |
-| **Assuntos** | Nenhum. |
-| **Roteamento** | Nenhum. |
-| **Templates** | 1: `triagem_lembrete_sem_resposta`. **Faltam** os demais que o robô usa (boas‑vindas, pergunta de departamento/assunto, encerramento, fora de horário etc.). |
+| **Assuntos** | Nenhum. → **Recurso removido em 02/07** (tabela `subjects` dropada). |
+| **Roteamento** | Nenhum. → **Recurso removido em 02/07** (tabela `especialista_routing` dropada). |
+| **Templates** | 1: `triagem_lembrete_sem_resposta`. → **atualizado em 02/07**: agora 5 (semeados `triagem_boas_vindas`, `triagem_pergunta_departamento`, `triagem_confirmacao`, `triagem_erro_formato`). |
 | **Configurações** | 5 chaves: `bot_ativado_em`, `pendentes_abertos_a_todos=false`, `triagem_lembrete_ativo=true`, `triagem_lembrete_minutos=30`, `triagem_reinicia_ao_virar_dia=true`. |
 | **Horário comercial / feriados** | Nenhum cadastrado. |
 
@@ -116,9 +150,13 @@ Ou seja: **nada foi configurado de verdade ainda** — é tudo o padrão que vei
   `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN` nem `ZAPI_CLIENT_TOKEN`. Também **não existe**
   `CLEANUP_CONFIRM_TOKEN`.
 
-**Consequência prática:** se qualquer função tentar falar com o WhatsApp hoje, ela falha
-na hora (o cliente Z‑API exige esses segredos e lança erro "Secrets ZAPI_* ausentes").
-O sistema **não está conectado a nenhum WhatsApp** neste momento.
+**Consequência prática (no snapshot de 01/07):** se qualquer função tentar falar com o
+WhatsApp, ela falha na hora (o cliente Z‑API exige esses segredos e lança erro
+"Secrets ZAPI_* ausentes"). O sistema **não estava conectado a nenhum WhatsApp** naquele
+momento.
+
+> **→ atualizado em 02/07:** o WhatsApp agora está **CONECTADO** via **uazapi**. O motor
+> passou de Z‑API para uazapi; os segredos relevantes hoje são `UAZAPI_URL`/`UAZAPI_TOKEN`.
 
 ---
 
@@ -127,11 +165,11 @@ O sistema **não está conectado a nenhum WhatsApp** neste momento.
 | Item | Estado real |
 |------|-------------|
 | **Migrations** | **45 aplicadas** = 45 arquivos locais → schema **100% em dia**. |
-| **Tabelas** | As **20** tabelas do mapa, nem uma a mais nem a menos. |
+| **Tabelas** | Eram **20** no mapa. → **atualizado em 02/07: 18** (removidas `subjects` e `especialista_routing`; `notificacoes_luana` renomeada para `notificacoes_admin`, sem mudar a contagem). |
 | **Cofre de mídia** | Bucket `mensagens-midia` existe (privado), vazio. |
 | **Extensões** | `citext`, `pg_cron`, `pg_net`, `pg_stat_statements`, `pgcrypto`, `plpgsql`, `supabase_vault`, `uuid-ossp`. |
 | **Edge Functions** | **As 13 publicadas e ATIVAS** (versão 2), todas com `verify_jwt = false`. |
-| **Tarefas automáticas (cron)** | ⚠️ **Zero jobs agendados** no `pg_cron`. |
+| **Tarefas automáticas (cron)** | Snapshot 01/07: ⚠️ **Zero jobs agendados**. → **atualizado em 02/07: 5 jobs ATIVOS** no `pg_cron` (`triagem-bot` 10 s, `cron-retry-mensagens-falha` 2 min, `cron-notificacao-admin` 5 min, `cron-encerramento-automatico` 30 min, `cron-bot-reactivation` diário 03:00 UTC). |
 
 ---
 
@@ -144,18 +182,21 @@ real mostra que ele **ainda não está em operação**. Pontos que destoam ou me
    não existe nenhum cliente/atendimento/mensagem. A "limpeza de mocks" neste banco se
    resume, no máximo, a decidir o destino da **Empresa Exemplo** e das sementes.
 
-2. **O bot está desligado por ausência de configuração.** A linha `bot_ativo` nem existe.
-   Além disso, **não há nenhum job de cron agendado** — então, mesmo que `bot_ativo` fosse
-   ligado, `triagem-bot`, encerramento automático, aviso à Luana e reenvio **não rodariam**,
-   porque **nada os dispara**. O mapa assumia crons rodando "a cada ~10s / 5min / 30min";
-   na prática, **não estão agendados** neste projeto.
+2. **O bot está desligado por ausência de configuração.** A linha `bot_ativo` nem existe
+   (isso **continua valendo em 02/07**). No snapshot de 01/07 também **não havia nenhum job
+   de cron agendado** — então, mesmo que `bot_ativo` fosse ligado, `triagem-bot`,
+   encerramento automático, aviso ao Administrador e reenvio **não rodariam**, porque nada
+   os disparava. **→ atualizado em 02/07:** agora existem **5 crons ATIVOS** disparando essas
+   funções (ver tabela de infraestrutura); portanto, hoje, basta ligar `bot_ativo` para o
+   robô operar.
 
-3. **WhatsApp não conectado.** Sem `ZAPI_*` (nem creds em `companies`), não há envio nem
-   recebimento. O webhook está publicado, mas rejeitaria/erraria por falta de
-   `ZAPI_CLIENT_TOKEN`.
+3. **WhatsApp não conectado (no snapshot de 01/07).** Sem `ZAPI_*` (nem creds em `companies`),
+   não havia envio nem recebimento. **→ atualizado em 02/07:** o WhatsApp está **conectado
+   via uazapi** — o motor migrou de Z‑API para uazapi.
 
-4. **Faltam quase todos os templates da triagem.** Só existe 1 dos ~9 textos que o robô
-   usa. Uma triagem real precisaria dos demais criados.
+4. **Faltavam quase todos os templates da triagem (no snapshot de 01/07).** Só existia 1
+   texto. **→ atualizado em 02/07:** agora são **5** (semeados os textos de boas‑vindas,
+   pergunta de departamento, confirmação e erro de formato).
 
 5. **Todas as 13 funções estão com `verify_jwt = false`** (não só o webhook, como sugeria
    o `config.toml`). As que exigem login (envio, iniciar atendimento, criar colaborador)
@@ -177,14 +218,17 @@ real mostra que ele **ainda não está em operação**. Pontos que destoam ou me
   configs. São descartáveis/recriáveis, mas **inofensivos** — servem de base padrão.
 
 **Intocável (não apagar):**
-- **O schema inteiro** (as 20 tabelas, funções, gatilhos, RLS) — é a fundação.
+- **O schema inteiro** (as tabelas — 20 no snapshot, **18 desde 02/07** —, funções,
+  gatilhos, RLS) — é a fundação.
 - **A "Empresa Exemplo"** — apesar do nome, ela é o **contêiner** onde qualquer dado futuro
   vai nascer enquanto o multi‑empresa estiver desligado. O caminho natural é **renomeá‑la
   para Almore**, não deletá‑la.
 - **A trava `auth_enforcement_enabled = false`** — manter assim no uso interno.
 
 **Em vez de "limpar", o próximo passo real é "configurar":** conectar o WhatsApp
-(uazapi/segredos), agendar os crons, criar os templates e o horário comercial, cadastrar
-os primeiros colaboradores e definir os assuntos/roteamento. Ver
+(uazapi/segredos), agendar os crons, criar os templates e o horário comercial e cadastrar
+os primeiros colaboradores. *(Nota 02/07: WhatsApp já conectado, crons já agendados e
+templates de triagem já semeados; o item de assuntos/roteamento saiu do escopo — recurso
+removido.)* Ver
 [Dados de exemplo e riscos](05-dados-de-exemplo-e-riscos.md) para os pontos da migração
 Z‑API → uazapi.

@@ -22,6 +22,7 @@ import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
 import { Route as AppConexaoRouteImport } from './routes/_app.conexao'
 import { Route as AppClientesRouteImport } from './routes/_app.clientes'
+import { Route as AppAgendaRouteImport } from './routes/_app.agenda'
 
 const TrocarSenhaRoute = TrocarSenhaRouteImport.update({
   id: '/trocar-senha',
@@ -87,12 +88,18 @@ const AppClientesRoute = AppClientesRouteImport.update({
   path: '/clientes',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAgendaRoute = AppAgendaRouteImport.update({
+  id: '/agenda',
+  path: '/agenda',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
+  '/agenda': typeof AppAgendaRoute
   '/clientes': typeof AppClientesRoute
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
+  '/agenda': typeof AppAgendaRoute
   '/clientes': typeof AppClientesRoute
   '/conexao': typeof AppConexaoRoute
   '/configuracoes': typeof AppConfiguracoesRoute
@@ -122,6 +130,7 @@ export interface FileRoutesById {
   '/almore': typeof AlmoreRoute
   '/login': typeof LoginRoute
   '/trocar-senha': typeof TrocarSenhaRoute
+  '/_app/agenda': typeof AppAgendaRoute
   '/_app/clientes': typeof AppClientesRoute
   '/_app/conexao': typeof AppConexaoRoute
   '/_app/configuracoes': typeof AppConfiguracoesRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
+    | '/agenda'
     | '/clientes'
     | '/conexao'
     | '/configuracoes'
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
+    | '/agenda'
     | '/clientes'
     | '/conexao'
     | '/configuracoes'
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/almore'
     | '/login'
     | '/trocar-senha'
+    | '/_app/agenda'
     | '/_app/clientes'
     | '/_app/conexao'
     | '/_app/configuracoes'
@@ -279,10 +291,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/agenda': {
+      id: '/_app/agenda'
+      path: '/agenda'
+      fullPath: '/agenda'
+      preLoaderRoute: typeof AppAgendaRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppAgendaRoute: typeof AppAgendaRoute
   AppClientesRoute: typeof AppClientesRoute
   AppConexaoRoute: typeof AppConexaoRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
@@ -294,6 +314,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAgendaRoute: AppAgendaRoute,
   AppClientesRoute: AppClientesRoute,
   AppConexaoRoute: AppConexaoRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,

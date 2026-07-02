@@ -62,19 +62,62 @@ Ela **não exige login** (a Z‑API não tem como fazer login do Supabase); em v
 valida o cabeçalho **`Client-Token`**. Também ignora mensagens de **grupo**. Tem proteção
 contra duplicatas (usa o `zapi_message_id`).
 
-#### 2. `triagem-bot` — o robô de triagem
-Roda sozinho (a cada ~10s, se o bot estiver ligado). Conduz a conversa inicial:
-manda a saudação → pergunta o **departamento** (menu de opções) → pergunta o **assunto**
-→ **encaminha** o atendimento. O encaminhamento segue a ordem: especialista do assunto →
-último atendente que já falou com o cliente → senão fica `pendente`.
+#### 2. `triagem-bot` — o robô de triagem (só **departamento**)
+Roda sozinho (a cada ~10s, se o bot estiver ligado). Desde 02/07/2026 a triagem pergunta
+**apenas o departamento** — o conceito de "assunto" foi removido do sistema inteiro
+(tela, fluxo do bot e tabela no banco). O fluxo é:
+
+1. Cliente **sem atendimento aberto** manda mensagem → o bot manda a **saudação**
+   (`triagem_boas_vindas`) e o **menu de departamentos** como lista numerada/interativa
+   ("Ver setores", template `triagem_pergunta_departamento`), montada com os departamentos
+   ativos cadastrados.
+2. Cliente **responde o número** (ou o nome, ou parte dele) → o bot **confirma**
+   (`triagem_confirmacao`: *"Certo! Te encaminhei para X…"*) e o atendimento **cai na
+   Pendentes daquele departamento**, para um atendente pegar (o mesmo fluxo de Pendentes
+   que já existia).
+3. Resposta **inválida** (número que não existe, texto solto) → o bot repete o menu de
+   forma curta e educada (`triagem_erro_formato`).
+
+**Casos de borda:**
+- **1 departamento** cadastrado → o bot pula o menu e roteia direto para ele.
+- **0 departamentos** → manda para uma **Pendentes geral** (fica em `em_triagem` sem
+  departamento — permitido pelo CHECK só nesse status — e aparece em Pendentes; **não some**).
+- Esgotou `triagem_max_tentativas` de respostas inválidas → também vai para a Pendentes geral.
+- **Já existe atendimento aberto** para o cliente → o bot **não interfere** (só age em
+  `em_triagem`); quem responde é o atendente.
+
+**Timing / anti-flood (por que ele não responde instantâneo nem "buga").** A cada ~10s o
+cron olha a **última** mensagem recebida do cliente e só age se ela já tiver pelo menos
+`delay_anti_flood_triagem` segundos de idade (padrão **8s**). Se o cliente dispara uma
+**rajada** de mensagens, cada nova mensagem "reinicia o relógio" — então o bot espera o
+cliente parar de digitar e responde **uma vez só**, nunca uma resposta por mensagem.
+Somam-se a isso: **idempotência** (`triagem_last_processed_msg_id` — a mesma mensagem
+nunca é processada duas vezes) e uma **trava anti-loop** (para em 10 tentativas).
+
+**Leitura do lote inteiro (não só a primeira mensagem).** No estágio "aguardando
+departamento", o bot pega **todas as mensagens recebidas desde a última processada** (até
+50, em ordem cronológica) e procura a **primeira que resolve um departamento** (número,
+nome exato ou parcial). Assim, se o cliente escreve "oi", depois "queria saber de X",
+depois "2", o bot acha o "2" no meio. Mensagem **atrasada** entra no lote seguinte (não se
+perde); mensagem **só de mídia** (áudio/foto) é ignorada **sem gastar tentativa**; e nada
+válido no lote conta como **uma** tentativa e repete o menu. Depois de encaminhar (o
+atendimento sai de `em_triagem`), o bot **não toca mais** na conversa — mensagens
+seguintes viram conversa normal para o atendente, sem conflito.
+
+**Onde ajustar o timing:** tudo em **Configurações → Tempos** — `delay_anti_flood_triagem`
+(o "wait", 1–300s), `triagem_max_tentativas` e `tempo_abandono_triagem`. O **lembrete**
+(quando o cliente some no meio) fica na aba **Operação** (liga/desliga + minutos).
+
+**Encaminhamento (a quem vai).** Continuidade do mesmo dia **mantida**: se o cliente já
+foi atendido hoje por alguém, volta para esse atendente (`reservado`). Senão, tenta o
+**último atendente do departamento**; se não houver, fica **`pendente`**. O antigo
+roteamento por **especialista de assunto** foi **removido** junto com o assunto.
 
 Também cuida de:
-- **Lembrete**: se o cliente some no meio da triagem, manda um lembrete (respeitando o
-  horário comercial).
-- **Continuidade**: se o cliente já foi atendido no mesmo dia, tenta manter o mesmo
-  atendente.
-- **Proteções**: não reprocessa mensagens antigas depois de religar o bot; para se
-  detectar um "loop" suspeito.
+- **Lembrete**: se o cliente some no meio da triagem, manda um lembrete único (respeitando
+  o horário comercial).
+- **Proteções**: não reprocessa mensagens antigas depois de religar o bot; para se detectar
+  um "loop" suspeito.
 - **Abandono automático**: existe, mas vem **desligado por padrão** (é considerado
   destrutivo — encerra sem avisar o cliente).
 
@@ -121,10 +164,11 @@ pela aba **Colaboradores**. Exige ser superadmin ou ter `manage_users`.
 A cada 30 min: **encerra sozinho** atendimentos `em_atendimento`/`reservado` parados há
 muito tempo (padrão 24h). Não mexe em triagem nem em pendentes.
 
-#### 12. `cron-notificacao-luana`
-A cada 5 min: avisa a **supervisão ("Luana")**, por WhatsApp e na tabela
-`notificacoes_luana`, sobre atendimentos **pendentes parados** há tempo demais. Repete o
-aviso de tempos em tempos e respeita o horário comercial.
+#### 12. `cron-notificacao-admin`
+A cada 5 min: avisa o **Administrador** (papel de supervisão), por WhatsApp e na tabela
+`notificacoes_admin`, sobre atendimentos **pendentes parados** há tempo demais. Repete o
+aviso de tempos em tempos e respeita o horário comercial. (Renomeada de
+`cron-notificacao-luana` em 02/07/2026 — "Luana" saiu do sistema.)
 
 #### 13. `cron-retry-mensagens-falha`
 De tempos em tempos: **reenvia** mensagens que falharam (até 3 tentativas, com espera
@@ -134,20 +178,25 @@ crescente). É o que garante que uma mensagem não se perca se a Z‑API estiver
 
 ## As tarefas automáticas (crons)
 
-Elas são agendadas pelo próprio Postgres (pg_cron). Frequências aproximadas (segundo os
-comentários no código):
+Elas são agendadas pelo próprio Postgres (pg_cron). Desde 02/07/2026 os jobs estão de fato
+**agendados** (antes não havia nenhum) — via a migration `20260702131000_agenda_crons_triagem.sql`:
 
-| Função | Frequência | Depende do bot ligado? |
+| Função | Frequência (job) | Depende do bot ligado? |
 |--------|-----------|------------------------|
-| `triagem-bot` | ~10 segundos | Sim |
-| `cron-retry-mensagens-falha` | frequente (poucos minutos) | Sim |
-| `cron-notificacao-luana` | 5 minutos | Sim |
-| `cron-encerramento-automatico` | 30 minutos | Sim |
-| `cron-bot-reactivation` | 1x por dia | — (é justamente quem religa) |
+| `triagem-bot` | a cada **10 segundos** | Sim |
+| `cron-retry-mensagens-falha` | a cada **2 minutos** | Sim |
+| `cron-notificacao-admin` | a cada **5 minutos** | Sim |
+| `cron-encerramento-automatico` | a cada **30 minutos** | Sim |
+| `cron-bot-reactivation` | **1x/dia** (03:00 UTC = 00:00 BRT) | — (é justamente quem religa) |
 
 > "Depende do bot ligado" = respeita o **kill‑switch** (`bot_ativo`). Com o bot desligado
 > pela aba **Operação**, essas automações pausam; só o **recebimento** (webhook) e o
 > **envio manual** continuam.
+
+> ⚠️ **Detalhe do agendamento:** o gateway das Edge Functions **exige um header
+> `Authorization`** mesmo com `verify_jwt = false` (sem ele responde **401**). Por isso os
+> jobs de cron chamam as funções via `net.http_post` enviando a **anon key** (a mesma,
+> pública, do frontend) no header. Um cron que chame sem esse header não funciona.
 
 ---
 

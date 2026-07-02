@@ -35,9 +35,7 @@ o mapa completo em linguagem simples.
 |--------|----------------|
 | **clients** | Os clientes, identificados pelo número de WhatsApp (`numero_whatsapp`). Tem também `chat_lid`, um identificador alternativo de conversa usado pela API do WhatsApp. |
 | **departments** | Os setores de atendimento. |
-| **subjects** | Os assuntos, cada um dentro de um departamento. |
-| **especialista_routing** | As regras "assunto → atendente especialista" (aba Roteamento). |
-| **atendimentos** | **A conversa/ticket.** Guarda o status (`em_triagem`, `pendente`, `reservado`, `em_atendimento`, `encerrado`), o estágio da triagem, quem está atendendo (`assigned_to`), departamento e assunto atuais, e marcos de tempo (início, 1ª resposta, encerramento, motivo). |
+| **atendimentos** | **A conversa/ticket.** Guarda o status (`em_triagem`, `pendente`, `reservado`, `em_atendimento`, `encerrado`), o estágio da triagem, quem está atendendo (`assigned_to`), o departamento atual, e marcos de tempo (início, 1ª resposta, encerramento, motivo). |
 | **mensagens** | **Cada mensagem.** Direção (`inbound`/`outbound`), quem enviou (`cliente`/`atendente`/`bot`/`sistema`/`externo`), tipo (texto, imagem, áudio, vídeo, documento, sticker, localização, contato), o texto, o link da mídia, resposta citada e o status de envio/entrega. Guarda o `zapi_message_id` (o ID no WhatsApp). |
 | **timeline_events** | O **histórico** append‑only de cada atendimento (criado, triado, atribuído, repassado, escalado, encerrado, reaberto). Não pode ser editado nem apagado. |
 
@@ -48,13 +46,17 @@ o mapa completo em linguagem simples.
 | **templates_mensagem** | Os textos das mensagens automáticas (aba Templates). |
 | **business_hours** | O horário comercial por dia da semana. |
 | **holidays** | Feriados e datas especiais. |
-| **notificacoes_luana** | A fila de avisos para a supervisão ("Luana") sobre atendimentos parados. Só o backend escreve nela. |
+| **notificacoes_admin** | A fila de avisos para o **Administrador** (o papel de supervisão) sobre atendimentos parados. Só o backend escreve nela. |
 | **config_audit_log** | Registro de **quem mudou o quê** nas configurações. Append‑only. |
 | **cleanup_log** | Registro de uma **limpeza de mensagens** já feita (guarda `zapi_message_id` e `zapi_response`). Ligada a uma função pontual — ver [Riscos](05-dados-de-exemplo-e-riscos.md). |
 
 E o **cofre de mídia**: um "bucket" de Storage chamado **`mensagens-midia`** (privado)
 onde ficam os arquivos de áudio, imagem, vídeo e documento. Não é uma tabela — os
 arquivos são referenciados pela coluna `media_url` das mensagens.
+
+> Nota (02/07/2026): o conceito de "assunto" foi removido do banco (tabelas `subjects` e
+> `especialista_routing` dropadas, coluna `atendimentos.subject_id` removida) e a supervisão
+> "Luana" virou "Administrador" — feito nas migrations `remove_assunto` e o rename para admin.
 
 ---
 
@@ -65,7 +67,7 @@ Em linguagem simples, de cima para baixo:
 ```
 companies (a empresa)
 │
-├── departments (setores) ── subjects (assuntos) ── especialista_routing (quem atende cada assunto)
+├── departments (setores)
 │
 ├── clients (clientes) ── atendimentos (conversas) ── mensagens (cada mensagem)
 │                                     │                     └── (mídia no cofre "mensagens-midia")
@@ -75,12 +77,12 @@ companies (a empresa)
 │        └── company_members (liga usuário à empresa, com papel e departamento)
 │
 └── configurações: system_config · templates_mensagem · business_hours · holidays
-                    (+ auditoria: config_audit_log · cleanup_log · notificacoes_luana)
+                    (+ auditoria: config_audit_log · cleanup_log · notificacoes_admin)
 ```
 
 O caminho principal, que vale memorizar:
-**cliente → atendimento → mensagens**, com o **departamento** e o **assunto** definidos na
-triagem, e o **atendente** (`assigned_to`) definido no roteamento ou quando alguém "pega"
+**cliente → atendimento → mensagens**, com o **departamento** definido na
+triagem, e o **atendente** (`assigned_to`) definido quando alguém "pega"
 o pendente.
 
 Um detalhe de segurança do banco: as ligações são **compostas com a empresa** — por
@@ -95,10 +97,10 @@ multi‑empresa for ligado).
 Isto é o que decide o que é "multi‑empresa":
 
 **TÊM `company_id`** (ou seja, já preparadas para separar por empresa):
-`companies`, `company_members`, `company_invitations`, `departments`, `subjects`,
-`especialista_routing`, `clients`, `atendimentos`, `mensagens`, `timeline_events`,
+`companies`, `company_members`, `company_invitations`, `departments`,
+`clients`, `atendimentos`, `mensagens`, `timeline_events`,
 `system_config`, `templates_mensagem`, `business_hours`, `holidays`,
-`notificacoes_luana`, `config_audit_log`, `cleanup_log`.
+`notificacoes_admin`, `config_audit_log`, `cleanup_log`.
 
 **NÃO têm `company_id`** (são globais):
 - **users** e **user_permissions** — o usuário é global; a ligação com a empresa é feita
@@ -142,11 +144,11 @@ São as "funções de banco" que as telas acionam diretamente:
 - **`repassar_atendimento`** — repassar a conversa.
 - **`encerrar_atendimento`** — encerrar.
 - **`cron_reativar_bot`** — religa o bot na data agendada (usada por uma tarefa automática).
-- **`payload_notificacao_luana`** — monta os dados do aviso para a supervisão.
+- **`payload_notificacao_admin`** — monta os dados do aviso para a supervisão.
 
 ### Uma "vista" (view)
 - **`vw_pendentes`** — uma consulta pronta que junta atendimentos pendentes com dados do
-  cliente, departamento e assunto, já com o tempo de espera calculado.
+  cliente e departamento, já com o tempo de espera calculado.
 
 ---
 
@@ -159,7 +161,7 @@ em cada tabela. Está **ligada em todas as tabelas**. As regras, resumidas:
 - Dentro da empresa: **donos e administradores veem tudo**; **colaboradores veem só o seu
   departamento** (mais os pendentes, se o "modo emergência" estiver ligado).
 - Configurações só podem ser mudadas por dono/administrador.
-- Alguns registros (avisos da Luana, auditoria) só são criados pelo **backend**.
+- Alguns registros (avisos do Administrador, auditoria) só são criados pelo **backend**.
 
 **Porém — e isto é o mais importante:** todas essas regras passam por um "porteiro" único,
 a função `auth_enforcement_enabled()`. Enquanto a trava está **desligada** (o caso de

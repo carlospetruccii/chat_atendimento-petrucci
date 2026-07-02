@@ -7,6 +7,7 @@ import {
   BarChart,
   Settings,
   Users,
+  BookUser,
   Smartphone,
   Moon,
   Sun,
@@ -46,6 +47,7 @@ const menuItems: MenuItem[] = [
   { title: "Inbox", url: "/inbox", icon: MessageCircle },
   { title: "Pendentes", url: "/pendentes", icon: Clock, badgeKey: "pendentes" },
   { title: "Clientes", url: "/clientes", icon: Users, gate: { clientesFlag: true } },
+  { title: "Agenda", url: "/agenda", icon: BookUser },
   { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
   {
     title: "Conexão do WhatsApp",

@@ -178,7 +178,6 @@ Deno.serve(async (req: Request) => {
       current_department_id: departmentId,
       assigned_to: assignedTo,
       assigned_at: now,
-      subject_id: null,
       triagem_estagio: "concluida",
       triagem_started_at: now,
       triagem_finished_at: now,

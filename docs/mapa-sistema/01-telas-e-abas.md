@@ -16,7 +16,7 @@ ela mostra e o que ela grava quando você salva.
 - [Supervisão](#supervisão)
 - [Dashboard](#dashboard)
 - [Clientes](#clientes)
-- [Configurações](#configurações) — 8 abas
+- [Configurações](#configurações) — 7 abas
 - [Telas internas da Almore (workspaces)](#telas-internas-da-almore-workspaces)
 
 ---
@@ -74,9 +74,9 @@ Ou seja, qualquer pessoa que abra o sistema já entra direto. Isso é o "modo ab
   das mensagens** (espera você parar de digitar, ~300ms).
 - A lista mostra, para cada conversa: avatar com iniciais, nome, horário da última
   mensagem, uma prévia (mídia aparece como emoji: 📷 imagem, 🎤 áudio, 🎥 vídeo, 📎
-  documento) e selos de departamento, assunto e status.
+  documento) e selos de departamento e status.
 - **O que cada um vê:** um atendente comum vê **só as conversas atribuídas a ele** que
-  estão `reservado` ou `em_atendimento`. A supervisão ("Luana") vê **todas**, inclusive
+  estão `reservado` ou `em_atendimento`. A supervisão ("Administrador") vê **todas**, inclusive
   as em triagem e encerradas.
 
 ### Painel direito — a conversa aberta
@@ -147,7 +147,7 @@ e o chat se atualizam sozinhos, sem recarregar a página.
 Lista os atendimentos **sem dono** (status `pendente` ou `em_triagem` sem ninguém
 atribuído) para os atendentes se apropriarem.
 
-**Filtros disponíveis:** departamento (bloqueado para quem não é superadmin), assunto,
+**Filtros disponíveis:** departamento (bloqueado para quem não é superadmin),
 tempo aguardando ("até 30min", "30min–2h", "mais de 2h"), ordenação (menor/maior tempo,
 por departamento) e busca por nome/telefone/prévia. Há dois modos de ver: **grade**
 (cards) e **tabela**.
@@ -173,10 +173,10 @@ Visão de **todos os atendimentos** (qualquer status), para supervisores. Dois m
 **Tabela** e **Kanban** (a escolha fica lembrada no navegador).
 
 **Filtros:** período (hoje / 7 dias / 30 dias / customizado), departamento, atendente
-("todos", "sem dono", ou um nome), status, assunto e busca. Há um botão **"Limpar
+("todos", "sem dono", ou um nome), status e busca. Há um botão **"Limpar
 filtros"**.
 
-**Modo Tabela:** colunas de cliente, departamento, assunto, atendente, status, última
+**Modo Tabela:** colunas de cliente, departamento, atendente, status, última
 mensagem e início. Clicar numa linha abre a conversa no Inbox **em modo supervisão**
 (`/inbox?mode=supervision&conversation=…`). Tem paginação de 15 em 15.
 
@@ -233,8 +233,8 @@ nome/telefone e paginação de 50 em 50. A tabela mostra nome, telefone (formata
 
 **Arquivos:** `src/routes/_app.configuracoes.tsx` + um componente por aba + `src/lib/configuracoes-queries.ts`
 
-Central de ajustes do sistema. Só superadmin acessa. São **8 abas**, nesta ordem:
-**Departamentos, Assuntos, Roteamento, Tempos, Horário, Templates, Colaboradores, Operação.**
+Central de ajustes do sistema. Só superadmin acessa. São **7 abas**, nesta ordem:
+**Departamentos, Tempos, Horário, Templates, Colaboradores, Operação, Agenda Google.**
 
 ### Aba 1 — Departamentos
 Gerencia os setores de atendimento. Tabela: `departments`.
@@ -243,40 +243,30 @@ Gerencia os setores de atendimento. Tabela: `departments`.
 - **Remover** — só deixa se não houver colaboradores nem atendimentos em aberto ali.
 - A lista mostra quantos colaboradores há em cada departamento.
 
-### Aba 2 — Assuntos
-Os tópicos que o cliente escolhe na triagem, agrupados por departamento. Tabela: `subjects`.
-- **Novo assunto** — nome, cor e a qual departamento pertence.
-- **Editar** / **Remover** (remover só se não houver atendimento vinculado).
-
-### Aba 3 — Roteamento
-Liga um **assunto** a um **atendente especialista**: quando o cliente escolhe aquele
-assunto, o atendimento vai direto para essa pessoa. Tabela: `especialista_routing`.
-- **Novo roteamento** — escolhe o assunto e o colaborador.
-- **Ativar/desativar** (interruptor), **Editar** (troca o colaborador; o assunto não
-  muda) e **Remover**.
-
-### Aba 4 — Tempos
+### Aba 2 — Tempos
 Ajusta prazos e limites do sistema (todos guardados em `system_config`). Cada item tem
 um lápis para editar o número. Inclui, entre outros: intervalo anti‑flood da triagem,
 tempo de reserva do especialista, tempo para avisar a supervisão, tempo de encerramento
 automático, tentativas máximas da triagem e tempo de abandono.
 
-### Aba 5 — Horário
+### Aba 3 — Horário
 Define o **horário comercial** e os **feriados**. Tabelas: `business_hours` e `holidays`.
 - **Adicionar/remover faixa de horário** por dia da semana (valida que não se sobreponham).
 - **Novo/editar/remover feriado** — data, descrição e, opcionalmente, um horário
   diferente naquele dia (senão, o dia fica fechado).
 
-### Aba 6 — Templates
-Edita os **textos das mensagens automáticas** do robô (boas‑vindas, perguntas da
-triagem, lembrete, encerramento, aviso de fora de horário etc.). Tabela: `templates_mensagem`.
+### Aba 4 — Templates
+Edita os **textos das mensagens automáticas** do robô (boas‑vindas, pergunta de
+departamento, confirmação de encaminhamento, lembrete, encerramento, aviso de fora de
+horário etc.). Tabela: `templates_mensagem`.
 - Escolha um template na lista, edite o texto e **Salve**.
 - **Ativar/desativar** e **Novo template**.
-- Você pode **inserir variáveis** que o sistema preenche sozinho, como `{{nome_cliente}}`
-  ou `{{lista_departamentos}}`. As perguntas de departamento/assunto são enviadas como
-  **listas interativas** no WhatsApp.
+- Você pode **inserir variáveis** que o sistema preenche sozinho, como `{{nome_cliente}}`,
+  `{{lista_departamentos}}` (na pergunta de departamento) ou `{{departamento}}` (na
+  confirmação de encaminhamento). A pergunta de departamento é enviada como **lista
+  interativa** no WhatsApp ("Ver setores").
 
-### Aba 7 — Colaboradores
+### Aba 5 — Colaboradores
 Cadastra e gerencia os atendentes. Tabela: `users` (a criação chama a função
 `criar-colaborador`).
 - **Novo colaborador** — nome, e‑mail, senha inicial e departamento. Cria também o
@@ -285,7 +275,7 @@ Cadastra e gerencia os atendentes. Tabela: `users` (a criação chama a função
   para você não se desativar sozinho sendo o superadmin).
 - Busca e filtros por departamento e status (ativo / indisponível / inativo).
 
-### Aba 8 — Operação
+### Aba 6 — Operação
 O **painel de controle do robô** (só superadmin). Tudo aqui é guardado em `system_config`.
 
 | Controle | O que faz |
@@ -296,6 +286,11 @@ O **painel de controle do robô** (só superadmin). Tudo aqui é guardado em `sy
 | **Aba Clientes para colaboradores** | Mostra/esconde a tela de Clientes para quem não é supervisor. |
 | **Reiniciar triagem ao virar o dia** | Se o cliente volta noutro dia, encerra a triagem antiga e começa uma nova. |
 | **Lembrete na triagem sem resposta** + **tempo (min)** | Liga o lembrete automático quando o cliente para de responder na triagem, e define após quantos minutos. |
+
+### Aba 7 — Agenda Google
+Conecta a agenda de **contatos do Google** (People API) à empresa. Você **conecta a conta
+Google** (autorização) e o sistema **sincroniza os contatos**, que passam a ter precedência
+de nome no Inbox. A aba mostra o estado da conexão e permite reconectar/sincronizar.
 
 ---
 

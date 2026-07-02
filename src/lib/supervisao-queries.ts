@@ -1,12 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
-  subjectLabel,
   initialsOf,
   FALLBACK_DEPT_COR,
   type AtendimentoStatus,
 } from "./inbox-queries";
 
-export { subjectLabel, initialsOf, FALLBACK_DEPT_COR };
+export { initialsOf, FALLBACK_DEPT_COR };
 
 export interface SupervisaoRow {
   id: string;
@@ -17,8 +16,6 @@ export interface SupervisaoRow {
   departmentId: string | null;
   departmentNome: string | null;
   departmentCor: string;
-  subjectId: string | null;
-  subjectNome: string;
   assignedTo: string | null;
   assignedNome: string;
   lastMessagePreview: string;
@@ -44,11 +41,10 @@ export async function fetchSupervisao(): Promise<SupervisaoRow[]> {
   const { data, error } = await supabase
     .from("atendimentos")
     .select(`
-      id, status, current_department_id, subject_id, assigned_to,
+      id, status, current_department_id, assigned_to,
       created_at, last_message_at, closed_at,
       client:clients!atendimentos_client_id_fkey!inner ( id, nome, numero_whatsapp ),
       department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
-      subject:subjects!atendimentos_subject_id_fkey ( id, nome ),
       assigned:users!atendimentos_assigned_to_fkey ( id, nome )
     `)
     .order("created_at", { ascending: false })
@@ -76,7 +72,6 @@ export async function fetchSupervisao(): Promise<SupervisaoRow[]> {
   return rows.map((r) => {
     const client = r.client as { id: string; nome: string | null; numero_whatsapp: string };
     const dept = r.department as { id: string; nome: string; cor: string } | null;
-    const subj = r.subject as { id: string; nome: string } | null;
     const assigned = r.assigned as { id: string; nome: string } | null;
     const status = r.status as AtendimentoStatus;
     const nome = client.nome ?? client.numero_whatsapp;
@@ -90,8 +85,6 @@ export async function fetchSupervisao(): Promise<SupervisaoRow[]> {
       departmentId: r.current_department_id,
       departmentNome: dept?.nome ?? null,
       departmentCor: dept?.cor ?? FALLBACK_DEPT_COR,
-      subjectId: r.subject_id,
-      subjectNome: subjectLabel(subj?.nome ?? null, status),
       assignedTo: r.assigned_to,
       assignedNome: assigned?.nome ?? "Sem dono",
       lastMessagePreview: previewFromMsg(p?.content ?? null, p?.tipo ?? null),

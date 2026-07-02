@@ -14,6 +14,99 @@ export type Database = {
   }
   public: {
     Tables: {
+      agenda_contatos: {
+        Row: {
+          company_id: string
+          created_at: string
+          emails: Json
+          etag: string | null
+          google_resource_name: string
+          id: string
+          nome: string | null
+          numero_raw: string | null
+          numero_whatsapp: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string
+          created_at?: string
+          emails?: Json
+          etag?: string | null
+          google_resource_name: string
+          id?: string
+          nome?: string | null
+          numero_raw?: string | null
+          numero_whatsapp?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          emails?: Json
+          etag?: string | null
+          google_resource_name?: string
+          id?: string
+          nome?: string | null
+          numero_raw?: string | null
+          numero_whatsapp?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      google_integration: {
+        Row: {
+          access_token: string | null
+          company_id: string
+          connected: boolean
+          connected_email: string | null
+          contacts_count: number
+          created_at: string
+          id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
+          last_sync_status: string | null
+          refresh_token: string | null
+          scope: string | null
+          sync_token: string | null
+          token_expiry: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          company_id?: string
+          connected?: boolean
+          connected_email?: string | null
+          contacts_count?: number
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          sync_token?: string | null
+          token_expiry?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          company_id?: string
+          connected?: boolean
+          connected_email?: string | null
+          contacts_count?: number
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          sync_token?: string | null
+          token_expiry?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       atendimentos: {
         Row: {
           assigned_at: string | null
@@ -31,7 +124,6 @@ export type Database = {
           id: string
           last_message_at: string | null
           status: Database["public"]["Enums"]["status_atendimento"]
-          subject_id: string | null
           transferred_count: number
           triagem_estagio: Database["public"]["Enums"]["triagem_estagio"]
           triagem_finished_at: string | null
@@ -57,7 +149,6 @@ export type Database = {
           id?: string
           last_message_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
-          subject_id?: string | null
           transferred_count?: number
           triagem_estagio?: Database["public"]["Enums"]["triagem_estagio"]
           triagem_finished_at?: string | null
@@ -83,7 +174,6 @@ export type Database = {
           id?: string
           last_message_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
-          subject_id?: string | null
           transferred_count?: number
           triagem_estagio?: Database["public"]["Enums"]["triagem_estagio"]
           triagem_finished_at?: string | null
@@ -156,20 +246,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "atendimentos_subject_id_fkey"
-            columns: ["subject_id"]
-            isOneToOne: false
-            referencedRelation: "subjects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "atendimentos_subject_same_company_fk"
-            columns: ["subject_id", "company_id"]
-            isOneToOne: false
-            referencedRelation: "subjects"
-            referencedColumns: ["id", "company_id"]
           },
         ]
       }
@@ -550,75 +626,6 @@ export type Database = {
           },
         ]
       }
-      especialista_routing: {
-        Row: {
-          ativo: boolean
-          company_id: string
-          created_at: string
-          created_by: string | null
-          id: string
-          subject_id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          ativo?: boolean
-          company_id?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          subject_id: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          ativo?: boolean
-          company_id?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          subject_id?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "esp_routing_subject_same_company_fk"
-            columns: ["subject_id", "company_id"]
-            isOneToOne: false
-            referencedRelation: "subjects"
-            referencedColumns: ["id", "company_id"]
-          },
-          {
-            foreignKeyName: "especialista_routing_company_fk"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "especialista_routing_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "especialista_routing_subject_id_fkey"
-            columns: ["subject_id"]
-            isOneToOne: false
-            referencedRelation: "subjects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "especialista_routing_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       holidays: {
         Row: {
           company_id: string
@@ -800,7 +807,7 @@ export type Database = {
           },
         ]
       }
-      notificacoes_luana: {
+      notificacoes_admin: {
         Row: {
           atendimento_id: string
           company_id: string
@@ -827,21 +834,21 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "notificacoes_luana_atendimento_id_fkey"
+            foreignKeyName: "notificacoes_admin_atendimento_id_fkey"
             columns: ["atendimento_id"]
             isOneToOne: false
             referencedRelation: "atendimentos"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "notificacoes_luana_atendimento_id_fkey"
+            foreignKeyName: "notificacoes_admin_atendimento_id_fkey"
             columns: ["atendimento_id"]
             isOneToOne: false
             referencedRelation: "vw_pendentes"
             referencedColumns: ["atendimento_id"]
           },
           {
-            foreignKeyName: "notificacoes_luana_company_fk"
+            foreignKeyName: "notificacoes_admin_company_fk"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -866,61 +873,6 @@ export type Database = {
           valor?: string
         }
         Relationships: []
-      }
-      subjects: {
-        Row: {
-          ativo: boolean
-          company_id: string
-          cor: string
-          created_at: string
-          department_id: string
-          id: string
-          nome: string
-          updated_at: string
-        }
-        Insert: {
-          ativo?: boolean
-          company_id?: string
-          cor?: string
-          created_at?: string
-          department_id: string
-          id?: string
-          nome: string
-          updated_at?: string
-        }
-        Update: {
-          ativo?: boolean
-          company_id?: string
-          cor?: string
-          created_at?: string
-          department_id?: string
-          id?: string
-          nome?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "subjects_company_fk"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "subjects_department_id_fkey"
-            columns: ["department_id"]
-            isOneToOne: false
-            referencedRelation: "departments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "subjects_dept_same_company_fk"
-            columns: ["department_id", "company_id"]
-            isOneToOne: false
-            referencedRelation: "departments"
-            referencedColumns: ["id", "company_id"]
-          },
-        ]
       }
       system_config: {
         Row: {
@@ -1217,7 +1169,6 @@ export type Database = {
           last_message_at: string | null
           nome_cliente: string | null
           numero_whatsapp: string | null
-          subject_id: string | null
           subject_nome: string | null
           tempo_aguardando_minutos: number | null
           transferred_count: number | null
@@ -1251,13 +1202,6 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "atendimentos_subject_id_fkey"
-            columns: ["subject_id"]
-            isOneToOne: false
-            referencedRelation: "subjects"
-            referencedColumns: ["id"]
-          },
         ]
       }
     }
@@ -1287,7 +1231,7 @@ export type Database = {
       has_permission: { Args: { flag: string }; Returns: boolean }
       is_member_of: { Args: { p_company_id: string }; Returns: boolean }
       is_owner_of: { Args: { p_company_id: string }; Returns: boolean }
-      payload_notificacao_luana: {
+      payload_notificacao_admin: {
         Args: { p_atendimento_id: string }
         Returns: Json
       }

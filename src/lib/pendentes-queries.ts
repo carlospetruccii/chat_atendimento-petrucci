@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
-import { subjectLabel, initialsOf, FALLBACK_DEPT_COR, type AtendimentoStatus } from "./inbox-queries";
+import { initialsOf, FALLBACK_DEPT_COR, type AtendimentoStatus } from "./inbox-queries";
 
-export { subjectLabel, initialsOf, FALLBACK_DEPT_COR };
+export { initialsOf, FALLBACK_DEPT_COR };
 
 export interface PendenteRow {
   id: string;
@@ -13,8 +13,6 @@ export interface PendenteRow {
   departmentId: string | null;
   departmentNome: string | null;
   departmentCor: string;
-  subjectId: string | null;
-  subjectNome: string;
   waitingMin: number;
   releasedByTimeout: boolean;
   preview: string;
@@ -25,12 +23,6 @@ export interface DeptOption {
   id: string;
   nome: string;
   cor: string;
-}
-
-export interface SubjectOption {
-  id: string;
-  nome: string;
-  departmentId: string;
 }
 
 export interface CollaboratorOption {
@@ -58,11 +50,10 @@ export async function fetchPendentes(): Promise<PendenteRow[]> {
   const { data, error } = await supabase
     .from("atendimentos")
     .select(`
-      id, status, current_department_id, subject_id, created_at, last_message_at,
+      id, status, current_department_id, created_at, last_message_at,
       triagem_started_at, transferred_count, escalated_from_user_id,
       client:clients!atendimentos_client_id_fkey!inner ( id, nome, numero_whatsapp ),
-      department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
-      subject:subjects!atendimentos_subject_id_fkey ( id, nome )
+      department:departments!atendimentos_current_department_id_fkey ( id, nome, cor )
     `)
     .in("status", ["pendente", "em_triagem"])
     .is("assigned_to", null)
@@ -93,7 +84,6 @@ export async function fetchPendentes(): Promise<PendenteRow[]> {
   return rows.map((r) => {
     const client = r.client as { id: string; nome: string | null; numero_whatsapp: string };
     const dept = r.department as { id: string; nome: string; cor: string } | null;
-    const subj = r.subject as { id: string; nome: string } | null;
     const status = r.status as AtendimentoStatus;
     const nome = client.nome ?? client.numero_whatsapp;
     const startedAt = new Date(r.created_at).getTime();
@@ -109,8 +99,6 @@ export async function fetchPendentes(): Promise<PendenteRow[]> {
       departmentId: r.current_department_id,
       departmentNome: dept?.nome ?? null,
       departmentCor: dept?.cor ?? FALLBACK_DEPT_COR,
-      subjectId: r.subject_id,
-      subjectNome: subjectLabel(subj?.nome ?? null, status),
       waitingMin,
       releasedByTimeout: (r.transferred_count ?? 0) > 0 || !!r.escalated_from_user_id,
       preview: previewFromMsg(p?.content ?? null, p?.tipo ?? null),
@@ -127,16 +115,6 @@ export async function fetchDepartments(): Promise<DeptOption[]> {
     .order("nome");
   if (error) throw error;
   return data ?? [];
-}
-
-export async function fetchSubjects(): Promise<SubjectOption[]> {
-  const { data, error } = await supabase
-    .from("subjects")
-    .select("id, nome, department_id")
-    .eq("ativo", true)
-    .order("nome");
-  if (error) throw error;
-  return (data ?? []).map((s) => ({ id: s.id, nome: s.nome, departmentId: s.department_id }));
 }
 
 export async function fetchCollaborators(): Promise<CollaboratorOption[]> {

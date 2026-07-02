@@ -881,7 +881,6 @@ Deno.serve(async (req: Request) => {
             status: "em_atendimento",
             current_department_id: deptExt,
             assigned_to: null,
-            subject_id: null,
             triagem_estagio: "concluida",
             triagem_started_at: agoraIso,
             triagem_finished_at: agoraIso,

@@ -141,9 +141,6 @@ export function ClientHistorySheet({
                     >
                       {a.departmentNome ?? "Triagem"}
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                      {a.subjectNome ?? "Sem assunto"}
-                    </span>
                     {isCurrent && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-primary">
                         Atual

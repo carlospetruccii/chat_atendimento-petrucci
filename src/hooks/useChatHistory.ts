@@ -173,7 +173,7 @@ export function useChatHistory({
     return () => obs.disconnect();
   }, [enabled, loadMore, idsKey]);
 
-  // Carrega "ilha" de um atendimento inteiro (Linha do Tempo da Luana).
+  // Carrega "ilha" de um atendimento inteiro (Linha do Tempo da Administrador).
   const scrollToAtendimento = useCallback(async (atendimentoId: string) => {
     const ensureLoaded = async () => {
       if (loadedIslandsRef.current.has(atendimentoId)) return;

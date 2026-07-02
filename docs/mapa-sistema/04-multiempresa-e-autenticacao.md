@@ -61,9 +61,10 @@ Baseado na tabela `users` + `user_permissions`:
 - **`is_superadmin`** (sim/não): o "chefe", pode tudo.
 - **Permissões soltas** — cada uma libera uma ação. As que existem:
   `assign_pending`, `force_close`, `manage_business_hours`, `manage_departments`,
-  `manage_permissions`, `manage_routing`, `manage_subjects`, `manage_templates`,
-  `manage_times`, `manage_users`, `view_all_departments`, `view_audit_log`,
-  `view_luana_notifications`.
+  `manage_permissions`, `manage_routing` *(obsoleta — assunto/roteamento removidos em
+  02/07/2026)*, `manage_subjects` *(obsoleta — assunto removido em 02/07/2026)*,
+  `manage_templates`, `manage_times`, `manage_users`, `view_all_departments`,
+  `view_audit_log`, `view_admin_notifications`.
 
 É esse sistema que **as telas checam hoje** (ex.: só quem tem `view_all_departments` vê o
 Dashboard e a Supervisão; só superadmin vê Configurações). No banco, funções como
@@ -78,13 +79,13 @@ Baseado em `company_members.role`, com três papéis **por empresa**:
 Esse sistema só é usado hoje nas **telas internas da Almore** (`/almore`,
 `/almore-membros`). A operação normal ainda roda no sistema antigo.
 
-### "Luana" — o papel de supervisão
-"Luana" é o **apelido interno da supervisão**: quem enxerga todos os departamentos
-(`view_all_departments`) e recebe os avisos de conversas paradas
-(`view_luana_notifications`, tabela `notificacoes_luana`, cron `cron-notificacao-luana`,
-config `numero_whatsapp_luana`). Já existiu um **usuário de exemplo chamado "Luana"** no
-banco, mas ele foi **removido** por uma migration posterior — ver
-[Riscos](05-dados-de-exemplo-e-riscos.md).
+### "Administrador" — o papel de supervisão
+O **"Administrador"** é o **papel de supervisão** (antes chamado "Luana", renomeado em
+02/07/2026): quem enxerga todos os departamentos (`view_all_departments`) e recebe os
+avisos de conversas paradas (`view_admin_notifications`, tabela `notificacoes_admin`, cron
+`cron-notificacao-admin`, config `numero_whatsapp_admin`). Já existiu um **usuário de
+exemplo chamado "Luana"** no banco, mas ele foi **removido** por uma migration anterior —
+ver [Riscos](05-dados-de-exemplo-e-riscos.md).
 
 ---
 

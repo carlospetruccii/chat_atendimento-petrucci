@@ -44,7 +44,7 @@ const STOPS = [
   "Triagem automática",
   "Templates de fora-de-horário",
   "Encerramento automático por inatividade",
-  "Notificação automática à Luana",
+  "Notificação automática ao Administrador",
   "Retry automático de mensagens em falha",
 ];
 const KEEPS = [
@@ -351,7 +351,7 @@ export function OperacaoTab() {
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Quando ligado, se o cliente não responder a pergunta de
-              departamento ou assunto dentro do tempo configurado, o bot envia
+              departamento dentro do tempo configurado, o bot envia
               um único lembrete pedindo que responda. Só dispara em horário
               comercial. O texto fica em Configurações → Templates →{" "}
               <em>Lembrete na triagem sem resposta</em>.

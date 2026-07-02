@@ -43,7 +43,6 @@ import { useCurrentUser, useHasPermission } from "@/hooks/useCurrentUser";
 import {
   fetchPendentes,
   fetchDepartments,
-  fetchSubjects,
   fetchCollaborators,
   fetchUltimasMensagens,
   claimAtendimento,
@@ -67,10 +66,6 @@ function deptBadgeStyle(cor: string): React.CSSProperties {
   return { backgroundColor: `${cor}20`, color: cor };
 }
 
-function subjectBadgeStyle(cor: string): React.CSSProperties {
-  return { backgroundColor: `${cor}14`, color: cor };
-}
-
 function PendentesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -80,7 +75,6 @@ function PendentesPage() {
 
   const [view, setView] = useState<ViewMode>("grid");
   const [dept, setDept] = useState<string>("all");
-  const [subject, setSubject] = useState<string>("all");
   const [wait, setWait] = useState<WaitFilter>("all");
   const [sortBy, setSortBy] = useState<SortBy>("longest");
   const [search, setSearch] = useState("");
@@ -97,12 +91,6 @@ function PendentesPage() {
   const deptsQuery = useQuery({
     queryKey: ["departments-active"],
     queryFn: fetchDepartments,
-    enabled: !!user,
-  });
-
-  const subjectsQuery = useQuery({
-    queryKey: ["subjects-active"],
-    queryFn: fetchSubjects,
     enabled: !!user,
   });
 
@@ -174,17 +162,10 @@ function PendentesPage() {
 
   const items = pendentesQuery.data ?? [];
   const departments = deptsQuery.data ?? [];
-  const subjects = subjectsQuery.data ?? [];
-
-  const subjectsForFilter = useMemo(() => {
-    if (dept === "all") return subjects;
-    return subjects.filter((s) => s.departmentId === dept);
-  }, [subjects, dept]);
 
   const filtered = useMemo(() => {
     let list = items.slice();
     if (dept !== "all") list = list.filter((i) => i.departmentId === dept);
-    if (subject !== "all") list = list.filter((i) => i.subjectId === subject);
     if (wait !== "all") {
       list = list.filter((i) => {
         if (wait === "lt30") return i.waitingMin < 30;
@@ -212,7 +193,7 @@ function PendentesPage() {
       }
     });
     return list;
-  }, [items, dept, subject, wait, sortBy, search]);
+  }, [items, dept, wait, sortBy, search]);
 
   if (userLoading || !user) {
     return (
@@ -287,18 +268,6 @@ function PendentesPage() {
             </SelectContent>
           </Select>
         </div>
-
-        <Select value={subject} onValueChange={setSubject}>
-          <SelectTrigger className="w-[200px] bg-card">
-            <SelectValue placeholder="Assunto" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os assuntos</SelectItem>
-            {subjectsForFilter.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
 
         <Select value={wait} onValueChange={(v) => setWait(v as WaitFilter)}>
           <SelectTrigger className="w-[180px] bg-card">
@@ -379,9 +348,6 @@ function PendentesPage() {
                 <span className="text-[11px] px-2 py-0.5 rounded" style={deptBadgeStyle(c.departmentCor)}>
                   {c.departmentNome ?? "Sem departamento"}
                 </span>
-                <span className="text-[11px] px-2 py-0.5 rounded" style={subjectBadgeStyle(c.departmentCor)}>
-                  {c.subjectNome}
-                </span>
               </div>
 
               <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -423,7 +389,6 @@ function PendentesPage() {
               <TableRow>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Departamento</TableHead>
-                <TableHead>Assunto</TableHead>
                 <TableHead>Aguardando há</TableHead>
                 <TableHead>Origem</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -446,11 +411,6 @@ function PendentesPage() {
                   <TableCell>
                     <span className="text-[11px] px-2 py-0.5 rounded" style={deptBadgeStyle(c.departmentCor)}>
                       {c.departmentNome ?? "—"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-[11px] px-2 py-0.5 rounded" style={subjectBadgeStyle(c.departmentCor)}>
-                      {c.subjectNome}
                     </span>
                   </TableCell>
                   <TableCell>

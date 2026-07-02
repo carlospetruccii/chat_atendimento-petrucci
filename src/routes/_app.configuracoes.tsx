@@ -6,9 +6,8 @@ import { HorarioTab } from "@/components/HorarioTab";
 import { TemplatesTab } from "@/components/TemplatesTab";
 import { ColaboradoresTab } from "@/components/ColaboradoresTab";
 import { DepartamentosTab } from "@/components/DepartamentosTab";
-import { AssuntosTab } from "@/components/AssuntosTab";
-import { RoteamentoTab } from "@/components/RoteamentoTab";
 import { OperacaoTab } from "@/components/OperacaoTab";
+import { GoogleAgendaTab } from "@/components/GoogleAgendaTab";
 
 export const Route = createFileRoute("/_app/configuracoes")({
   staticData: { title: "Configurações" },
@@ -17,13 +16,12 @@ export const Route = createFileRoute("/_app/configuracoes")({
 
 const BASE_TABS = [
   "Departamentos",
-  "Assuntos",
-  "Roteamento",
   "Tempos",
   "Horário",
   "Templates",
   "Colaboradores",
   "Operação",
+  "Agenda Google",
 ];
 
 function EmBreve({ name }: { name: string }) {
@@ -64,13 +62,12 @@ function ConfiguracoesPage() {
 
       <div className="mt-6 animate-in fade-in duration-150">
         {active === "Departamentos" && <DepartamentosTab />}
-        {active === "Assuntos" && <AssuntosTab />}
-        {active === "Roteamento" && <RoteamentoTab />}
         {active === "Tempos" && <TemposTab />}
         {active === "Horário" && <HorarioTab />}
         {active === "Templates" && <TemplatesTab />}
         {active === "Colaboradores" && <ColaboradoresTab />}
         {active === "Operação" && <OperacaoTab />}
+        {active === "Agenda Google" && <GoogleAgendaTab />}
         {!tabs.includes(active) && <EmBreve name={active} />}
       </div>
     </>

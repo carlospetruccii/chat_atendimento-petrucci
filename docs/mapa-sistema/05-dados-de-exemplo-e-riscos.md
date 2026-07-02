@@ -28,7 +28,7 @@ Não propõe soluções — só aponta o que precisa de decisão consciente.
 | Departamento **"Administrativo"** | migration `20260508182948_…` | Semente idempotente (não duplica). |
 | Templates‑semente (ex.: `triagem_lembrete_sem_resposta`) | migration `20260514144823_…` | Textos padrão do robô. |
 | Configurações‑semente (`bot_ativo`, tempos, lembrete…) | várias migrations | Valores iniciais em `system_config`. |
-| Usuário‑exemplo **"Luana"** (`2b1fdda2‑…`) | criado em `20260508170921_…`, **apagado** em `20260511121455_…` | Já foi removido. "Luana" hoje é só o **apelido do papel de supervisão**, não um usuário. |
+| Usuário‑exemplo **"Luana"** (`2b1fdda2‑…`) | criado em `20260508170921_…`, **apagado** em `20260511121455_…` | Já foi removido. O nome **"Luana" não é mais usado**: o papel de supervisão hoje se chama **"Administrador"** (renomeado em 02/07/2026). |
 | Atendimento de teste (`11111111‑aaaa‑…`) | **apagado** em `20260508170000_…` | Já foi removido. |
 | Usuário fixo **"Operador"** (`OPEN_USER`, `…0001`) | `src/hooks/useCurrentUser.ts` | O "usuário de mentira" do modo aberto. Ver Risco/atenção abaixo. |
 | Usuários de sistema `…0001` e `…0002` | `triagem-bot` e crons | IDs internos do robô e das automações. |
@@ -53,7 +53,7 @@ chegam (webhook) e os endereços de envio são específicos da Z‑API.
    (campos como `image.imageUrl`, `fromMe`, respostas de lista/botão) e valida o
    `Client-Token`. É a parte que mais muda, porque o formato da uazapi é diferente.
 3. **Quem envia/usa o cliente** — as funções `send-whatsapp-message`,
-   `send-whatsapp-audio`, `send-whatsapp-media`, `triagem-bot`, `cron-notificacao-luana`,
+   `send-whatsapp-audio`, `send-whatsapp-media`, `triagem-bot`, `cron-notificacao-admin`,
    `cron-retry-mensagens-falha` e `cleanup-disparo-acidental-bot`.
 4. **Os segredos** — `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`.
 5. **Nomes no banco** (cosméticos, não quebram nada): `companies.zapi_instance_id/zapi_token/zapi_client_token`, `mensagens.zapi_message_id`, `cleanup_log.zapi_message_id/zapi_response`, e `clients.chat_lid`.
@@ -128,7 +128,9 @@ contêiner.
   "BPMax". Se o produto é da Almore, é um ajuste de marca a considerar.
 
 - **Reconciliação de nome (sem risco).** Um relatório interno citou `specialists_routing`;
-  o nome correto da tabela é **`especialista_routing`**. Anotado só para evitar confusão.
+  o nome correto da tabela era **`especialista_routing`**. Observação: essa tabela foi
+  **removida** em 02/07/2026, junto com o recurso de **assunto** (tabela `subjects` dropada
+  e coluna `atendimentos.subject_id` removida). Anotado só para evitar confusão.
 
 ---
 

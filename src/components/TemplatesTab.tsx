@@ -269,27 +269,14 @@ export function TemplatesTab() {
                 </div>
               </div>
 
-              {(selected.chave === "triagem_pergunta_departamento" ||
-                selected.chave === "triagem_pergunta_assunto") && (
+              {selected.chave === "triagem_pergunta_departamento" && (
                 <div className="mt-4 rounded-md border border-border bg-card px-3 py-2 text-xs text-blue-900">
                   <strong>Mensagem interativa:</strong> esta pergunta é enviada
-                  no WhatsApp como uma <em>lista de opções</em> (botão "Ver{" "}
-                  {selected.chave === "triagem_pergunta_departamento"
-                    ? "setores"
-                    : "assuntos"}
-                  "). O texto acima vira o corpo da mensagem; as opções vêm
-                  automaticamente de{" "}
-                  <strong>
-                    {selected.chave === "triagem_pergunta_departamento"
-                      ? "Departamentos"
-                      : "Assuntos"}
-                  </strong>{" "}
-                  (gerencie naquela aba). A variável{" "}
-                  <code className="font-mono">
-                    {selected.chave === "triagem_pergunta_departamento"
-                      ? "{{lista_departamentos}}"
-                      : "{{lista_assuntos}}"}
-                  </code>{" "}
+                  no WhatsApp como uma <em>lista de opções</em> (botão "Ver
+                  setores"). O texto acima vira o corpo da mensagem; as opções
+                  vêm automaticamente de <strong>Departamentos</strong> (gerencie
+                  naquela aba). A variável{" "}
+                  <code className="font-mono">{"{{lista_departamentos}}"}</code>{" "}
                   pode ser removida — não aparece mais no WhatsApp.
                 </div>
               )}

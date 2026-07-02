@@ -9,3 +9,9 @@ verify_jwt = false
 # pública (modo interno/aberto). O token da instância fica só no servidor.
 [functions.whatsapp-connection]
 verify_jwt = false
+
+# Backend da agenda de contatos do Google (People API). O callback do OAuth é um
+# GET vindo do navegador (sem JWT), então precisa de verify_jwt = false. Tokens
+# do Google ficam só no servidor (tabela google_integration).
+[functions.google-contacts]
+verify_jwt = false

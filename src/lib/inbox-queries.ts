@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAgendaNamesByNumbers } from "@/lib/agenda-queries";
 
 export type AtendimentoStatus =
   | "em_triagem"
@@ -16,7 +17,6 @@ export interface InboxConversation {
   departmentId: string | null;
   departmentNome: string | null;
   departmentCor: string | null;
-  subjectNome: string | null;
   assignedTo: string | null;
   assignedNome: string | null;
   lastMessageAt: string | null;
@@ -59,7 +59,7 @@ interface ListConversationsParams {
 
 /**
  * Atendentes comuns: só veem atendimentos atribuídos a eles em status ativo (reservado / em_atendimento).
- * Luana / quem tem view_all_departments: vê todos os atendimentos em andamento, incluindo triagem.
+ * Administrador / quem tem view_all_departments: vê todos os atendimentos em andamento, incluindo triagem.
  */
 export async function listInboxConversations(
   params: ListConversationsParams,
@@ -76,14 +76,13 @@ export async function listInboxConversations(
       created_at,
       client:clients!atendimentos_client_id_fkey!inner ( id, nome, numero_whatsapp ),
       department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
-      subject:subjects!atendimentos_subject_id_fkey ( id, nome ),
       assigned:users!atendimentos_assigned_to_fkey ( id, nome )
     `,
     )
     .order("last_message_at", { ascending: false, nullsFirst: false });
 
   if (params.canViewAll) {
-    // Luana / superadmin: vê todos os status, inclusive encerrados,
+    // Administrador / superadmin: vê todos os status, inclusive encerrados,
     // misturados em ordem cronológica.
   } else {
     query = query.eq("assigned_to", params.userId).in("status", ["reservado", "em_atendimento"]);
@@ -124,10 +123,15 @@ export async function listInboxConversations(
     }
   }
 
+  // Precedência de nome: agenda do Google > nome público WhatsApp > número.
+  const numeros = rows
+    .map((r) => (r.client as { numero_whatsapp?: string } | null)?.numero_whatsapp)
+    .filter((n): n is string => Boolean(n));
+  const agendaNames = await fetchAgendaNamesByNumbers(numeros);
+
   return rows.map((r) => {
     const client = r.client as { id: string; nome: string | null; numero_whatsapp: string };
     const dept = r.department as { id: string; nome: string; cor: string } | null;
-    const subj = r.subject as { id: string; nome: string } | null;
     const assigned = r.assigned as { id: string; nome: string } | null;
     const preview = previewByAtendimento.get(r.id);
     const previewText =
@@ -147,13 +151,13 @@ export async function listInboxConversations(
     return {
       id: r.id,
       clientId: client.id,
-      clientNome: client.nome ?? client.numero_whatsapp,
+      clientNome:
+        agendaNames.get(client.numero_whatsapp) ?? client.nome ?? client.numero_whatsapp,
       clientNumero: client.numero_whatsapp,
       status: r.status as AtendimentoStatus,
       departmentId: r.current_department_id,
       departmentNome: dept?.nome ?? null,
       departmentCor: dept?.cor ?? null,
-      subjectNome: subj?.nome ?? null,
       assignedTo: r.assigned_to,
       assignedNome: assigned?.nome ?? null,
       lastMessageAt: r.last_message_at ?? r.created_at,
@@ -227,7 +231,6 @@ export interface ClientAtendimentoSummary {
   currentDepartmentId: string | null;
   departmentNome: string | null;
   departmentCor: string | null;
-  subjectNome: string | null;
   createdAt: string;
   closedAt: string | null;
   lastMessageAt: string | null;
@@ -236,7 +239,7 @@ export interface ClientAtendimentoSummary {
 /**
  * Atendimentos do cliente que entram no scroll contínuo da conversa atual.
  * - Atendente comum: atual + último encerrado do MESMO departamento (no máx. 2).
- * - Luana / view_all_departments: TODOS os atendimentos do cliente.
+ * - Administrador / view_all_departments: TODOS os atendimentos do cliente.
  *
  * RLS faz o resto: queries que retornam linhas que o usuário não pode ver
  * simplesmente vêm vazias.
@@ -251,8 +254,7 @@ export async function listClientAtendimentosVisiveis(params: {
     .from("atendimentos")
     .select(
       `id, status, current_department_id, created_at, closed_at, last_message_at,
-       department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
-       subject:subjects!atendimentos_subject_id_fkey ( id, nome )`,
+       department:departments!atendimentos_current_department_id_fkey ( id, nome, cor )`,
     )
     .eq("client_id", params.clientId);
 
@@ -271,8 +273,7 @@ export async function listClientAtendimentosVisiveis(params: {
                 .from("atendimentos")
                 .select(
                   `id, status, current_department_id, created_at, closed_at, last_message_at,
-                   department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
-                   subject:subjects!atendimentos_subject_id_fkey ( id, nome )`,
+                   department:departments!atendimentos_current_department_id_fkey ( id, nome, cor )`,
                 )
                 .eq("client_id", params.clientId)
                 .eq("current_department_id", params.currentDepartmentId)
@@ -293,14 +294,12 @@ export async function listClientAtendimentosVisiveis(params: {
   if (error) throw error;
   return (data ?? []).map((r) => {
     const dept = r.department as { id: string; nome: string; cor: string } | null;
-    const subj = r.subject as { id: string; nome: string } | null;
     return {
       id: r.id,
       status: r.status as AtendimentoStatus,
       currentDepartmentId: r.current_department_id,
       departmentNome: dept?.nome ?? null,
       departmentCor: dept?.cor ?? null,
-      subjectNome: subj?.nome ?? null,
       createdAt: r.created_at,
       closedAt: r.closed_at,
       lastMessageAt: r.last_message_at,
@@ -344,7 +343,7 @@ export async function listInboxMessagesPage(params: {
 }
 
 /**
- * "Ilha" de mensagens de UM atendimento específico — usada quando a Luana
+ * "Ilha" de mensagens de UM atendimento específico — usada quando a Administrador
  * clica num atendimento no painel Linha do Tempo e queremos carregar o bloco
  * inteiro de uma vez (sem ficar paginando).
  */
@@ -484,14 +483,6 @@ export async function sendInboxMedia(params: {
     throw new Error((data as { erro?: string }).erro ?? "Falha no envio da mídia");
   }
 }
-export function subjectLabel(
-  subject: string | null | undefined,
-  status: AtendimentoStatus,
-): string {
-  if (subject && subject.trim().length > 0) return subject;
-  return status === "em_triagem" ? "Em triagem" : "Sem assunto";
-}
-
 /** Iniciais do nome para o avatar. */
 export function initialsOf(name: string): string {
   return name

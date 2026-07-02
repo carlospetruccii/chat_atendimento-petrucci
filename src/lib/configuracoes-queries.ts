@@ -95,81 +95,6 @@ export async function setDepartmentAtivo(id: string, ativo: boolean) {
   if (error) throw error;
 }
 
-// ============ Assuntos ============
-
-export interface SubjectRow {
-  id: string;
-  nome: string;
-  cor: string;
-  department_id: string;
-  department_nome: string;
-  department_cor: string;
-}
-
-export async function fetchSubjects(): Promise<SubjectRow[]> {
-  const { data, error } = await supabase
-    .from("subjects")
-    .select("id, nome, cor, department_id, departments:department_id(nome, cor)")
-    .order("nome");
-  if (error) throw error;
-  return (data ?? []).map((s) => {
-    const dept = s.departments as { nome: string; cor: string } | null;
-    return {
-      id: s.id,
-      nome: s.nome,
-      cor: s.cor ?? FALLBACK_COR,
-      department_id: s.department_id,
-      department_nome: dept?.nome ?? "—",
-      department_cor: dept?.cor ?? FALLBACK_COR,
-    };
-  });
-}
-
-export async function createSubject(input: { nome: string; cor: string; department_id: string }) {
-  const { error } = await supabase.from("subjects").insert({
-    nome: input.nome.trim(),
-    cor: input.cor,
-    department_id: input.department_id,
-  });
-  if (error) throw error;
-}
-
-export async function updateSubject(
-  id: string,
-  input: { nome: string; cor: string; department_id: string },
-) {
-  const { error } = await supabase
-    .from("subjects")
-    .update({
-      nome: input.nome.trim(),
-      cor: input.cor,
-      department_id: input.department_id,
-    })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-export async function checkSubjectDeletable(id: string): Promise<{ ok: boolean; reason?: string }> {
-  const { count, error } = await supabase
-    .from("atendimentos")
-    .select("id", { count: "exact", head: true })
-    .eq("subject_id", id);
-  if (error) throw error;
-  if ((count ?? 0) > 0)
-    return {
-      ok: false,
-      reason: `Existem ${count} atendimento(s) vinculado(s) a este assunto.`,
-    };
-  return { ok: true };
-}
-
-export async function deleteSubject(id: string) {
-  const check = await checkSubjectDeletable(id);
-  if (!check.ok) throw new Error(check.reason);
-  const { error } = await supabase.from("subjects").delete().eq("id", id);
-  if (error) throw error;
-}
-
 // ============ Colaboradores ============
 
 export type ColaboradorStatus = "ativo" | "indisponivel" | "inativo";
@@ -293,10 +218,10 @@ export interface TemplateRow {
 export const TEMPLATE_VARS: Record<string, string[]> = {
   triagem_boas_vindas: [],
   triagem_pergunta_departamento: ["lista_departamentos"],
-  triagem_pergunta_assunto: ["departamento", "lista_assuntos"],
+  triagem_confirmacao: ["departamento"],
   triagem_erro_formato: [],
   triagem_lembrete_sem_resposta: [],
-  notificacao_luana: ["nome_cliente", "telefone", "departamento", "assunto", "tempo_aguardando"],
+  notificacao_admin: ["nome_cliente", "telefone", "departamento", "tempo_aguardando"],
   encerramento: [],
   fora_horario: [],
   repasse: [],
@@ -306,19 +231,17 @@ export const TEMPLATE_VAR_DESC: Record<string, string> = {
   nome_cliente: "Nome do cliente (ou número se não tiver nome cadastrado)",
   telefone: "Número do cliente em formato internacional",
   departamento: "Nome do departamento atual do atendimento",
-  assunto: "Nome do assunto identificado na triagem",
   tempo_aguardando: 'Tempo de espera formatado (ex: "1h 23min")',
   lista_departamentos: "Lista formatada dos departamentos ativos",
-  lista_assuntos: "Lista formatada dos assuntos do departamento",
 };
 
 export const TEMPLATE_LABEL: Record<string, string> = {
   triagem_boas_vindas: "Boas-vindas",
   triagem_pergunta_departamento: "Pergunta de departamento",
-  triagem_pergunta_assunto: "Pergunta de assunto",
+  triagem_confirmacao: "Confirmação de encaminhamento",
   triagem_erro_formato: "Erro de formato (triagem)",
   triagem_lembrete_sem_resposta: "Lembrete na triagem sem resposta",
-  notificacao_luana: "Notificação ao administrador",
+  notificacao_admin: "Notificação ao administrador",
   encerramento: "Encerramento",
   fora_horario: "Fora do horário",
   repasse: "Aviso de repasse",
@@ -561,14 +484,14 @@ export const TEMPOS: TempoMeta[] = [
     max: 1440,
   },
   {
-    chave: "tempo_notificacao_luana",
+    chave: "tempo_notificacao_admin",
     label: "Tempo até notificar o administrador",
     unit: "minutos",
     min: 1,
     max: 1440,
   },
   {
-    chave: "intervalo_repeticao_notificacao_luana",
+    chave: "intervalo_repeticao_notificacao_admin",
     label: "Intervalo de repetição da notificação ao administrador",
     unit: "minutos",
     min: 1,
@@ -633,124 +556,6 @@ export async function updateTempo(chave: string, valor: number) {
     .from("system_config")
     .update({ valor: String(valor), updated_by: auth.user?.id ?? null })
     .eq("chave", chave);
-  if (error) throw error;
-}
-
-// ============ Roteamento (especialista_routing) ============
-
-export interface RoutingRow {
-  id: string;
-  ativo: boolean;
-  subject_id: string;
-  subject_nome: string;
-  subject_dept_nome: string;
-  subject_dept_cor: string;
-  user_id: string;
-  user_nome: string;
-  user_dept_nome: string;
-  user_dept_cor: string;
-}
-
-export async function fetchRoutings(): Promise<RoutingRow[]> {
-  const { data, error } = await supabase
-    .from("especialista_routing")
-    .select(
-      "id, ativo, subject_id, user_id, subjects:subject_id(nome, departments:department_id(nome, cor)), users!especialista_routing_user_id_fkey(nome, departments:department_id(nome, cor))",
-    )
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((r) => {
-    const s = r.subjects as unknown as {
-      nome: string;
-      departments: { nome: string; cor: string } | null;
-    } | null;
-    const u = r.users as unknown as {
-      nome: string;
-      departments: { nome: string; cor: string } | null;
-    } | null;
-    return {
-      id: r.id,
-      ativo: r.ativo,
-      subject_id: r.subject_id,
-      subject_nome: s?.nome ?? "—",
-      subject_dept_nome: s?.departments?.nome ?? "—",
-      subject_dept_cor: s?.departments?.cor ?? FALLBACK_COR,
-      user_id: r.user_id,
-      user_nome: u?.nome ?? "—",
-      user_dept_nome: u?.departments?.nome ?? "—",
-      user_dept_cor: u?.departments?.cor ?? FALLBACK_COR,
-    };
-  });
-}
-
-export async function fetchSubjectsAtivos() {
-  const { data, error } = await supabase
-    .from("subjects")
-    .select("id, nome, departments:department_id(nome, cor)")
-    .eq("ativo", true)
-    .order("nome");
-  if (error) throw error;
-  return (data ?? []).map((s) => {
-    const d = s.departments as { nome: string; cor: string } | null;
-    return {
-      id: s.id,
-      nome: s.nome,
-      department_nome: d?.nome ?? "—",
-      department_cor: d?.cor ?? FALLBACK_COR,
-    };
-  });
-}
-
-export async function fetchUsersAtivos() {
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, nome, departments:department_id(nome, cor)")
-    .eq("is_system_user", false)
-    .eq("ativo", true)
-    .order("nome");
-  if (error) throw error;
-  return (data ?? []).map((u) => {
-    const d = u.departments as { nome: string; cor: string } | null;
-    return {
-      id: u.id,
-      nome: u.nome,
-      department_nome: d?.nome ?? "—",
-      department_cor: d?.cor ?? FALLBACK_COR,
-    };
-  });
-}
-
-export async function createRouting(input: { subject_id: string; user_id: string }) {
-  const { data: auth } = await supabase.auth.getUser();
-  const { error } = await supabase.from("especialista_routing").insert({
-    subject_id: input.subject_id,
-    user_id: input.user_id,
-    ativo: true,
-    created_by: auth.user?.id ?? null,
-  });
-  if (error) {
-    if (error.code === "23505" || /unique|duplicate/i.test(error.message)) {
-      throw new Error("Já existe um roteamento ativo para este assunto.");
-    }
-    throw error;
-  }
-}
-
-export async function updateRouting(id: string, input: { user_id?: string; ativo?: boolean }) {
-  const patch: { user_id?: string; ativo?: boolean } = {};
-  if (input.user_id !== undefined) patch.user_id = input.user_id;
-  if (input.ativo !== undefined) patch.ativo = input.ativo;
-  const { error } = await supabase.from("especialista_routing").update(patch).eq("id", id);
-  if (error) {
-    if (error.code === "23505" || /unique|duplicate/i.test(error.message)) {
-      throw new Error("Já existe um roteamento ativo para este assunto.");
-    }
-    throw error;
-  }
-}
-
-export async function deleteRouting(id: string) {
-  const { error } = await supabase.from("especialista_routing").delete().eq("id", id);
   if (error) throw error;
 }
 

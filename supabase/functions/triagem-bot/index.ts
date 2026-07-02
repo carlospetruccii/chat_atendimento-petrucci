@@ -1,10 +1,11 @@
-// Edge Function: triagem-bot (Partes A + B).
-// Cron a cada 10s. Cobre o ciclo completo de triagem:
+// Edge Function: triagem-bot (triagem por DEPARTAMENTO).
+// Cron a cada 10s. Cobre o ciclo de triagem — o bot pergunta SÓ o departamento:
 //  - Continuidade do mesmo dia útil (RN-05.6) curto-circuita boas-vindas.
-//  - aguardando_inicio: envia boas-vindas + pergunta departamento.
-//  - aguardando_departamento: identifica dept (matching numero/exato/parcial).
-//  - aguardando_assunto: pergunta assunto, identifica, finaliza.
-//  - Finalização: carimba mensagens, roteia (especialista → último atendente → pendente).
+//  - aguardando_inicio: envia boas-vindas + menu de departamentos.
+//      · 0 departamentos → encaminha para Pendentes geral (não some).
+//      · 1 departamento  → pula o menu e roteia direto.
+//  - aguardando_departamento: identifica dept (numero/exato/parcial), confirma e finaliza.
+//  - Finalização: carimba mensagens, roteia (último atendente → pendente).
 //  - Abandono: encerra atendimentos parados há mais que tempo_abandono_triagem.
 // Idempotência por triagem_last_processed_msg_id; hardening anti-loop em tentativas >= 10.
 
@@ -27,7 +28,6 @@ const CORS_HEADERS = {
 type Estagio =
   | "aguardando_inicio"
   | "aguardando_departamento"
-  | "aguardando_assunto"
   | "concluida";
 
 interface Atendimento {
@@ -40,13 +40,11 @@ interface Atendimento {
 }
 
 interface Departamento { id: string; nome: string; }
-interface Subject { id: string; nome: string; department_id: string; }
 interface InboundMsg { id: string; content: string | null; created_at: string; }
 
 interface Config {
   delaySeg: number;
   maxTentativas: number;
-  deptDefault: string;
   abandonoMin: number;
   lembreteAtivo: boolean;
   lembreteMin: number;
@@ -86,14 +84,13 @@ async function carregarConfig(): Promise<Config> {
   const { data } = await supabase.from("system_config").select("chave, valor")
     .in("chave", [
       "delay_anti_flood_triagem", "triagem_max_tentativas",
-      "triagem_departamento_default", "tempo_abandono_triagem",
+      "tempo_abandono_triagem",
       "triagem_lembrete_ativo", "triagem_lembrete_minutos",
     ]);
   const m = new Map((data ?? []).map((r) => [r.chave as string, r.valor as string | null]));
   return {
     delaySeg: parseInt(m.get("delay_anti_flood_triagem") ?? "8", 10) || 8,
     maxTentativas: parseInt(m.get("triagem_max_tentativas") ?? "3", 10) || 3,
-    deptDefault: m.get("triagem_departamento_default") ?? TRIAGEM_DEPT_ID,
     abandonoMin: parseInt(m.get("tempo_abandono_triagem") ?? "30", 10) || 30,
     lembreteAtivo: (m.get("triagem_lembrete_ativo") ?? "true") === "true",
     lembreteMin: parseInt(m.get("triagem_lembrete_minutos") ?? "30", 10) || 30,
@@ -106,14 +103,6 @@ async function carregarDepartamentos(): Promise<Departamento[]> {
     .eq("ativo", true).neq("id", TRIAGEM_DEPT_ID).order("nome", { ascending: true });
   if (error) throw error;
   return (data ?? []) as Departamento[];
-}
-
-async function carregarSubjectsPorDept(deptId: string): Promise<Subject[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("subjects").select("id, nome, department_id")
-    .eq("ativo", true).eq("department_id", deptId).order("nome", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as Subject[];
 }
 
 async function nomeDept(deptId: string): Promise<string> {
@@ -164,16 +153,6 @@ async function inboundsDesdeUltimaProcessada(
   return (data ?? []) as InboundMsg[];
 }
 
-async function jaPerguntouAssunto(atendimentoId: string): Promise<boolean> {
-  const supabase = getSupabaseAdmin();
-  // Heurística: existe alguma outbound do bot cujo content contém "qual assunto"
-  // (substring estável dentro do template triagem_pergunta_assunto).
-  const { data } = await supabase.from("mensagens").select("id")
-    .eq("atendimento_id", atendimentoId).eq("direction", "outbound").eq("sender_type", "bot")
-    .ilike("content", "%qual assunto%").limit(1);
-  return (data ?? []).length > 0;
-}
-
 async function marcarInboundProcessada(atendimentoId: string, msgId: string): Promise<void> {
   await getSupabaseAdmin().from("atendimentos")
     .update({ triagem_last_processed_msg_id: msgId }).eq("id", atendimentoId);
@@ -222,9 +201,7 @@ const LIST_TITULO = "Atendimento Almore";
  * "Ver opções", então a numeração textual fica redundante.
  */
 function corpoSemListaNumerada(texto: string, vars: Record<string, string>): string {
-  const limpo = texto
-    .replace(/\{\{\s*lista_departamentos\s*\}\}/g, "")
-    .replace(/\{\{\s*lista_assuntos\s*\}\}/g, "");
+  const limpo = texto.replace(/\{\{\s*lista_departamentos\s*\}\}/g, "");
   return aplicarTemplate(limpo, vars).replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -312,14 +289,21 @@ async function enviarListaEPersistir(
 function opcoesDeDepartamentos(deps: Departamento[]): OpcaoLista[] {
   return deps.map((d) => ({ id: `dep_${d.id}`, title: d.nome }));
 }
-function opcoesDeAssuntos(subjects: Subject[]): OpcaoLista[] {
-  return subjects.map((s) => ({ id: `sub_${s.id}`, title: s.nome }));
-}
 
 async function getTelefone(clientId: string): Promise<string | null> {
   const { data } = await getSupabaseAdmin().from("clients")
     .select("numero_whatsapp").eq("id", clientId).maybeSingle();
   return (data as { numero_whatsapp: string } | null)?.numero_whatsapp ?? null;
+}
+
+/** Envia a confirmação de encaminhamento ao departamento (template editável). */
+async function enviarConfirmacao(
+  at: Atendimento, telefone: string, templates: Map<string, string>, deptNome: string,
+): Promise<void> {
+  const tpl = templates.get("triagem_confirmacao");
+  if (!tpl) return; // Confirmação é opcional; ausência não bloqueia a finalização.
+  const texto = aplicarTemplate(tpl, { departamento: deptNome });
+  await enviarEPersistir(at, telefone, texto);
 }
 
 // =============== Continuidade RN-05.6 ===============
@@ -337,12 +321,11 @@ async function aplicarContinuidadeSeAplicavel(at: Atendimento, inbound: InboundM
 
   // Buscar o atendimento encerrado mais recente do mesmo cliente atendido por esse user.
   const { data: prev } = await supabase.from("atendimentos")
-    .select("current_department_id, subject_id")
+    .select("current_department_id")
     .eq("client_id", at.client_id).eq("assigned_to", userId).eq("status", "encerrado")
     .order("closed_at", { ascending: false }).limit(1).maybeSingle();
 
   const deptId = (prev as { current_department_id: string | null } | null)?.current_department_id ?? null;
-  const subjectId = (prev as { subject_id: string | null } | null)?.subject_id ?? null;
   if (!deptId) {
     // Sem dept herdável → não aplica continuidade.
     return false;
@@ -353,7 +336,6 @@ async function aplicarContinuidadeSeAplicavel(at: Atendimento, inbound: InboundM
     status: "reservado",
     assigned_to: userId,
     current_department_id: deptId,
-    subject_id: subjectId,
     triagem_estagio: "concluida",
     assigned_at: nowIso,
     triagem_finished_at: nowIso,
@@ -367,6 +349,28 @@ async function aplicarContinuidadeSeAplicavel(at: Atendimento, inbound: InboundM
   log({ funcao: FUNCAO, evento: "continuidade_aplicada", status: "ok",
     atendimento_id: at.id, extra: { assigned_to: userId, dept_id: deptId } });
   return true;
+}
+
+// =============== Encaminhamento geral (sem departamento) ===============
+// Caso de borda: nenhum departamento cadastrado. Não deixamos a conversa sumir —
+// mantemos em em_triagem (dept NULL é permitido pelo CHECK só nesse status) com a
+// triagem concluída, então ela aparece em Pendentes para um humano assumir.
+async function encaminharPendentesGeral(
+  at: Atendimento, telefone: string, templates: Map<string, string>, inboundId: string,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const boas = templates.get("triagem_boas_vindas");
+  if (boas) await enviarEPersistir(at, telefone, boas);
+  await enviarConfirmacao(at, telefone, templates, "nosso atendimento");
+
+  await supabase.from("atendimentos").update({
+    triagem_estagio: "concluida",
+    triagem_finished_at: new Date().toISOString(),
+    triagem_last_processed_msg_id: inboundId,
+  }).eq("id", at.id);
+
+  log({ funcao: FUNCAO, evento: "triagem_pendentes_geral", status: "ok",
+    atendimento_id: at.id, extra: { motivo: "sem_departamentos" } });
 }
 
 // =============== Estágio: aguardando_inicio ===============
@@ -383,15 +387,36 @@ async function processarAguardandoInicio(
   const telefone = await getTelefone(at.client_id);
   if (!telefone) return;
 
-  const boas = templates.get("triagem_boas_vindas");
-  const pergunta = templates.get("triagem_pergunta_departamento");
-  if (!boas || !pergunta) {
-    log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
-      atendimento_id: at.id, erro_msg: "boas_vindas/pergunta_departamento" });
+  // Borda: nenhum departamento cadastrado → Pendentes geral.
+  if (deps.length === 0) {
+    await encaminharPendentesGeral(at, telefone, templates, inbound.id);
     return;
   }
 
+  const boas = templates.get("triagem_boas_vindas");
+  if (!boas) {
+    log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
+      atendimento_id: at.id, erro_msg: "triagem_boas_vindas" });
+    return;
+  }
   if (!(await enviarEPersistir(at, telefone, boas))) return;
+
+  // Borda: um único departamento → pula o menu e roteia direto.
+  if (deps.length === 1) {
+    const only = deps[0];
+    await enviarConfirmacao(at, telefone, templates, only.nome);
+    await finalizarTriagem(at, only.id, inbound.id);
+    log({ funcao: FUNCAO, evento: "departamento_unico_auto", status: "ok",
+      atendimento_id: at.id, duracao_ms: cron(), extra: { dept_id: only.id } });
+    return;
+  }
+
+  const pergunta = templates.get("triagem_pergunta_departamento");
+  if (!pergunta) {
+    log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
+      atendimento_id: at.id, erro_msg: "triagem_pergunta_departamento" });
+    return;
+  }
   {
     const vars = { lista_departamentos: formatarLista(deps) };
     const corpo = corpoSemListaNumerada(pergunta, vars);
@@ -434,12 +459,9 @@ async function processarAguardandoDepartamento(
   }
 
   if (deptId) {
-    await supabase.from("atendimentos").update({
-      current_department_id: deptId,
-      triagem_estagio: "aguardando_assunto",
-      triagem_tentativas: 0,
-      triagem_last_processed_msg_id: ultimoIdLote,
-    }).eq("id", at.id);
+    const telefone = await getTelefone(at.client_id);
+    if (telefone) await enviarConfirmacao(at, telefone, templates, await nomeDept(deptId));
+    await finalizarTriagem(at, deptId, ultimoIdLote);
     log({ funcao: FUNCAO, evento: "departamento_identificado", status: "ok",
       atendimento_id: at.id, duracao_ms: cron(), extra: { dept_id: deptId } });
     return;
@@ -454,19 +476,17 @@ async function processarAguardandoDepartamento(
   }
 
   const novasTent = at.triagem_tentativas + 1;
+  const telefone = await getTelefone(at.client_id);
+
+  // Esgotou as tentativas → encaminha para Pendentes geral (não some, humano assume).
   if (novasTent >= cfg.maxTentativas) {
-    await supabase.from("atendimentos").update({
-      current_department_id: cfg.deptDefault,
-      triagem_estagio: "aguardando_assunto",
-      triagem_tentativas: novasTent,
-      triagem_last_processed_msg_id: ultimoIdLote,
-    }).eq("id", at.id);
-    log({ funcao: FUNCAO, evento: "triagem_max_tentativas_atingida", status: "ok",
-      atendimento_id: at.id, duracao_ms: cron(), extra: { dept_default: cfg.deptDefault } });
+    if (telefone) await encaminharPendentesGeral(at, telefone, templates, ultimoIdLote);
+    else await marcarInboundProcessada(at.id, ultimoIdLote);
+    log({ funcao: FUNCAO, evento: "departamento_max_tentativas", status: "ok",
+      atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
     return;
   }
 
-  const telefone = await getTelefone(at.client_id);
   if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
 
   const erro = templates.get("triagem_erro_formato");
@@ -489,119 +509,11 @@ async function processarAguardandoDepartamento(
     atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
 }
 
-// =============== Estágio: aguardando_assunto ===============
-async function processarAguardandoAssunto(
-  at: Atendimento, inbound: InboundMsg,
-  templates: Map<string, string>, cfg: Config,
-): Promise<void> {
-  const cron = iniciarCronometro();
-  const supabase = getSupabaseAdmin();
-
-  if (!at.current_department_id) {
-    log({ funcao: FUNCAO, evento: "aguardando_assunto_sem_dept", status: "erro", atendimento_id: at.id });
-    await marcarInboundProcessada(at.id, inbound.id);
-    return;
-  }
-
-  const subjects = await carregarSubjectsPorDept(at.current_department_id);
-  if (subjects.length === 0) {
-    // Departamento sem assuntos cadastrados: pula assunto e finaliza com subject NULL.
-    log({ funcao: FUNCAO, evento: "departamento_sem_assuntos", status: "ok",
-      atendimento_id: at.id, extra: { dept_id: at.current_department_id } });
-    await finalizarTriagem(at, at.current_department_id, null, inbound.id);
-    return;
-  }
-
-  // Primeira passagem: ainda não perguntamos sobre assunto neste atendimento.
-  const jaPerguntou = await jaPerguntouAssunto(at.id);
-  if (!jaPerguntou) {
-    const telefone = await getTelefone(at.client_id);
-    if (!telefone) return;
-    const tpl = templates.get("triagem_pergunta_assunto");
-    if (!tpl) {
-      log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
-        atendimento_id: at.id, erro_msg: "triagem_pergunta_assunto" });
-      return;
-    }
-    const deptNome = await nomeDept(at.current_department_id);
-    {
-      const vars = { departamento: deptNome, lista_assuntos: formatarLista(subjects) };
-      const corpo = corpoSemListaNumerada(tpl, vars);
-      const fallback = aplicarTemplate(tpl, vars);
-      await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver assuntos", opcoesDeAssuntos(subjects));
-    }
-    await supabase.from("atendimentos").update({
-      triagem_tentativas: 0, triagem_last_processed_msg_id: inbound.id,
-    }).eq("id", at.id);
-    log({ funcao: FUNCAO, evento: "pergunta_assunto_enviada", status: "ok",
-      atendimento_id: at.id, duracao_ms: cron() });
-    return;
-  }
-
-  // Passagens seguintes: cliente respondeu o assunto. Varre todas as inbounds
-  // novas para não perder a resposta caso o cliente envie texto + mídia juntos.
-  const novas = await inboundsDesdeUltimaProcessada(at.id, at.triagem_last_processed_msg_id);
-  const lote = novas.length > 0 ? novas : [inbound];
-  const ultimoIdLote = lote[lote.length - 1].id;
-
-  let subjectId: string | null = null;
-  let textosVistos = 0;
-  for (const m of lote) {
-    if (!m.content || !m.content.trim()) continue;
-    textosVistos++;
-    const r = identificarPorTexto(m.content, subjects);
-    if (r) { subjectId = r; break; }
-  }
-
-  if (subjectId) {
-    await finalizarTriagem(at, at.current_department_id, subjectId, ultimoIdLote);
-    log({ funcao: FUNCAO, evento: "assunto_identificado", status: "ok",
-      atendimento_id: at.id, duracao_ms: cron(), extra: { subject_id: subjectId } });
-    return;
-  }
-
-  if (textosVistos === 0) {
-    await marcarInboundProcessada(at.id, ultimoIdLote);
-    log({ funcao: FUNCAO, evento: "assunto_apenas_midia", status: "ok",
-      atendimento_id: at.id, duracao_ms: cron() });
-    return;
-  }
-
-  const novasTent = at.triagem_tentativas + 1;
-  if (novasTent >= cfg.maxTentativas) {
-    // Fallback: primeiro assunto ativo do dept.
-    const fallback = subjects[0].id;
-    await finalizarTriagem(at, at.current_department_id, fallback, ultimoIdLote);
-    log({ funcao: FUNCAO, evento: "assunto_max_tentativas_atingida", status: "ok",
-      atendimento_id: at.id, duracao_ms: cron(), extra: { subject_fallback: fallback } });
-    return;
-  }
-
-  const telefone = await getTelefone(at.client_id);
-  if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
-  const erro = templates.get("triagem_erro_formato");
-  const tpl = templates.get("triagem_pergunta_assunto");
-  if (!erro || !tpl) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
-  const deptNome = await nomeDept(at.current_department_id);
-
-  await enviarEPersistir(at, telefone, erro);
-  {
-    const vars = { departamento: deptNome, lista_assuntos: formatarLista(subjects) };
-    const corpo = corpoSemListaNumerada(tpl, vars);
-    const fallback = aplicarTemplate(tpl, vars);
-    await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver assuntos", opcoesDeAssuntos(subjects));
-  }
-  await supabase.from("atendimentos").update({
-    triagem_tentativas: novasTent, triagem_last_processed_msg_id: ultimoIdLote,
-  }).eq("id", at.id);
-
-  log({ funcao: FUNCAO, evento: "assunto_nao_identificado", status: "ok",
-    atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
-}
-
 // =============== Finalização da triagem (RN-06) ===============
+// Roteia o atendimento já com o departamento definido: último atendente do
+// departamento (continuidade) → senão Pendentes daquele departamento.
 async function finalizarTriagem(
-  at: Atendimento, deptId: string, subjectId: string | null, inboundId: string,
+  at: Atendimento, deptId: string, inboundId: string,
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
 
@@ -609,25 +521,10 @@ async function finalizarTriagem(
   await supabase.from("mensagens").update({ department_id: deptId })
     .eq("atendimento_id", at.id).is("department_id", null);
 
-  // 2) Roteamento.
+  // 2) Roteamento — RN-06.2: último atendente do cliente naquele departamento.
   let assignedTo: string | null = null;
-  let routing: "especialista" | "ultimo_atendente" | "pendente" = "pendente";
-
-  // RN-06.1 — especialista do assunto.
-  if (subjectId) {
-    const { data: routings } = await supabase.from("especialista_routing")
-      .select("user_id").eq("subject_id", subjectId).eq("ativo", true);
-    const userIds = (routings ?? []).map((r) => (r as { user_id: string }).user_id);
-    if (userIds.length > 0) {
-      const { data: validUsers } = await supabase.from("users").select("id")
-        .in("id", userIds).eq("ativo", true).eq("disponivel", true).limit(1);
-      const u = (validUsers ?? [])[0] as { id: string } | undefined;
-      if (u) { assignedTo = u.id; routing = "especialista"; }
-    }
-  }
-
-  // RN-06.2 — último atendente do departamento.
-  if (!assignedTo) {
+  let routing: "ultimo_atendente" | "pendente" = "pendente";
+  {
     const { data: rpcData, error: rpcErr } = await supabase
       .rpc("ultimo_atendente_no_departamento", { p_client_id: at.client_id, p_department_id: deptId });
     if (!rpcErr && rpcData) {
@@ -639,10 +536,10 @@ async function finalizarTriagem(
   // 3) Atualiza atendimento.
   const nowIso = new Date().toISOString();
   const update: Record<string, unknown> = {
+    current_department_id: deptId,
     triagem_estagio: "concluida",
     triagem_finished_at: nowIso,
     triagem_last_processed_msg_id: inboundId,
-    subject_id: subjectId,
   };
   if (assignedTo) {
     update.status = "reservado";
@@ -656,7 +553,7 @@ async function finalizarTriagem(
 
   log({ funcao: FUNCAO, evento: "triagem_concluida", status: "ok",
     atendimento_id: at.id,
-    extra: { routing_decision: routing, assigned_to: assignedTo, dept_id: deptId, subject_id: subjectId } });
+    extra: { routing_decision: routing, assigned_to: assignedTo, dept_id: deptId } });
 }
 
 // =============== Abandono ===============
@@ -719,7 +616,7 @@ async function varrerLembretes(cfg: Config): Promise<number> {
   const { data, error } = await supabase.from("atendimentos")
     .select("id, client_id, last_message_at, current_department_id")
     .eq("status", "em_triagem")
-    .in("triagem_estagio", ["aguardando_departamento", "aguardando_assunto"])
+    .eq("triagem_estagio", "aguardando_departamento")
     .is("triagem_lembrete_enviado_at", null)
     .lt("last_message_at", limiteIso)
     .gt("last_message_at", idadeMaxIso)
@@ -797,7 +694,7 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
   const { data: atendimentos, error } = await supabase.from("atendimentos")
     .select("id, client_id, triagem_estagio, triagem_tentativas, current_department_id, triagem_last_processed_msg_id")
     .eq("status", "em_triagem")
-    .in("triagem_estagio", ["aguardando_inicio", "aguardando_departamento", "aguardando_assunto"])
+    .in("triagem_estagio", ["aguardando_inicio", "aguardando_departamento"])
     .order("created_at", { ascending: true }).limit(50);
 
   if (error) {
@@ -810,7 +707,7 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
   const deps = await carregarDepartamentos();
   const templates = await carregarTemplates([
     "triagem_boas_vindas", "triagem_pergunta_departamento",
-    "triagem_pergunta_assunto", "triagem_erro_formato",
+    "triagem_confirmacao", "triagem_erro_formato",
   ]);
 
   let processados = 0, pulados_anti_flood = 0, pulados_idempotencia = 0;
@@ -837,13 +734,6 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
         continue;
       }
       if (at.triagem_last_processed_msg_id === inbound.id) {
-        // Exceção: aguardando_assunto na primeira passagem precisa enviar pergunta
-        // mesmo sem nova inbound (acabou de transicionar de aguardando_departamento).
-        if (at.triagem_estagio === "aguardando_assunto" && !(await jaPerguntouAssunto(at.id))) {
-          await processarAguardandoAssunto(at, inbound, templates, cfg);
-          processados++;
-          continue;
-        }
         pulados_idempotencia++;
         log({ funcao: FUNCAO, evento: "triagem_inbound_ja_processada", status: "ok", atendimento_id: at.id });
         continue;
@@ -859,8 +749,6 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
         await processarAguardandoInicio(at, inbound, templates, deps);
       } else if (at.triagem_estagio === "aguardando_departamento") {
         await processarAguardandoDepartamento(at, inbound, templates, deps, cfg);
-      } else if (at.triagem_estagio === "aguardando_assunto") {
-        await processarAguardandoAssunto(at, inbound, templates, cfg);
       }
       processados++;
     } catch (e) {
