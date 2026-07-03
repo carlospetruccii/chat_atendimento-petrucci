@@ -221,6 +221,10 @@ export const TEMPLATE_VARS: Record<string, string[]> = {
   triagem_confirmacao: ["departamento"],
   triagem_erro_formato: [],
   triagem_lembrete_sem_resposta: [],
+  sessao_boas_vindas: ["nome"],
+  sessao_pergunta_departamento: ["lista_departamentos"],
+  sessao_pergunta_colaborador: ["departamento", "lista_colaboradores"],
+  sessao_confirmacao: ["colaborador"],
   notificacao_admin: ["nome_cliente", "telefone", "departamento", "tempo_aguardando"],
   encerramento: [],
   fora_horario: [],
@@ -233,6 +237,9 @@ export const TEMPLATE_VAR_DESC: Record<string, string> = {
   departamento: "Nome do departamento atual do atendimento",
   tempo_aguardando: 'Tempo de espera formatado (ex: "1h 23min")',
   lista_departamentos: "Lista formatada dos departamentos ativos",
+  nome: "Primeiro nome cadastrado na Lista de Sessões",
+  colaborador: "Nome do colaborador escolhido no fluxo de sessão",
+  lista_colaboradores: "Lista formatada dos colaboradores do departamento escolhido",
 };
 
 export const TEMPLATE_LABEL: Record<string, string> = {
@@ -241,6 +248,10 @@ export const TEMPLATE_LABEL: Record<string, string> = {
   triagem_confirmacao: "Confirmação de encaminhamento",
   triagem_erro_formato: "Erro de formato (triagem)",
   triagem_lembrete_sem_resposta: "Lembrete na triagem sem resposta",
+  sessao_boas_vindas: "Sessão · Boas-vindas (personalizada)",
+  sessao_pergunta_departamento: "Sessão · Pergunta de departamento",
+  sessao_pergunta_colaborador: "Sessão · Pergunta de colaborador",
+  sessao_confirmacao: "Sessão · Confirmação de encaminhamento",
   notificacao_admin: "Notificação ao administrador",
   encerramento: "Encerramento",
   fora_horario: "Fora do horário",

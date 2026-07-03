@@ -1248,11 +1248,30 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // 3c.3.b.2) Lista de Sessões: se o número está cadastrado (e ativo), o
+    // atendimento novo roda o fluxo INTERNO (saudação personalizada → escolhe
+    // departamento → escolhe o colaborador). Só importa quando vamos criar um
+    // atendimento do zero, então a consulta fica restrita a esse caso.
+    let ehSessao = false;
+    if (!atend) {
+      const { data: cli } = await supabase
+        .from("clients").select("numero_whatsapp").eq("id", cliente.id).maybeSingle();
+      const numeroCli = (cli as { numero_whatsapp: string } | null)?.numero_whatsapp ?? null;
+      if (numeroCli) {
+        const { data: ses } = await supabase
+          .from("sessoes_triagem").select("id")
+          .eq("numero_whatsapp", numeroCli).eq("ativo", true).limit(1).maybeSingle();
+        ehSessao = !!ses;
+      }
+    }
+
     // 3c.3.c) Antes de criar uma triagem nova, tentar reabrir o último
     // atendimento encerrado nas últimas 24h se ele tiver conversa externa
     // ou se foi encerrado por inatividade. Evita que um cliente sendo
     // atendido pelo WhatsApp pessoal volte para a triagem do bot.
-    if (!atend) {
+    // Números da Lista de Sessões pulam a reabertura: sempre reiniciam o fluxo
+    // interno (podem querer falar com pessoas diferentes a cada contato).
+    if (!atend && !ehSessao) {
       // Inbound do cliente: encerramento manual é definitivo. Só reabre
       // automaticamente encerramentos por inatividade; qualquer outra coisa
       // (inclusive close manual com conversa externa antiga) inicia triagem nova.
@@ -1289,6 +1308,7 @@ Deno.serve(async (req: Request) => {
           current_department_id: null,
           assigned_to: null,
           triagem_started_at: agora,
+          is_sessao: ehSessao,
         })
         .select("id, status, current_department_id")
         .single();

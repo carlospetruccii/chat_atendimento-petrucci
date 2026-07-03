@@ -53,6 +53,39 @@ export type Database = {
         }
         Relationships: []
       }
+      sessoes_triagem: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          nome: string | null
+          numero_whatsapp: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome?: string | null
+          numero_whatsapp: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome?: string | null
+          numero_whatsapp?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       google_integration: {
         Row: {
           access_token: string | null
@@ -122,6 +155,7 @@ export type Database = {
           escalated_from_user_id: string | null
           first_response_at: string | null
           id: string
+          is_sessao: boolean
           last_message_at: string | null
           status: Database["public"]["Enums"]["status_atendimento"]
           transferred_count: number
@@ -147,6 +181,7 @@ export type Database = {
           escalated_from_user_id?: string | null
           first_response_at?: string | null
           id?: string
+          is_sessao?: boolean
           last_message_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
           transferred_count?: number
@@ -172,6 +207,7 @@ export type Database = {
           escalated_from_user_id?: string | null
           first_response_at?: string | null
           id?: string
+          is_sessao?: boolean
           last_message_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
           transferred_count?: number
@@ -1302,6 +1338,7 @@ export type Database = {
         | "aguardando_inicio"
         | "aguardando_departamento"
         | "aguardando_assunto"
+        | "aguardando_colaborador"
         | "concluida"
     }
     CompositeTypes: {
@@ -1486,6 +1523,7 @@ export const Constants = {
         "aguardando_inicio",
         "aguardando_departamento",
         "aguardando_assunto",
+        "aguardando_colaborador",
         "concluida",
       ],
     },

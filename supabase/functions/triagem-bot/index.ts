@@ -28,6 +28,7 @@ const CORS_HEADERS = {
 type Estagio =
   | "aguardando_inicio"
   | "aguardando_departamento"
+  | "aguardando_colaborador"
   | "concluida";
 
 interface Atendimento {
@@ -37,9 +38,16 @@ interface Atendimento {
   triagem_tentativas: number;
   current_department_id: string | null;
   triagem_last_processed_msg_id: string | null;
+  // true → veio de um número da Lista de Sessões (fluxo interno: escolhe
+  // departamento e depois o colaborador). Sempre false para cliente comum.
+  is_sessao: boolean;
 }
 
 interface Departamento { id: string; nome: string; }
+// Colaborador para o passo "aguardando_colaborador" do fluxo de sessão.
+interface Colaborador { id: string; nome: string; }
+// Item genérico de menu interativo (departamento ou colaborador).
+type ItemMenu = { id: string; nome: string };
 interface InboundMsg {
   id: string;
   content: string | null;
@@ -84,20 +92,50 @@ function identificarPorTexto<T extends { id: string; nome: string }>(texto: stri
   return null;
 }
 
-// Resolve o departamento a partir do CLIQUE numa opção da lista interativa.
-// A uazapi devolve o id da opção em media_metadata.selected_id no formato
-// "dep_<uuid>" (ver opcoesDeDepartamentos). É a fonte mais confiável: o texto
-// (content) da resposta de lista costuma chegar vazio. Só resolve se o
-// departamento ainda estiver ativo (presente em `deps`).
-function deptDoSelectedId(
+// Resolve um item a partir do CLIQUE numa opção da lista interativa. A uazapi
+// devolve o id da opção em media_metadata.selected_id no formato "<prefixo><uuid>"
+// (ver opcoesDeDepartamentos/opcoesDeColaboradores). É a fonte mais confiável: o
+// texto (content) da resposta de lista costuma chegar vazio. Só resolve se o item
+// ainda existir na lista atual (`itens`).
+function selectedIdComPrefixo(
   meta: Record<string, unknown> | null | undefined,
-  deps: Departamento[],
+  prefixo: string,
+  itens: ItemMenu[],
 ): string | null {
   if (!ehListReply(meta)) return null;
   const sel = typeof meta!.selected_id === "string" ? (meta!.selected_id as string) : null;
-  if (!sel || !sel.startsWith("dep_")) return null;
-  const deptId = sel.slice(4);
-  return deps.some((d) => d.id === deptId) ? deptId : null;
+  if (!sel || !sel.startsWith(prefixo)) return null;
+  const id = sel.slice(prefixo.length);
+  return itens.some((d) => d.id === id) ? id : null;
+}
+
+// Percorre o lote de inbounds procurando a primeira que resolve para um item do
+// menu. Prioridade: (1) clique numa opção (selected_id) — confiável, pois o
+// content textual pode chegar vazio; (2) texto livre (número/nome/prefixo).
+// Compartilhado pelos passos de departamento (cliente e sessão) e de colaborador.
+function resolverItemDoLote(
+  lote: InboundMsg[],
+  itens: ItemMenu[],
+  prefixo: string,
+): { itemId: string | null; msgResolvidaId: string | null; resolvidoPorClique: boolean; textosVistos: number } {
+  let itemId: string | null = null;
+  let msgResolvidaId: string | null = null;
+  let resolvidoPorClique = false;
+  let textosVistos = 0;
+  for (const m of lote) {
+    const viaClique = selectedIdComPrefixo(m.media_metadata, prefixo, itens);
+    if (viaClique) { itemId = viaClique; msgResolvidaId = m.id; resolvidoPorClique = true; break; }
+    const temTexto = !!(m.content && m.content.trim());
+    // Resposta de lista que não resolveu conta como tentativa (dispara "não
+    // entendi"); pura mídia (sticker/áudio etc.) é ignorada sem consumir tentativa.
+    if (!temTexto && !ehListReply(m.media_metadata)) continue;
+    textosVistos++;
+    if (temTexto) {
+      const r = identificarPorTexto(m.content ?? "", itens);
+      if (r) { itemId = r; msgResolvidaId = m.id; break; }
+    }
+  }
+  return { itemId, msgResolvidaId, resolvidoPorClique, textosVistos };
 }
 
 // Indica se a inbound é resposta de uma lista interativa (clique numa opção),
@@ -137,6 +175,34 @@ async function nomeDept(deptId: string): Promise<string> {
   const supabase = getSupabaseAdmin();
   const { data } = await supabase.from("departments").select("nome").eq("id", deptId).maybeSingle();
   return (data as { nome: string } | null)?.nome ?? "";
+}
+
+// Colaboradores ativos (não-sistema) de um departamento, para o passo de
+// escolha de pessoa no fluxo de sessão. Ordem por nome (igual ao menu de deps).
+async function carregarColaboradores(deptId: string): Promise<Colaborador[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("users").select("id, nome")
+    .eq("department_id", deptId).eq("ativo", true).eq("is_system_user", false)
+    .order("nome", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Colaborador[];
+}
+
+// Nome cadastrado na Lista de Sessões para o número do cliente (saudação
+// personalizada). Vazio se o número não estiver na lista ou sem nome.
+async function nomeSessao(clientId: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  const { data: c } = await supabase.from("clients")
+    .select("numero_whatsapp").eq("id", clientId).maybeSingle();
+  const numero = (c as { numero_whatsapp: string } | null)?.numero_whatsapp;
+  if (!numero) return "";
+  const { data } = await supabase.from("sessoes_triagem")
+    .select("nome").eq("numero_whatsapp", numero).eq("ativo", true).limit(1).maybeSingle();
+  return ((data as { nome: string | null } | null)?.nome ?? "").trim();
+}
+
+function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0] ?? "";
 }
 
 async function carregarTemplates(chaves: string[]): Promise<Map<string, string>> {
@@ -229,7 +295,7 @@ const LIST_TITULO = "Atendimento Almore";
  * "Ver opções", então a numeração textual fica redundante.
  */
 function corpoSemListaNumerada(texto: string, vars: Record<string, string>): string {
-  const limpo = texto.replace(/\{\{\s*lista_departamentos\s*\}\}/g, "");
+  const limpo = texto.replace(/\{\{\s*(?:lista_departamentos|lista_colaboradores)\s*\}\}/g, "");
   return aplicarTemplate(limpo, vars).replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -316,6 +382,10 @@ async function enviarListaEPersistir(
 
 function opcoesDeDepartamentos(deps: Departamento[]): OpcaoLista[] {
   return deps.map((d) => ({ id: `dep_${d.id}`, title: d.nome }));
+}
+
+function opcoesDeColaboradores(cols: Colaborador[]): OpcaoLista[] {
+  return cols.map((c) => ({ id: `col_${c.id}`, title: c.nome }));
 }
 
 async function getTelefone(clientId: string): Promise<string | null> {
@@ -409,6 +479,9 @@ async function processarAguardandoInicio(
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
 
+  // Fluxo interno (Lista de Sessões): saudação personalizada + escolha de setor.
+  if (at.is_sessao) return await processarSessaoInicio(at, inbound, templates, deps);
+
   // RN-05.6 — continuidade do mesmo dia útil.
   if (await aplicarContinuidadeSeAplicavel(at, inbound)) return;
 
@@ -468,6 +541,10 @@ async function processarAguardandoDepartamento(
   templates: Map<string, string>, deps: Departamento[],
   cfg: Config,
 ): Promise<void> {
+  // Fluxo interno (Lista de Sessões): depois do departamento vem a escolha do
+  // colaborador, então tem terminal e templates próprios.
+  if (at.is_sessao) return await processarSessaoDepartamento(at, inbound, templates, deps, cfg);
+
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
 
@@ -476,27 +553,8 @@ async function processarAguardandoDepartamento(
   const lote = novas.length > 0 ? novas : [inbound];
   const ultimoIdLote = lote[lote.length - 1].id;
 
-  // Procura a primeira inbound que resolve para um departamento. Prioridade:
-  // (1) clique numa opção da lista interativa (media_metadata.selected_id) —
-  //     fonte confiável, pois o content textual pode chegar vazio;
-  // (2) texto livre (número / nome exato / prefixo / substring).
-  let deptId: string | null = null;
-  let msgResolvidaId: string | null = null;
-  let resolvidoPorClique = false;
-  let textosVistos = 0;
-  for (const m of lote) {
-    const viaClique = deptDoSelectedId(m.media_metadata, deps);
-    if (viaClique) { deptId = viaClique; msgResolvidaId = m.id; resolvidoPorClique = true; break; }
-    const temTexto = !!(m.content && m.content.trim());
-    // Resposta de lista que não resolveu conta como tentativa (dispara "não
-    // entendi"); pura mídia (sticker/áudio etc.) é ignorada sem consumir tentativa.
-    if (!temTexto && !ehListReply(m.media_metadata)) continue;
-    textosVistos++;
-    if (temTexto) {
-      const r = identificarPorTexto(m.content ?? "", deps);
-      if (r) { deptId = r; msgResolvidaId = m.id; break; }
-    }
-  }
+  const { itemId: deptId, msgResolvidaId, resolvidoPorClique, textosVistos } =
+    resolverItemDoLote(lote, deps, "dep_");
 
   if (deptId) {
     const nome = await nomeDept(deptId);
@@ -600,6 +658,289 @@ async function finalizarTriagem(
   log({ funcao: FUNCAO, evento: "triagem_concluida", status: "ok",
     atendimento_id: at.id,
     extra: { routing_decision: routing, assigned_to: assignedTo, dept_id: deptId } });
+}
+
+// =====================================================================
+// Fluxo da Lista de Sessões (VIPs internos): saudação personalizada →
+// escolha do departamento → escolha do COLABORADOR → reserva direta.
+// Reaproveita todo o maquinário de menu/lote da triagem de cliente; muda
+// só os templates e o terminal (reserva para a pessoa escolhida).
+// =====================================================================
+
+// Envia o menu de colaboradores do departamento e move para
+// 'aguardando_colaborador'. Bordas: 0 colaboradores → cai em Pendentes do
+// próprio departamento (fluxo cliente); 1 colaborador → reserva direto.
+async function enviarMenuColaboradores(
+  at: Atendimento, telefone: string, deptId: string,
+  templates: Map<string, string>, inboundId: string,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const cols = await carregarColaboradores(deptId);
+  const deptNomeStr = await nomeDept(deptId);
+
+  if (cols.length === 0) {
+    // Ninguém disponível no setor → não some: vira Pendente daquele departamento.
+    await finalizarTriagem(at, deptId, inboundId);
+    log({ funcao: FUNCAO, evento: "sessao_dept_sem_colaboradores", status: "ok",
+      atendimento_id: at.id, extra: { dept_id: deptId } });
+    return;
+  }
+  if (cols.length === 1) {
+    await finalizarSessao(at, deptId, cols[0], telefone, templates, inboundId);
+    return;
+  }
+
+  const pergunta = templates.get("sessao_pergunta_colaborador");
+  if (!pergunta) {
+    // Sem template não dá para perguntar → cai em Pendente do departamento.
+    await finalizarTriagem(at, deptId, inboundId);
+    log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
+      atendimento_id: at.id, erro_msg: "sessao_pergunta_colaborador" });
+    return;
+  }
+  const vars = { departamento: deptNomeStr, lista_colaboradores: formatarLista(cols) };
+  const corpo = corpoSemListaNumerada(pergunta, vars);
+  const fallback = aplicarTemplate(pergunta, vars);
+  if (!(await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver pessoas", opcoesDeColaboradores(cols)))) return;
+
+  await supabase.from("atendimentos").update({
+    current_department_id: deptId,
+    triagem_estagio: "aguardando_colaborador",
+    triagem_tentativas: 0,
+    triagem_last_processed_msg_id: inboundId,
+  }).eq("id", at.id);
+
+  log({ funcao: FUNCAO, evento: "sessao_menu_colaboradores", status: "ok",
+    atendimento_id: at.id, extra: { dept_id: deptId, colaboradores: cols.length } });
+}
+
+// Reserva o atendimento direto para o colaborador escolhido.
+async function finalizarSessao(
+  at: Atendimento, deptId: string, col: Colaborador,
+  telefone: string, templates: Map<string, string>, inboundId: string,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+
+  // Carimba as mensagens da triagem com o departamento.
+  await supabase.from("mensagens").update({ department_id: deptId })
+    .eq("atendimento_id", at.id).is("department_id", null);
+
+  const nowIso = new Date().toISOString();
+  await supabase.from("atendimentos").update({
+    current_department_id: deptId,
+    assigned_to: col.id,
+    status: "reservado",
+    assigned_at: nowIso,
+    triagem_estagio: "concluida",
+    triagem_finished_at: nowIso,
+    triagem_last_processed_msg_id: inboundId,
+  }).eq("id", at.id);
+
+  const tpl = templates.get("sessao_confirmacao");
+  if (tpl) await enviarEPersistir(at, telefone, aplicarTemplate(tpl, { colaborador: col.nome }));
+
+  log({ funcao: FUNCAO, evento: "sessao_concluida", status: "ok",
+    atendimento_id: at.id, extra: { dept_id: deptId, assigned_to: col.id } });
+}
+
+// =============== Sessão · Estágio: aguardando_inicio ===============
+async function processarSessaoInicio(
+  at: Atendimento, inbound: InboundMsg,
+  templates: Map<string, string>, deps: Departamento[],
+): Promise<void> {
+  const cron = iniciarCronometro();
+  const supabase = getSupabaseAdmin();
+
+  const telefone = await getTelefone(at.client_id);
+  if (!telefone) return;
+
+  // Saudação personalizada com o nome cadastrado na Lista de Sessões.
+  const nome = await nomeSessao(at.client_id);
+  const boasTpl = templates.get("sessao_boas_vindas");
+  const saudacao = boasTpl
+    ? (nome ? aplicarTemplate(boasTpl, { nome: primeiroNome(nome) }) : "Olá! 👋")
+    : null;
+  if (saudacao && !(await enviarEPersistir(at, telefone, saudacao))) return;
+
+  // Borda: nenhum departamento → Pendentes geral (não some).
+  if (deps.length === 0) {
+    await encaminharPendentesGeral(at, telefone, templates, inbound.id);
+    return;
+  }
+  // Borda: um único departamento → pula o menu de setor e já pergunta a pessoa.
+  if (deps.length === 1) {
+    await enviarMenuColaboradores(at, telefone, deps[0].id, templates, inbound.id);
+    log({ funcao: FUNCAO, evento: "sessao_dept_unico_auto", status: "ok",
+      atendimento_id: at.id, duracao_ms: cron(), extra: { dept_id: deps[0].id } });
+    return;
+  }
+
+  const pergunta = templates.get("sessao_pergunta_departamento");
+  if (!pergunta) {
+    log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
+      atendimento_id: at.id, erro_msg: "sessao_pergunta_departamento" });
+    return;
+  }
+  {
+    const vars = { lista_departamentos: formatarLista(deps) };
+    const corpo = corpoSemListaNumerada(pergunta, vars);
+    const fallback = aplicarTemplate(pergunta, vars);
+    if (!(await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver setores", opcoesDeDepartamentos(deps)))) return;
+  }
+
+  await supabase.from("atendimentos").update({
+    triagem_estagio: "aguardando_departamento",
+    triagem_tentativas: 0,
+    triagem_last_processed_msg_id: inbound.id,
+  }).eq("id", at.id);
+
+  log({ funcao: FUNCAO, evento: "sessao_boas_vindas_enviadas", status: "ok",
+    atendimento_id: at.id, duracao_ms: cron() });
+}
+
+// =============== Sessão · Estágio: aguardando_departamento ===============
+// Igual ao passo do cliente na resolução, mas o terminal é o menu de
+// colaboradores (não a finalização direta).
+async function processarSessaoDepartamento(
+  at: Atendimento, inbound: InboundMsg,
+  templates: Map<string, string>, deps: Departamento[], cfg: Config,
+): Promise<void> {
+  const cron = iniciarCronometro();
+  const supabase = getSupabaseAdmin();
+
+  const novas = await inboundsDesdeUltimaProcessada(at.id, at.triagem_last_processed_msg_id);
+  const lote = novas.length > 0 ? novas : [inbound];
+  const ultimoIdLote = lote[lote.length - 1].id;
+
+  const { itemId: deptId, msgResolvidaId, resolvidoPorClique, textosVistos } =
+    resolverItemDoLote(lote, deps, "dep_");
+
+  if (deptId) {
+    const nome = await nomeDept(deptId);
+    if (resolvidoPorClique && msgResolvidaId) {
+      await supabase.from("mensagens").update({ content: nome }).eq("id", msgResolvidaId);
+    }
+    const telefone = await getTelefone(at.client_id);
+    if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
+    await enviarMenuColaboradores(at, telefone, deptId, templates, ultimoIdLote);
+    log({ funcao: FUNCAO, evento: "sessao_departamento_identificado", status: "ok",
+      atendimento_id: at.id, duracao_ms: cron(), extra: { dept_id: deptId, via: resolvidoPorClique ? "clique" : "texto" } });
+    return;
+  }
+
+  if (textosVistos === 0) {
+    await marcarInboundProcessada(at.id, ultimoIdLote);
+    return;
+  }
+
+  const novasTent = at.triagem_tentativas + 1;
+  const telefone = await getTelefone(at.client_id);
+
+  // Esgotou tentativas → Pendentes geral (humano assume), não some.
+  if (novasTent >= cfg.maxTentativas) {
+    if (telefone) await encaminharPendentesGeral(at, telefone, templates, ultimoIdLote);
+    else await marcarInboundProcessada(at.id, ultimoIdLote);
+    return;
+  }
+
+  if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
+
+  const erro = templates.get("triagem_erro_formato");
+  const pergunta = templates.get("sessao_pergunta_departamento");
+  if (!erro || !pergunta) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
+
+  await enviarEPersistir(at, telefone, erro);
+  {
+    const vars = { lista_departamentos: formatarLista(deps) };
+    const corpo = corpoSemListaNumerada(pergunta, vars);
+    const fallback = aplicarTemplate(pergunta, vars);
+    await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver setores", opcoesDeDepartamentos(deps));
+  }
+
+  await supabase.from("atendimentos").update({
+    triagem_tentativas: novasTent, triagem_last_processed_msg_id: ultimoIdLote,
+  }).eq("id", at.id);
+
+  log({ funcao: FUNCAO, evento: "sessao_departamento_nao_identificado", status: "ok",
+    atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
+}
+
+// =============== Sessão · Estágio: aguardando_colaborador ===============
+async function processarAguardandoColaborador(
+  at: Atendimento, inbound: InboundMsg,
+  templates: Map<string, string>, cfg: Config,
+): Promise<void> {
+  const cron = iniciarCronometro();
+  const supabase = getSupabaseAdmin();
+
+  const deptId = at.current_department_id;
+  if (!deptId) {
+    // Estado inconsistente (colaborador sem departamento) → volta ao início.
+    await supabase.from("atendimentos").update({ triagem_estagio: "aguardando_inicio" }).eq("id", at.id);
+    return;
+  }
+  const cols = await carregarColaboradores(deptId);
+  if (cols.length === 0) {
+    // O setor esvaziou desde o menu → cai em Pendente do departamento.
+    await finalizarTriagem(at, deptId, inbound.id);
+    return;
+  }
+
+  const novas = await inboundsDesdeUltimaProcessada(at.id, at.triagem_last_processed_msg_id);
+  const lote = novas.length > 0 ? novas : [inbound];
+  const ultimoIdLote = lote[lote.length - 1].id;
+
+  const { itemId: colId, msgResolvidaId, resolvidoPorClique, textosVistos } =
+    resolverItemDoLote(lote, cols, "col_");
+
+  if (colId) {
+    const col = cols.find((c) => c.id === colId)!;
+    if (resolvidoPorClique && msgResolvidaId) {
+      await supabase.from("mensagens").update({ content: col.nome }).eq("id", msgResolvidaId);
+    }
+    const telefone = await getTelefone(at.client_id);
+    if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
+    await finalizarSessao(at, deptId, col, telefone, templates, ultimoIdLote);
+    log({ funcao: FUNCAO, evento: "sessao_colaborador_identificado", status: "ok",
+      atendimento_id: at.id, duracao_ms: cron(), extra: { assigned_to: colId, via: resolvidoPorClique ? "clique" : "texto" } });
+    return;
+  }
+
+  if (textosVistos === 0) {
+    await marcarInboundProcessada(at.id, ultimoIdLote);
+    return;
+  }
+
+  const novasTent = at.triagem_tentativas + 1;
+  const telefone = await getTelefone(at.client_id);
+
+  // Esgotou tentativas → cai em Pendente do departamento (não some).
+  if (novasTent >= cfg.maxTentativas) {
+    if (telefone) await finalizarTriagem(at, deptId, ultimoIdLote);
+    else await marcarInboundProcessada(at.id, ultimoIdLote);
+    return;
+  }
+
+  if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
+
+  const erro = templates.get("triagem_erro_formato");
+  const pergunta = templates.get("sessao_pergunta_colaborador");
+  if (!erro || !pergunta) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
+
+  await enviarEPersistir(at, telefone, erro);
+  {
+    const vars = { departamento: await nomeDept(deptId), lista_colaboradores: formatarLista(cols) };
+    const corpo = corpoSemListaNumerada(pergunta, vars);
+    const fallback = aplicarTemplate(pergunta, vars);
+    await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver pessoas", opcoesDeColaboradores(cols));
+  }
+
+  await supabase.from("atendimentos").update({
+    triagem_tentativas: novasTent, triagem_last_processed_msg_id: ultimoIdLote,
+  }).eq("id", at.id);
+
+  log({ funcao: FUNCAO, evento: "sessao_colaborador_nao_identificado", status: "ok",
+    atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
 }
 
 // =============== Abandono ===============
@@ -707,6 +1048,7 @@ async function varrerLembretes(cfg: Config): Promise<number> {
       triagem_tentativas: 0,
       current_department_id: a.current_department_id,
       triagem_last_processed_msg_id: null,
+      is_sessao: false,
     };
     const ok = await enviarEPersistir(fakeAt, telefone, tpl);
     if (!ok) continue;
@@ -738,9 +1080,9 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
   const limiteIso = new Date(Date.now() - cfg.delaySeg * 1000).toISOString();
 
   const { data: atendimentos, error } = await supabase.from("atendimentos")
-    .select("id, client_id, triagem_estagio, triagem_tentativas, current_department_id, triagem_last_processed_msg_id")
+    .select("id, client_id, triagem_estagio, triagem_tentativas, current_department_id, triagem_last_processed_msg_id, is_sessao")
     .eq("status", "em_triagem")
-    .in("triagem_estagio", ["aguardando_inicio", "aguardando_departamento"])
+    .in("triagem_estagio", ["aguardando_inicio", "aguardando_departamento", "aguardando_colaborador"])
     .order("created_at", { ascending: true }).limit(50);
 
   if (error) {
@@ -754,6 +1096,8 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
   const templates = await carregarTemplates([
     "triagem_boas_vindas", "triagem_pergunta_departamento",
     "triagem_confirmacao", "triagem_erro_formato",
+    "sessao_boas_vindas", "sessao_pergunta_departamento",
+    "sessao_pergunta_colaborador", "sessao_confirmacao",
   ]);
 
   let processados = 0, pulados_anti_flood = 0, pulados_idempotencia = 0;
@@ -795,6 +1139,8 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
         await processarAguardandoInicio(at, inbound, templates, deps);
       } else if (at.triagem_estagio === "aguardando_departamento") {
         await processarAguardandoDepartamento(at, inbound, templates, deps, cfg);
+      } else if (at.triagem_estagio === "aguardando_colaborador") {
+        await processarAguardandoColaborador(at, inbound, templates, cfg);
       }
       processados++;
     } catch (e) {
