@@ -896,32 +896,70 @@ Deno.serve(async (req: Request) => {
           })
           .select("id, current_department_id")
           .single();
-        if (errNovoExt || !novoExt) {
+        if (errNovoExt) {
+          // 23505 = corrida com outra invocação (índice único
+          // uniq_atendimento_ativo_por_cliente). Reaproveita o atendimento
+          // ativo já existente em vez de perder a mensagem externa.
+          const isUnique = (errNovoExt.code === "23505") ||
+            /duplicate key|uniq_atendimento_ativo_por_cliente/i.test(errNovoExt.message);
+          if (isUnique) {
+            const { data: vencedorExt } = await supabase
+              .from("atendimentos")
+              .select("id, current_department_id")
+              .eq("client_id", clienteExt.id)
+              .in("status", STATUS_INSTAVEL_ATENDIMENTO)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (vencedorExt) {
+              atendExt = vencedorExt as { id: string; current_department_id: string | null };
+              log({
+                funcao: FUNCAO,
+                evento: "atendimento_corrida_reaproveitado",
+                status: "ok",
+                atendimento_id: atendExt.id,
+                client_id: clienteExt.id,
+                extra: { origem: "from_me" },
+              });
+            }
+          }
+          if (!atendExt) {
+            log({
+              funcao: FUNCAO,
+              evento: "criar_atendimento_externo_erro",
+              status: "erro",
+              client_id: clienteExt.id,
+              erro_msg: errNovoExt.message,
+            });
+            return jsonResponse({ ok: true });
+          }
+        } else if (!novoExt) {
           log({
             funcao: FUNCAO,
             evento: "criar_atendimento_externo_erro",
             status: "erro",
             client_id: clienteExt.id,
-            erro_msg: errNovoExt?.message,
+            erro_msg: "insert_sem_retorno",
           });
           return jsonResponse({ ok: true });
+        } else {
+          atendExt = novoExt as { id: string; current_department_id: string | null };
+          await supabase.from("timeline_events").insert({
+            atendimento_id: atendExt.id,
+            tipo_evento: "iniciado_atendimento",
+            actor_user_id: null,
+            to_department_id: atendExt.current_department_id,
+            payload: { origem: "mensagem_externa_celular" },
+          });
+          log({
+            funcao: FUNCAO,
+            evento: "atendimento_externo_criado",
+            status: "ok",
+            atendimento_id: atendExt.id,
+            client_id: clienteExt.id,
+            extra: { dept: atendExt.current_department_id },
+          });
         }
-        atendExt = novoExt as { id: string; current_department_id: string | null };
-        await supabase.from("timeline_events").insert({
-          atendimento_id: atendExt.id,
-          tipo_evento: "iniciado_atendimento",
-          actor_user_id: null,
-          to_department_id: atendExt.current_department_id,
-          payload: { origem: "mensagem_externa_celular" },
-        });
-        log({
-          funcao: FUNCAO,
-          evento: "atendimento_externo_criado",
-          status: "ok",
-          atendimento_id: atendExt.id,
-          client_id: clienteExt.id,
-          extra: { dept: atendExt.current_department_id },
-        });
       }
 
       const { data: msgExt, error: errExt } = await supabase
@@ -1310,26 +1348,72 @@ Deno.serve(async (req: Request) => {
           triagem_started_at: agora,
           is_sessao: ehSessao,
         })
-        .select("id, status, current_department_id")
+        .select("id, status, current_department_id, triagem_started_at, created_at")
         .single();
-      if (errAt || !novoAtend) {
+      if (errAt) {
+        // 23505 = corrida: outra invocação concorrente do webhook (cliente
+        // mandou mensagens em rajada) já criou o atendimento ativo. O índice
+        // único uniq_atendimento_ativo_por_cliente barra a duplicata; aqui
+        // reaproveitamos o atendimento vencedor da corrida e seguimos anexando
+        // a mensagem nele (em vez de perder a mensagem ou criar duplicata).
+        const isUnique = (errAt.code === "23505") ||
+          /duplicate key|uniq_atendimento_ativo_por_cliente/i.test(errAt.message);
+        if (isUnique) {
+          const { data: vencedor } = await supabase
+            .from("atendimentos")
+            .select("id, status, current_department_id, triagem_started_at, created_at")
+            .eq("client_id", cliente.id)
+            .in("status", STATUS_INSTAVEL_ATENDIMENTO)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (vencedor) {
+            atend = vencedor;
+            log({
+              funcao: FUNCAO,
+              evento: "atendimento_corrida_reaproveitado",
+              status: "ok",
+              atendimento_id: vencedor.id,
+              client_id: cliente.id,
+            });
+          }
+        }
+        if (!atend) {
+          log({
+            funcao: FUNCAO,
+            evento: "criar_atendimento_erro",
+            status: "erro",
+            erro_msg: errAt.message,
+            client_id: cliente.id,
+          });
+          return jsonResponse({ ok: true });
+        }
+      } else if (!novoAtend) {
         log({
           funcao: FUNCAO,
           evento: "criar_atendimento_erro",
           status: "erro",
-          erro_msg: errAt?.message,
+          erro_msg: "insert_sem_retorno",
           client_id: cliente.id,
         });
         return jsonResponse({ ok: true });
+      } else {
+        atend = novoAtend;
+        log({
+          funcao: FUNCAO,
+          evento: "atendimento_criado",
+          status: "ok",
+          atendimento_id: atend.id,
+          client_id: cliente.id,
+        });
       }
-      atend = novoAtend;
-      log({
-        funcao: FUNCAO,
-        evento: "atendimento_criado",
-        status: "ok",
-        atendimento_id: atend.id,
-        client_id: cliente.id,
-      });
+    }
+
+    // Salvaguarda: neste ponto sempre há atendimento (criado, reaproveitado da
+    // corrida ou reaberto). O guard satisfaz o compilador e é fail-safe.
+    if (!atend) {
+      log({ funcao: FUNCAO, evento: "atendimento_indefinido", status: "erro", client_id: cliente.id });
+      return jsonResponse({ ok: true });
     }
 
     // 3c.4) Insere mensagem inbound (idempotência final via UNIQUE).
