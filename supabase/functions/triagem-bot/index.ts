@@ -74,21 +74,80 @@ function formatarLista(itens: { nome: string }[]): string {
 }
 function telefoneZapi(numero: string): string { return numero.replace(/\D/g, ""); }
 
+// Palavras genéricas de conversa que NÃO ajudam a identificar o setor/pessoa.
+// Ignoradas no casamento por texto livre para não gerar falso-positivo (ex.:
+// "quero falar com o setor" não pode casar pela palavra "setor").
+const STOPWORDS = new Set([
+  "quero", "queria", "gostaria", "preciso", "necessito", "desejo",
+  "falar", "com", "o", "a", "os", "as", "um", "uma", "uns", "umas",
+  "de", "do", "da", "dos", "das", "no", "na", "nos", "nas", "em",
+  "pra", "para", "por", "favor", "pf", "pfv",
+  "setor", "departamento", "depto", "opcao", "opção", "opções", "opcoes",
+  "e", "ou", "que", "meu", "minha", "assunto", "sobre", "atendimento",
+  "me", "ajuda", "ajudar", "ao", "isso", "esse", "essa", "tem", "ver",
+]);
+
+// Casa a resposta LIVRE do cliente com um item do menu (departamento ou
+// colaborador). Ordem de tentativa:
+//   1) número puro → índice (1-based) do menu;
+//   2) nome do item idêntico ao texto;
+//   3) nome do item mencionado no meio da frase ("quero fiscal", "o fiscal"),
+//      casando por nome inteiro contido, palavra significativa em comum ou
+//      prefixo (>=3 chars) em qualquer direção — só resolve se UM único item
+//      casar (ambíguo devolve null e o bot pergunta de novo);
+//   4) número solto em meio ao texto ("opção 2", "quero a 3").
+// Nunca "chuta": entrada ambígua (0 ou 2+ candidatos) retorna null.
 function identificarPorTexto<T extends { id: string; nome: string }>(texto: string, itens: T[]): string | null {
   const t = normalizar(texto);
   if (!t) return null;
+
+  // 1) Número puro → índice.
   if (/^\d+$/.test(t)) {
     const idx = parseInt(t, 10) - 1;
     return idx >= 0 && idx < itens.length ? itens[idx].id : null;
   }
+
+  // 2) Nome idêntico.
   const exato = itens.find((d) => normalizar(d.nome) === t);
   if (exato) return exato.id;
-  const parciais = itens.filter((d) => normalizar(d.nome).startsWith(t));
-  if (parciais.length === 1) return parciais[0].id;
-  if (parciais.length === 0) {
-    const inc = itens.filter((d) => normalizar(d.nome).includes(t));
-    if (inc.length === 1) return inc[0].id;
+
+  // 3) Nome mencionado no texto livre.
+  const tokens = t.split(/\s+/).filter((x) => x.length > 0);
+  const candidatos = new Set<string>();
+  for (const d of itens) {
+    const nome = normalizar(d.nome);
+    // (a) nome completo do item contido no texto ("quero o departamento pessoal").
+    if (nome.length >= 3 && t.includes(nome)) {
+      candidatos.add(d.id);
+      continue;
+    }
+    // (b) alguma palavra significativa do nome casa com um token do cliente
+    //     (igual ou prefixo em qualquer direção, ambos >=3 chars).
+    const palavrasNome = nome.split(/\s+/).filter((w) => w.length >= 3 && !STOPWORDS.has(w));
+    let casou = false;
+    for (const w of palavrasNome) {
+      for (const tok of tokens) {
+        if (tok.length < 3 || STOPWORDS.has(tok)) continue;
+        if (w === tok || w.startsWith(tok) || tok.startsWith(w)) {
+          casou = true;
+          break;
+        }
+      }
+      if (casou) break;
+    }
+    if (casou) candidatos.add(d.id);
   }
+  if (candidatos.size === 1) return [...candidatos][0];
+  if (candidatos.size > 1) return null; // ambíguo: cliente citou mais de um setor.
+
+  // 4) Número solto em meio ao texto ("opção 2", "quero a 3") — só se houver
+  //    exatamente um número e nenhum nome tiver casado acima.
+  const numeros = tokens.map((tok) => tok.replace(/\D/g, "")).filter((x) => x !== "");
+  if (numeros.length === 1) {
+    const idx = parseInt(numeros[0], 10) - 1;
+    if (idx >= 0 && idx < itens.length) return itens[idx].id;
+  }
+
   return null;
 }
 
