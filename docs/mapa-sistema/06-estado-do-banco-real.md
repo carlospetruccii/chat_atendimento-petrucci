@@ -84,6 +84,31 @@ aplicadas em produção:
 
 ---
 
+## Atualização — 03/07/2026: Lista de Sessões (fluxo interno)
+
+> Estas mudanças vêm das **migrations adicionadas e pushadas em 03/07/2026**; entram em
+> produção quando o pipeline (Lovable/Supabase) as aplica. Não são resultado de query ao
+> banco — são o delta de schema versionado.
+
+- **Nova tabela `sessoes_triagem`** (`20260703120000_sessoes_triagem.sql`) — a **Lista de
+  Sessões**: números liberados (VIPs internos) que pulam a triagem de cliente. RLS: leitura
+  por membro (`is_member_of`), escrita só dono/administrador (`can_manage_config_in`).
+- **`atendimentos.is_sessao`** (`20260703122000_sessao_flow.sql`) — marca o atendimento que
+  veio de um número da lista, para o `triagem-bot` rodar o fluxo interno.
+- **Enum `triagem_estagio` +1 valor: `aguardando_colaborador`**
+  (`20260703121000_atendimento_estagio_colaborador.sql`) — o passo de escolha da pessoa.
+  (Adicionado em migration própria: Postgres não deixa usar um valor de enum recém-criado
+  na mesma transação.)
+- **9 templates de mensagem** (antes 5). Semeados os 4 textos do fluxo de sessão:
+  `sessao_boas_vindas`, `sessao_pergunta_departamento`, `sessao_pergunta_colaborador`,
+  `sessao_confirmacao` (`ON CONFLICT DO NOTHING`, PK composta `(company_id, chave)`).
+- **Nº de tabelas: 19** (era 18 desde 02/07) — soma `sessoes_triagem`.
+- **Configurações agora com 9 abas** — nova aba **Lista de Sessões** (antepenúltima). Ver
+  [01 — Telas e abas](01-telas-e-abas.md#aba-7--lista-de-sessões) e o
+  [fluxo no triagem-bot](03-integracoes-e-edge-functions.md#fluxo-da-lista-de-sessões).
+
+---
+
 ## Manchete: o banco está praticamente vazio (é um projeto novo)
 
 A conclusão mais importante, e que **muda o plano de "limpeza"**:
@@ -111,7 +136,8 @@ veio limpo).
 |--------|-------:|----------|
 | companies | **1** | Semente ("Empresa Exemplo") |
 | departments | **1** | Semente ("Administrativo") |
-| templates_mensagem | **1** → **5** (atualizado em 02/07) | Semente (`triagem_lembrete_sem_resposta`); em 02/07 foram semeados +4 textos de triagem |
+| templates_mensagem | **1** → **5** (02/07) → **9** (03/07) | Semente (`triagem_lembrete_sem_resposta`); +4 textos de triagem em 02/07; +4 textos de sessão (`sessao_*`) em 03/07 |
+| sessoes_triagem | **0** | Tabela nova (03/07) — Lista de Sessões, vazia até o admin cadastrar |
 | system_config | **5** | Sementes (ver abaixo) |
 | users | **0** | — |
 | **auth.users** (contas de login) | **0** | — |

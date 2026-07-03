@@ -35,7 +35,7 @@ o mapa completo em linguagem simples.
 |--------|----------------|
 | **clients** | Os clientes, identificados pelo número de WhatsApp (`numero_whatsapp`). Tem também `chat_lid`, um identificador alternativo de conversa usado pela API do WhatsApp. |
 | **departments** | Os setores de atendimento. |
-| **atendimentos** | **A conversa/ticket.** Guarda o status (`em_triagem`, `pendente`, `reservado`, `em_atendimento`, `encerrado`), o estágio da triagem, quem está atendendo (`assigned_to`), o departamento atual, e marcos de tempo (início, 1ª resposta, encerramento, motivo). |
+| **atendimentos** | **A conversa/ticket.** Guarda o status (`em_triagem`, `pendente`, `reservado`, `em_atendimento`, `encerrado`), o estágio da triagem (`aguardando_inicio` → `aguardando_departamento` → `aguardando_colaborador` (só sessão) → `concluida`), quem está atendendo (`assigned_to`), o departamento atual, marcos de tempo (início, 1ª resposta, encerramento, motivo) e `is_sessao` (`true` quando veio de um número da **Lista de Sessões** — roda o fluxo interno). |
 | **mensagens** | **Cada mensagem.** Direção (`inbound`/`outbound`), quem enviou (`cliente`/`atendente`/`bot`/`sistema`/`externo`), tipo (texto, imagem, áudio, vídeo, documento, sticker, localização, contato), o texto, o link da mídia, resposta citada e o status de envio/entrega. Guarda o `zapi_message_id` (o ID no WhatsApp). |
 | **timeline_events** | O **histórico** append‑only de cada atendimento (criado, triado, atribuído, repassado, escalado, encerrado, reaberto). Não pode ser editado nem apagado. |
 
@@ -43,7 +43,8 @@ o mapa completo em linguagem simples.
 | Tabela | Para que serve |
 |--------|----------------|
 | **system_config** | As configurações do sistema por empresa (pares chave/valor): `bot_ativo`, tempos, lembretes etc. É o que as abas **Tempos** e **Operação** editam. |
-| **templates_mensagem** | Os textos das mensagens automáticas (aba Templates). |
+| **templates_mensagem** | Os textos das mensagens automáticas (aba Templates), incluindo os textos do fluxo de sessão (`sessao_*`). |
+| **sessoes_triagem** | A **Lista de Sessões**: números liberados (VIPs internos) que pulam a triagem de cliente e rodam o fluxo interno (setor → colaborador). Colunas: `numero_whatsapp` (E.164, único por empresa), `nome` (saudação), `ativo`, `created_by`. Leitura por membro; **escrita só dono/administrador**. |
 | **business_hours** | O horário comercial por dia da semana. |
 | **holidays** | Feriados e datas especiais. |
 | **notificacoes_admin** | A fila de avisos para o **Administrador** (o papel de supervisão) sobre atendimentos parados. Só o backend escreve nela. |
@@ -107,7 +108,7 @@ Isto é o que decide o que é "multi‑empresa":
 `clients`, `atendimentos`, `mensagens`, `timeline_events`,
 `system_config`, `templates_mensagem`, `business_hours`, `holidays`,
 `notificacoes_admin`, `config_audit_log`, `cleanup_log`,
-`google_integration`, `contatos`.
+`google_integration`, `contatos`, `sessoes_triagem`.
 
 **NÃO têm `company_id`** (são globais):
 - **users** e **user_permissions** — o usuário é global; a ligação com a empresa é feita

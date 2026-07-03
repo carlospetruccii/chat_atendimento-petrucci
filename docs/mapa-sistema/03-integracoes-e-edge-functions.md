@@ -58,6 +58,11 @@ função mais importante do backend. Cuida de três situações:
    > uma **triagem nova** — não reabre. (Antes, um encerramento manual era reaberto caso o
    > atendimento tivesse conversa "externa" antiga, o que confundia o operador.) O caminho
    > `fromMe` mantém a reabertura por conversa externa.
+   > **Lista de Sessões.** Ao criar um atendimento novo, o webhook checa se o número está
+   > na tabela `sessoes_triagem` (ativo). Se estiver, marca o atendimento com `is_sessao = true`
+   > e **pula a reabertura automática** — VIPs internos sempre reiniciam o fluxo de sessão
+   > (podem querer falar com pessoas diferentes a cada contato). O `triagem-bot` roda então
+   > o [fluxo da Lista de Sessões](#fluxo-da-lista-de-sessões) em vez da triagem de cliente.
 2. **Confirmação de status** — quando uma mensagem que enviamos foi entregue/lida/falhou,
    atualiza o status daquela mensagem.
 3. **Mensagem enviada por fora** (`fromMe`) — quando alguém respondeu o cliente pelo
@@ -134,6 +139,30 @@ Também cuida de:
   um "loop" suspeito.
 - **Abandono automático**: existe, mas vem **desligado por padrão** (é considerado
   destrutivo — encerra sem avisar o cliente).
+
+#### Fluxo da Lista de Sessões
+Rodado pelo **mesmo** `triagem-bot`, para os atendimentos marcados com `is_sessao = true`
+(números da aba **Configurações → Lista de Sessões**). Serve a **contatos internos**
+(gerentes, diretoria) que querem falar **com um colaborador específico**, não com "um
+atendente qualquer". Reaproveita todo o maquinário da triagem de cliente (lista
+interativa, leitura do lote, anti-flood, idempotência, tentativas) — muda só os textos e
+o destino final. Passos:
+
+1. **Saudação personalizada** com o nome cadastrado na lista (`sessao_boas_vindas`:
+   *"Olá, {{nome}}! 👋"*; sem nome, cai para *"Olá! 👋"*).
+2. **Escolha do setor** — menu de departamentos (`sessao_pergunta_departamento`), igual ao
+   do cliente (clique `dep_<uuid>` ou número/nome). Estágio: `aguardando_departamento`.
+3. **Escolha do colaborador** — o bot lista os **colaboradores ativos daquele setor**
+   (`sessao_pergunta_colaborador`, opções `col_<uuid>`). Estágio: `aguardando_colaborador`.
+4. **Reserva direta** — o atendimento fica **`reservado`** para a pessoa escolhida
+   (`assigned_to`), com o departamento carimbado, e o bot envia a confirmação
+   (`sessao_confirmacao`: *"Certo! Te encaminhei para {{colaborador}}…"*).
+
+**Bordas** (nunca "somem"): **1 departamento** → pula o menu de setor e já pergunta a
+pessoa; **1 colaborador** no setor → reserva direto; **0 colaboradores** (ou tentativas
+esgotadas na escolha da pessoa) → cai na **Pendentes daquele departamento**; **0
+departamentos** → Pendentes geral. Os quatro templates `sessao_*` são editáveis em
+**Configurações → Templates** (prefixo "Sessão · ").
 
 #### 3. `send-whatsapp-message` — enviar texto
 Chamada pelo Inbox. Confere permissão, marca a mensagem como "enviando", **responde a

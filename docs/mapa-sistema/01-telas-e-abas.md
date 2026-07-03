@@ -16,7 +16,7 @@ ela mostra e o que ela grava quando você salva.
 - [Supervisão](#supervisão)
 - [Dashboard](#dashboard)
 - [Contatos](#contatos)
-- [Configurações](#configurações) — 7 abas
+- [Configurações](#configurações) — 9 abas
 - [Telas internas da Almore (workspaces)](#telas-internas-da-almore-workspaces)
 
 ---
@@ -245,9 +245,9 @@ sistema), só a **tela** de cadastro foi aposentada.
 
 **Arquivos:** `src/routes/_app.configuracoes.tsx` + um componente por aba + `src/lib/configuracoes-queries.ts`
 
-Central de ajustes do sistema. Só superadmin acessa. São **8 abas**, nesta ordem:
-**Departamentos, Tempos, Horário, Templates, Colaboradores, Operação, Contatos Google,
-Conexão do WhatsApp.**
+Central de ajustes do sistema. Só superadmin acessa. São **9 abas**, nesta ordem:
+**Departamentos, Tempos, Horário, Templates, Colaboradores, Operação, Lista de Sessões,
+Contatos Google, Conexão do WhatsApp.**
 
 ### Aba 1 — Departamentos
 Gerencia os setores de atendimento. Tabela: `departments`.
@@ -278,6 +278,10 @@ horário etc.). Tabela: `templates_mensagem`.
   `{{lista_departamentos}}` (na pergunta de departamento) ou `{{departamento}}` (na
   confirmação de encaminhamento). A pergunta de departamento é enviada como **lista
   interativa** no WhatsApp ("Ver setores").
+- Inclui também os textos do fluxo da **Lista de Sessões** (prefixo "Sessão · "):
+  `sessao_boas_vindas` (`{{nome}}`), `sessao_pergunta_departamento`
+  (`{{lista_departamentos}}`), `sessao_pergunta_colaborador` (`{{departamento}}`,
+  `{{lista_colaboradores}}`) e `sessao_confirmacao` (`{{colaborador}}`).
 
 ### Aba 5 — Colaboradores
 Cadastra e gerencia os atendentes. Tabela: `users` (a criação chama a função
@@ -299,7 +303,26 @@ O **painel de controle do robô** (só superadmin). Tudo aqui é guardado em `sy
 | **Reiniciar triagem ao virar o dia** | Se o cliente volta noutro dia, encerra a triagem antiga e começa uma nova. |
 | **Lembrete na triagem sem resposta** + **tempo (min)** | Liga o lembrete automático quando o cliente para de responder na triagem, e define após quantos minutos. |
 
-### Aba 7 — Contatos Google
+### Aba 7 — Lista de Sessões
+Lista **opcional** de números liberados (gerentes, diretoria, contatos internos) que
+**não passam pela triagem normal de cliente**. Ao invés disso rodam um **fluxo interno**:
+saudação pelo nome → escolha do **setor** → escolha do **colaborador** daquele setor →
+o atendimento é **reservado direto para a pessoa escolhida**. **Arquivos:**
+`src/components/SessoesTab.tsx`, `src/lib/sessoes-queries.ts`. Tabela: `sessoes_triagem`.
+
+| Controle | O que faz |
+|----------|-----------|
+| **Adicionar um número** | Nome (opcional) + número. O número é normalizado para E.164 (`+55…`); sem código de país, assume Brasil. |
+| **Escolher um contato salvo** | Busca nos Contatos do Google (por nome/número) e adiciona com um clique. Marca "Já na lista" quando o número já existe. |
+| **Ativo/Inativo** (switch) | Liga/desliga a entrada sem apagar. Só entradas **ativas** pulam a triagem. |
+| **Remover** | Tira da lista (confirmação); o número volta a cair na triagem normal de cliente. |
+
+Quem gerencia: qualquer membro **vê** a lista; só **dono/administrador** pode adicionar,
+alterar ou remover (RLS `can_manage_config_in`, igual a Departamentos). O fluxo em si
+roda no `triagem-bot` — ver
+[Integrações e Edge Functions](03-integracoes-e-edge-functions.md#fluxo-da-lista-de-sessões).
+
+### Aba 8 — Contatos Google
 Conecta os **contatos do Google** (People API). **Arquivos:**
 `src/components/GoogleContatosTab.tsx`, `src/lib/contatos-queries.ts`, função
 `google-contacts`. Tudo passa pela Edge Function — **nenhum token do Google fica no
@@ -312,7 +335,7 @@ navegador**.
 | **Desconectar** | Revoga o acesso e limpa os tokens (os contatos já baixados permanecem até a próxima sincronização). |
 | **Status** | Mostra o e‑mail conectado, a contagem de contatos e a data/situação da última sincronização. |
 
-### Aba 8 — Conexão do WhatsApp
+### Aba 9 — Conexão do WhatsApp
 Conecta o número da Almore via QR code (uazapi). Antes vivia como item próprio na
 barra lateral (`/conexao`); agora é a última aba de Configurações. **Arquivo:**
 `src/components/ConexaoWhatsAppTab.tsx`, função `whatsapp-connection`. Ver detalhes
