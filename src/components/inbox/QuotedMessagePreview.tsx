@@ -76,8 +76,8 @@ export function QuotedMessagePreview({
   // inBubble
   const bg = onPrimary ? "bg-primary-foreground/10" : "bg-foreground/5";
   const border = onPrimary ? "border-primary-foreground/40" : "border-primary/50";
-  const subText = onPrimary ? "text-primary-foreground/80" : "text-muted-foreground";
-  const authorText = onPrimary ? "text-primary-foreground" : "text-primary";
+  const subText = onPrimary ? "text-emerald-900/80" : "text-muted-foreground";
+  const authorText = onPrimary ? "text-emerald-900" : "text-primary";
 
   return (
     <button
