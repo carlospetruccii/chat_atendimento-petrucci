@@ -264,12 +264,65 @@ function primeiroNome(nome: string): string {
   return nome.trim().split(/\s+/)[0] ?? "";
 }
 
-async function carregarTemplates(chaves: string[]): Promise<Map<string, string>> {
+// Todas as versões de um template: `texto` (versão 1) + variações cadastradas.
+interface VersoesTemplate {
+  companyId: string;
+  versoes: string[]; // sempre >= 1 elemento (o texto principal)
+}
+type TemplatesMap = Map<string, VersoesTemplate>;
+
+async function carregarTemplates(chaves: string[]): Promise<TemplatesMap> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("templates_mensagem").select("chave, texto")
+  const { data, error } = await supabase.from("templates_mensagem")
+    .select("company_id, chave, texto, variacoes")
     .in("chave", chaves).eq("ativo", true);
   if (error) throw error;
-  return new Map((data ?? []).map((r) => [r.chave as string, r.texto as string]));
+  const map: TemplatesMap = new Map();
+  for (const r of data ?? []) {
+    const texto = (r.texto as string | null) ?? "";
+    const variacoes = ((r.variacoes as string[] | null) ?? [])
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+    map.set(r.chave as string, {
+      companyId: r.company_id as string,
+      versoes: [texto, ...variacoes],
+    });
+  }
+  return map;
+}
+
+/**
+ * Escolhe qual versão do template enviar para `destino` (telefone), alternando
+ * as variações em round-robin para não repetir o mesmo texto duas vezes
+ * seguidas ao mesmo contato. Se o template tem só uma versão, retorna ela sem
+ * tocar em estado (comportamento idêntico ao de antes). A rotação é
+ * best-effort: qualquer falha na leitura/gravação do estado cai na versão
+ * principal, sem quebrar o envio.
+ */
+async function escolherTexto(
+  templates: TemplatesMap, chave: string, destino: string,
+): Promise<string | undefined> {
+  const info = templates.get(chave);
+  if (!info || info.versoes.length === 0) return undefined;
+  if (info.versoes.length === 1) return info.versoes[0];
+
+  const supabase = getSupabaseAdmin();
+  const n = info.versoes.length;
+  try {
+    const { data } = await supabase.from("template_rotacao")
+      .select("ultimo_indice")
+      .eq("company_id", info.companyId).eq("destino", destino).eq("chave", chave)
+      .maybeSingle();
+    const ultimo = typeof data?.ultimo_indice === "number" ? data.ultimo_indice : -1;
+    const proximo = ((ultimo % n) + n + 1) % n; // sempre != último, dentro de [0, n)
+    await supabase.from("template_rotacao").upsert({
+      company_id: info.companyId, destino, chave, ultimo_indice: proximo,
+    }, { onConflict: "company_id,destino,chave" });
+    return info.versoes[proximo] ?? info.versoes[0];
+  } catch (e) {
+    log({ funcao: FUNCAO, evento: "rotacao_template_falhou", status: "erro",
+      erro_msg: e instanceof Error ? e.message : String(e) });
+    return info.versoes[0];
+  }
 }
 
 async function ultimaMsgInbound(atendimentoId: string): Promise<InboundMsg | null> {
@@ -455,9 +508,9 @@ async function getTelefone(clientId: string): Promise<string | null> {
 
 /** Envia a confirmação de encaminhamento ao departamento (template editável). */
 async function enviarConfirmacao(
-  at: Atendimento, telefone: string, templates: Map<string, string>, deptNome: string,
+  at: Atendimento, telefone: string, templates: TemplatesMap, deptNome: string,
 ): Promise<void> {
-  const tpl = templates.get("triagem_confirmacao");
+  const tpl = await escolherTexto(templates, "triagem_confirmacao", telefone);
   if (!tpl) return; // Confirmação é opcional; ausência não bloqueia a finalização.
   const texto = aplicarTemplate(tpl, { departamento: deptNome });
   await enviarEPersistir(at, telefone, texto);
@@ -513,10 +566,10 @@ async function aplicarContinuidadeSeAplicavel(at: Atendimento, inbound: InboundM
 // mantemos em em_triagem (dept NULL é permitido pelo CHECK só nesse status) com a
 // triagem concluída, então ela aparece em Pendentes para um humano assumir.
 async function encaminharPendentesGeral(
-  at: Atendimento, telefone: string, templates: Map<string, string>, inboundId: string,
+  at: Atendimento, telefone: string, templates: TemplatesMap, inboundId: string,
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
-  const boas = templates.get("triagem_boas_vindas");
+  const boas = await escolherTexto(templates, "triagem_boas_vindas", telefone);
   if (boas) await enviarEPersistir(at, telefone, boas);
   await enviarConfirmacao(at, telefone, templates, "nosso atendimento");
 
@@ -533,7 +586,7 @@ async function encaminharPendentesGeral(
 // =============== Estágio: aguardando_inicio ===============
 async function processarAguardandoInicio(
   at: Atendimento, inbound: InboundMsg,
-  templates: Map<string, string>, deps: Departamento[],
+  templates: TemplatesMap, deps: Departamento[],
 ): Promise<void> {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
@@ -553,7 +606,7 @@ async function processarAguardandoInicio(
     return;
   }
 
-  const boas = templates.get("triagem_boas_vindas");
+  const boas = await escolherTexto(templates, "triagem_boas_vindas", telefone);
   if (!boas) {
     log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
       atendimento_id: at.id, erro_msg: "triagem_boas_vindas" });
@@ -571,7 +624,7 @@ async function processarAguardandoInicio(
     return;
   }
 
-  const pergunta = templates.get("triagem_pergunta_departamento");
+  const pergunta = await escolherTexto(templates, "triagem_pergunta_departamento", telefone);
   if (!pergunta) {
     log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
       atendimento_id: at.id, erro_msg: "triagem_pergunta_departamento" });
@@ -597,7 +650,7 @@ async function processarAguardandoInicio(
 // =============== Estágio: aguardando_departamento ===============
 async function processarAguardandoDepartamento(
   at: Atendimento, inbound: InboundMsg,
-  templates: Map<string, string>, deps: Departamento[],
+  templates: TemplatesMap, deps: Departamento[],
   cfg: Config,
 ): Promise<void> {
   // Fluxo interno (Lista de Sessões): depois do departamento vem a escolha do
@@ -652,8 +705,8 @@ async function processarAguardandoDepartamento(
 
   if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
 
-  const erro = templates.get("triagem_erro_formato");
-  const pergunta = templates.get("triagem_pergunta_departamento");
+  const erro = await escolherTexto(templates, "triagem_erro_formato", telefone);
+  const pergunta = await escolherTexto(templates, "triagem_pergunta_departamento", telefone);
   if (!erro || !pergunta) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
 
   await enviarEPersistir(at, telefone, erro);
@@ -731,7 +784,7 @@ async function finalizarTriagem(
 // próprio departamento (fluxo cliente); 1 colaborador → reserva direto.
 async function enviarMenuColaboradores(
   at: Atendimento, telefone: string, deptId: string,
-  templates: Map<string, string>, inboundId: string,
+  templates: TemplatesMap, inboundId: string,
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
   const cols = await carregarColaboradores(deptId);
@@ -749,7 +802,7 @@ async function enviarMenuColaboradores(
     return;
   }
 
-  const pergunta = templates.get("sessao_pergunta_colaborador");
+  const pergunta = await escolherTexto(templates, "sessao_pergunta_colaborador", telefone);
   if (!pergunta) {
     // Sem template não dá para perguntar → cai em Pendente do departamento.
     await finalizarTriagem(at, deptId, inboundId);
@@ -776,7 +829,7 @@ async function enviarMenuColaboradores(
 // Reserva o atendimento direto para o colaborador escolhido.
 async function finalizarSessao(
   at: Atendimento, deptId: string, col: Colaborador,
-  telefone: string, templates: Map<string, string>, inboundId: string,
+  telefone: string, templates: TemplatesMap, inboundId: string,
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
 
@@ -795,7 +848,7 @@ async function finalizarSessao(
     triagem_last_processed_msg_id: inboundId,
   }).eq("id", at.id);
 
-  const tpl = templates.get("sessao_confirmacao");
+  const tpl = await escolherTexto(templates, "sessao_confirmacao", telefone);
   if (tpl) await enviarEPersistir(at, telefone, aplicarTemplate(tpl, { colaborador: col.nome }));
 
   log({ funcao: FUNCAO, evento: "sessao_concluida", status: "ok",
@@ -805,7 +858,7 @@ async function finalizarSessao(
 // =============== Sessão · Estágio: aguardando_inicio ===============
 async function processarSessaoInicio(
   at: Atendimento, inbound: InboundMsg,
-  templates: Map<string, string>, deps: Departamento[],
+  templates: TemplatesMap, deps: Departamento[],
 ): Promise<void> {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
@@ -815,7 +868,7 @@ async function processarSessaoInicio(
 
   // Saudação personalizada com o nome cadastrado na Lista de Sessões.
   const nome = await nomeSessao(at.client_id);
-  const boasTpl = templates.get("sessao_boas_vindas");
+  const boasTpl = await escolherTexto(templates, "sessao_boas_vindas", telefone);
   const saudacao = boasTpl
     ? (nome ? aplicarTemplate(boasTpl, { nome: primeiroNome(nome) }) : "Olá! 👋")
     : null;
@@ -834,7 +887,7 @@ async function processarSessaoInicio(
     return;
   }
 
-  const pergunta = templates.get("sessao_pergunta_departamento");
+  const pergunta = await escolherTexto(templates, "sessao_pergunta_departamento", telefone);
   if (!pergunta) {
     log({ funcao: FUNCAO, evento: "template_ausente", status: "erro",
       atendimento_id: at.id, erro_msg: "sessao_pergunta_departamento" });
@@ -862,7 +915,7 @@ async function processarSessaoInicio(
 // colaboradores (não a finalização direta).
 async function processarSessaoDepartamento(
   at: Atendimento, inbound: InboundMsg,
-  templates: Map<string, string>, deps: Departamento[], cfg: Config,
+  templates: TemplatesMap, deps: Departamento[], cfg: Config,
 ): Promise<void> {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
@@ -904,8 +957,8 @@ async function processarSessaoDepartamento(
 
   if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
 
-  const erro = templates.get("triagem_erro_formato");
-  const pergunta = templates.get("sessao_pergunta_departamento");
+  const erro = await escolherTexto(templates, "triagem_erro_formato", telefone);
+  const pergunta = await escolherTexto(templates, "sessao_pergunta_departamento", telefone);
   if (!erro || !pergunta) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
 
   await enviarEPersistir(at, telefone, erro);
@@ -927,7 +980,7 @@ async function processarSessaoDepartamento(
 // =============== Sessão · Estágio: aguardando_colaborador ===============
 async function processarAguardandoColaborador(
   at: Atendimento, inbound: InboundMsg,
-  templates: Map<string, string>, cfg: Config,
+  templates: TemplatesMap, cfg: Config,
 ): Promise<void> {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
@@ -982,8 +1035,8 @@ async function processarAguardandoColaborador(
 
   if (!telefone) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
 
-  const erro = templates.get("triagem_erro_formato");
-  const pergunta = templates.get("sessao_pergunta_colaborador");
+  const erro = await escolherTexto(templates, "triagem_erro_formato", telefone);
+  const pergunta = await escolherTexto(templates, "sessao_pergunta_colaborador", telefone);
   if (!erro || !pergunta) { await marcarInboundProcessada(at.id, ultimoIdLote); return; }
 
   await enviarEPersistir(at, telefone, erro);
@@ -1077,8 +1130,7 @@ async function varrerLembretes(cfg: Config): Promise<number> {
   if (lista.length === 0) return 0;
 
   const templates = await carregarTemplates(["triagem_lembrete_sem_resposta"]);
-  const tpl = templates.get("triagem_lembrete_sem_resposta");
-  if (!tpl) {
+  if (!templates.has("triagem_lembrete_sem_resposta")) {
     log({ funcao: FUNCAO, evento: "lembrete_template_ausente", status: "erro" });
     return 0;
   }
@@ -1101,6 +1153,8 @@ async function varrerLembretes(cfg: Config): Promise<number> {
 
     const telefone = await getTelefone(a.client_id);
     if (!telefone) continue;
+    const tpl = await escolherTexto(templates, "triagem_lembrete_sem_resposta", telefone);
+    if (!tpl) continue;
     const fakeAt: Atendimento = {
       id: a.id, client_id: a.client_id,
       triagem_estagio: "aguardando_departamento",

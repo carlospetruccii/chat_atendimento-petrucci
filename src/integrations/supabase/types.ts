@@ -955,6 +955,38 @@ export type Database = {
           },
         ]
       }
+      template_rotacao: {
+        Row: {
+          chave: string
+          company_id: string
+          destino: string
+          ultimo_indice: number
+          updated_at: string
+        }
+        Insert: {
+          chave: string
+          company_id: string
+          destino: string
+          ultimo_indice?: number
+          updated_at?: string
+        }
+        Update: {
+          chave?: string
+          company_id?: string
+          destino?: string
+          ultimo_indice?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_rotacao_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       templates_mensagem: {
         Row: {
           ativo: boolean
@@ -965,6 +997,7 @@ export type Database = {
           texto: string
           updated_at: string
           updated_by: string | null
+          variacoes: string[]
         }
         Insert: {
           ativo?: boolean
@@ -975,6 +1008,7 @@ export type Database = {
           texto: string
           updated_at?: string
           updated_by?: string | null
+          variacoes?: string[]
         }
         Update: {
           ativo?: boolean
@@ -985,6 +1019,7 @@ export type Database = {
           texto?: string
           updated_at?: string
           updated_by?: string | null
+          variacoes?: string[]
         }
         Relationships: [
           {

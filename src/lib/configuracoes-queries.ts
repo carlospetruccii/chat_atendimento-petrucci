@@ -206,11 +206,18 @@ export interface TemplateRow {
   id: string;
   chave: string;
   texto: string;
+  // Versões alternativas do mesmo texto (até 2). O `texto` é a versão 1; o bot
+  // alterna entre [texto, ...variacoes] para não repetir a mesma mensagem
+  // duas vezes seguidas ao mesmo contato.
+  variacoes: string[];
   ativo: boolean;
   updated_at: string;
   updated_by: string | null;
   updated_by_nome: string | null;
 }
+
+// Máximo de variações além do texto principal (total de 3 versões).
+export const MAX_VARIACOES = 2;
 
 // Variáveis que cada template realmente recebe nas Edge Functions.
 // Templates não listados aqui (ou com [] aqui) não recebem nenhuma variável
@@ -261,7 +268,7 @@ export const TEMPLATE_LABEL: Record<string, string> = {
 export async function fetchTemplates(): Promise<TemplateRow[]> {
   const { data, error } = await supabase
     .from("templates_mensagem")
-    .select("id, chave, texto, ativo, updated_at, updated_by")
+    .select("id, chave, texto, variacoes, ativo, updated_at, updated_by")
     .order("chave");
   if (error) throw error;
 
@@ -277,6 +284,7 @@ export async function fetchTemplates(): Promise<TemplateRow[]> {
     id: t.id,
     chave: t.chave,
     texto: t.texto,
+    variacoes: t.variacoes ?? [],
     ativo: t.ativo,
     updated_at: t.updated_at,
     updated_by: t.updated_by,
@@ -284,11 +292,14 @@ export async function fetchTemplates(): Promise<TemplateRow[]> {
   }));
 }
 
-export async function updateTemplateTexto(id: string, texto: string) {
+// Salva o texto principal e as variações. Descarta variações em branco e
+// limita ao máximo permitido antes de gravar.
+export async function updateTemplate(id: string, texto: string, variacoes: string[]) {
   const { data: auth } = await supabase.auth.getUser();
+  const limpas = variacoes.map((v) => v.trim()).filter((v) => v.length > 0).slice(0, MAX_VARIACOES);
   const { error } = await supabase
     .from("templates_mensagem")
-    .update({ texto, updated_by: auth.user?.id ?? null })
+    .update({ texto, variacoes: limpas, updated_by: auth.user?.id ?? null })
     .eq("id", id);
   if (error) throw error;
 }

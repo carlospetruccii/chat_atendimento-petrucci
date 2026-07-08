@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Plus, Power, PowerOff } from "lucide-react";
+import { Check, Loader2, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -11,12 +11,13 @@ import {
 import { Switch } from "@/components/ui/switch";
 import {
   fetchTemplates,
-  updateTemplateTexto,
+  updateTemplate,
   setTemplateAtivo,
   createTemplate,
   TEMPLATE_VARS,
   TEMPLATE_VAR_DESC,
   TEMPLATE_LABEL,
+  MAX_VARIACOES,
   type TemplateRow,
 } from "@/lib/configuracoes-queries";
 
@@ -39,6 +40,7 @@ export function TemplatesTab() {
   const [loading, setLoading] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [draftVariacoes, setDraftVariacoes] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -61,7 +63,10 @@ export function TemplatesTab() {
             : list[0].chave;
         setSelectedKey(keep);
         const sel = list.find((t) => t.chave === keep);
-        if (sel) setDraft(sel.texto);
+        if (sel) {
+          setDraft(sel.texto);
+          setDraftVariacoes(sel.variacoes);
+        }
       }
     } catch (e) {
       toast.error((e as Error).message);
@@ -81,7 +86,10 @@ export function TemplatesTab() {
   );
 
   const vars = selected ? TEMPLATE_VARS[selected.chave] ?? [] : [];
-  const isDirty = selected ? draft !== selected.texto : false;
+  const isDirty = selected
+    ? draft !== selected.texto ||
+      JSON.stringify(draftVariacoes) !== JSON.stringify(selected.variacoes)
+    : false;
 
   const handleSelect = (chave: string) => {
     if (isDirty) {
@@ -90,9 +98,21 @@ export function TemplatesTab() {
     }
     setSelectedKey(chave);
     const sel = templates.find((t) => t.chave === chave);
-    if (sel) setDraft(sel.texto);
+    if (sel) {
+      setDraft(sel.texto);
+      setDraftVariacoes(sel.variacoes);
+    }
     setSavedFlash(false);
   };
+
+  const addVariacao = () => {
+    if (draftVariacoes.length >= MAX_VARIACOES) return;
+    setDraftVariacoes((v) => [...v, ""]);
+  };
+  const changeVariacao = (i: number, val: string) =>
+    setDraftVariacoes((v) => v.map((x, idx) => (idx === i ? val : x)));
+  const removeVariacao = (i: number) =>
+    setDraftVariacoes((v) => v.filter((_, idx) => idx !== i));
 
   const handleSave = async () => {
     if (!selected) return;
@@ -102,7 +122,7 @@ export function TemplatesTab() {
     }
     setSaving(true);
     try {
-      await updateTemplateTexto(selected.id, draft);
+      await updateTemplate(selected.id, draft, draftVariacoes);
       toast.success("Template salvo.");
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2000);
@@ -283,12 +303,66 @@ export function TemplatesTab() {
 
               <div className="mt-4 grid gap-4 lg:grid-cols-[1fr,220px]">
                 <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Versão 1 (principal)
+                  </label>
                   <textarea
                     ref={textareaRef}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     className="w-full min-h-[220px] max-h-[420px] rounded-2xl border border-border bg-background p-4 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
+
+                  {/* Variações: alternam o texto para não repetir sempre a mesma
+                      mensagem ao mesmo contato. */}
+                  <div className="mt-4 rounded-xl border border-dashed border-border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      Cadastre variações que digam a <strong>mesma coisa com
+                      palavras um pouco diferentes</strong>. O sistema alterna
+                      entre as versões a cada envio, para o mesmo contato não
+                      receber o texto idêntico duas vezes seguidas (evita cara de
+                      robô/spam). É opcional — sem variações, só a versão 1 é
+                      usada.
+                    </p>
+
+                    {draftVariacoes.map((v, i) => (
+                      <div key={i} className="mt-3">
+                        <div className="mb-1 flex items-center justify-between">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            Variação {i + 2}
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeVariacao(i)}
+                            className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} /> Remover
+                          </button>
+                        </div>
+                        <textarea
+                          value={v}
+                          onChange={(e) => changeVariacao(i, e.target.value)}
+                          placeholder="Escreva a mesma mensagem com outras palavras…"
+                          className="w-full min-h-[120px] max-h-[300px] rounded-2xl border border-border bg-background p-4 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    ))}
+
+                    {draftVariacoes.length < MAX_VARIACOES ? (
+                      <button
+                        type="button"
+                        onClick={addVariacao}
+                        className="mt-3 flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                      >
+                        <Plus className="h-4 w-4" strokeWidth={1.8} /> Adicionar variação
+                      </button>
+                    ) : (
+                      <p className="mt-3 text-[11px] text-muted-foreground">
+                        Limite de {MAX_VARIACOES + 1} versões atingido.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <div className="text-xs text-muted-foreground">
                       Atualizado por{" "}

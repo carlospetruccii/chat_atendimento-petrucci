@@ -33,6 +33,35 @@ function interpolar(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
 }
 
+/**
+ * Escolhe qual versão do template enviar para `destino`, alternando as variações
+ * em round-robin para o admin não receber sempre o mesmo texto. Best-effort:
+ * qualquer falha na leitura/gravação do estado cai na versão principal.
+ */
+async function escolherVersao(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  companyId: string, destino: string, chave: string, versoes: string[],
+): Promise<string> {
+  if (versoes.length <= 1) return versoes[0] ?? "";
+  const n = versoes.length;
+  try {
+    const { data } = await supabase.from("template_rotacao")
+      .select("ultimo_indice")
+      .eq("company_id", companyId).eq("destino", destino).eq("chave", chave)
+      .maybeSingle();
+    const ultimo = typeof data?.ultimo_indice === "number" ? data.ultimo_indice : -1;
+    const proximo = ((ultimo % n) + n + 1) % n; // sempre != último, dentro de [0, n)
+    await supabase.from("template_rotacao").upsert({
+      company_id: companyId, destino, chave, ultimo_indice: proximo,
+    }, { onConflict: "company_id,destino,chave" });
+    return versoes[proximo] ?? versoes[0];
+  } catch (e) {
+    log({ funcao: FUNCAO, evento: "rotacao_template_falhou", status: "erro",
+      erro_msg: e instanceof Error ? e.message : String(e) });
+    return versoes[0];
+  }
+}
+
 Deno.serve(async (_req: Request) => {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
@@ -85,7 +114,7 @@ Deno.serve(async (_req: Request) => {
     // 5) Template
     const { data: tpl, error: errTpl } = await supabase
       .from("templates_mensagem")
-      .select("texto,ativo")
+      .select("company_id,texto,variacoes,ativo")
       .eq("chave", "notificacao_admin")
       .eq("ativo", true)
       .maybeSingle();
@@ -94,7 +123,13 @@ Deno.serve(async (_req: Request) => {
       log({ funcao: FUNCAO, evento: "template_ausente", status: "erro", duracao_ms: cron(), erro_msg: errTpl?.message ?? "sem template ativo" });
       return new Response(JSON.stringify({ ok: false }), { status: 500 });
     }
-    const templateTexto = tpl.texto as string;
+    const templateCompanyId = tpl.company_id as string;
+    // Versão 1 (`texto`) + variações cadastradas; alternadas por escolherVersao().
+    const templateVersoes = [
+      (tpl.texto as string | null) ?? "",
+      ...(((tpl.variacoes as string[] | null) ?? [])
+        .filter((v) => typeof v === "string" && v.trim().length > 0)),
+    ];
 
     // 6) Candidatos: pendentes ordenados por created_at ASC
     const { data: candidatos, error: errSel } = await supabase
@@ -172,6 +207,9 @@ Deno.serve(async (_req: Request) => {
       // E.164 com '+'
       const telefoneFmt = telefone.startsWith("+") ? telefone : (telefone ? `+${telefone}` : "");
 
+      const templateTexto = await escolherVersao(
+        supabase, templateCompanyId, numeroAdmin, "notificacao_admin", templateVersoes,
+      );
       const texto = interpolar(templateTexto, {
         nome_cliente: nomeCliente,
         telefone: telefoneFmt,
