@@ -121,22 +121,31 @@ export interface ColaboradorRow {
 export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
   // Papel canônico vem de company_members (query à parte: o embed reverso não
   // está nos tipos gerados). is_superadmin permanece para o gate das telas.
-  const [usersRes, membersRes] = await Promise.all([
+  // whatsapp (PII/LGPD) NÃO é mais selecionável direto da tabela users — vem por
+  // uma RPC SECURITY DEFINER que só devolve o número para admin (e a própria linha).
+  const [usersRes, membersRes, whatsappRes] = await Promise.all([
     supabase
       .from("users")
       .select(
-        "id, nome, email, whatsapp, ativo, disponivel, is_superadmin, department_id, created_at, departments:department_id(nome, cor)",
+        "id, nome, email, ativo, disponivel, is_superadmin, department_id, created_at, departments:department_id(nome, cor)",
       )
       .eq("is_system_user", false)
       .order("nome"),
     supabase.from("company_members").select("user_id, role").eq("ativo", true),
+    supabase.rpc("admin_list_user_whatsapps"),
   ]);
   if (usersRes.error) throw usersRes.error;
   if (membersRes.error) throw membersRes.error;
+  if (whatsappRes.error) throw whatsappRes.error;
 
   const roleByUser = new Map<string, PapelColaborador>();
   for (const m of membersRes.data ?? []) {
     roleByUser.set(m.user_id as string, m.role as PapelColaborador);
+  }
+
+  const whatsappByUser = new Map<string, string | null>();
+  for (const w of whatsappRes.data ?? []) {
+    whatsappByUser.set(w.id, w.whatsapp ?? null);
   }
 
   return (usersRes.data ?? []).map((u) => {
@@ -147,7 +156,7 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
       id: u.id,
       nome: u.nome,
       email: u.email,
-      whatsapp: u.whatsapp ?? null,
+      whatsapp: whatsappByUser.get(u.id) ?? null,
       ativo: u.ativo,
       disponivel: u.disponivel,
       is_superadmin: u.is_superadmin,

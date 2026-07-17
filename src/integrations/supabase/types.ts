@@ -1279,6 +1279,13 @@ export type Database = {
       }
     }
     Functions: {
+      admin_list_user_whatsapps: {
+        Args: never
+        Returns: {
+          id: string
+          whatsapp: string
+        }[]
+      }
       assign_pendente_a_usuario: {
         Args: { p_atendimento_id: string; p_user_id: string }
         Returns: boolean
