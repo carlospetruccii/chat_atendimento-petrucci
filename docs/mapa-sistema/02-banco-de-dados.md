@@ -27,7 +27,7 @@ o mapa completo em linguagem simples.
 ### Pessoas e permissões
 | Tabela | Para que serve |
 |--------|----------------|
-| **users** | Os colaboradores (atendentes, supervisores). Pode ser pessoa real (com e‑mail) ou usuário "de sistema" (bot/automação, sem e‑mail). Tem `ativo`, `disponivel`, `is_superadmin`. **Não tem `company_id`** — a empresa vem via `company_members`. |
+| **users** | Os colaboradores (atendentes, supervisores). Pode ser pessoa real (com e‑mail) ou usuário "de sistema" (bot/automação, sem e‑mail). Tem `ativo`, `disponivel`, `is_superadmin` e o **`whatsapp`** (telefone pessoal em E.164, opcional) — usado para avisar o colaborador quando um atendimento é repassado/atribuído a ele. **Não tem `company_id`** — a empresa vem via `company_members`. A coluna `whatsapp` é PII: **não é legível direto pelo cliente** — só via a RPC `admin_list_user_whatsapps` (ver adiante). |
 | **user_permissions** | As permissões soltas de cada usuário (ex.: `manage_users`, `force_close`). É o sistema de papéis **antigo**, ainda em uso. |
 
 ### Atendimento (o coração)
@@ -37,7 +37,7 @@ o mapa completo em linguagem simples.
 | **departments** | Os setores de atendimento. |
 | **atendimentos** | **A conversa/ticket.** Guarda o status (`em_triagem`, `pendente`, `reservado`, `em_atendimento`, `encerrado`), o estágio da triagem (`aguardando_inicio` → `aguardando_departamento` → `aguardando_colaborador` (só sessão) → `concluida`), quem está atendendo (`assigned_to`), o departamento atual, marcos de tempo (início, 1ª resposta, encerramento, motivo) e `is_sessao` (`true` quando veio de um número da **Lista de Sessões** — roda o fluxo interno). |
 | **mensagens** | **Cada mensagem.** Direção (`inbound`/`outbound`), quem enviou (`cliente`/`atendente`/`bot`/`sistema`/`externo`), tipo (texto, imagem, áudio, vídeo, documento, sticker, localização, contato), o texto, o link da mídia, resposta citada e o status de envio/entrega. Guarda o `zapi_message_id` (o ID no WhatsApp). |
-| **timeline_events** | O **histórico** append‑only de cada atendimento (criado, triado, atribuído, repassado, escalado, encerrado, reaberto). Não pode ser editado nem apagado. |
+| **timeline_events** | O **histórico** append‑only de cada atendimento (criado, triado, atribuído, repassado, escalado, encerrado, reaberto). Não pode ser editado nem apagado. Tem `notificacao_repasse_enviada_at`: carimbo de quando o aviso de repasse foi disparado ao WhatsApp do colaborador — garante **1 aviso por evento** (trava anti‑spam da função `notificar-repasse`). |
 
 ### Configuração e operação
 | Tabela | Para que serve |
@@ -128,7 +128,13 @@ O banco não é só tabelas — ele tem lógica embutida que roda sozinha. As ma
   criados; apagar mensagem é bloqueado (só service_role/superadmin). O `zapi_message_id`
   fica imutável depois de preenchido.
 - **Dono protegido:** não dá para remover ou rebaixar o dono de uma empresa.
-- **Superadmin protegido:** quem é superadmin não pode ser rebaixado por engano.
+- **Superadmin protegido / campos administrativos:** o gatilho `protect_superadmin_flag`
+  (BEFORE UPDATE em `users`) impede que um usuário **não‑admin** altere colunas
+  administrativas da própria linha — `is_superadmin`, `is_system_user`, `department_id`,
+  `ativo` — fechando um escalonamento de privilégio (antes dava para virar superadmin com
+  um UPDATE direto). Admin (superadmin/`manage_users`) e o backend (service_role) seguem
+  livres; `nome`/`whatsapp`/`disponivel` continuam editáveis pelo próprio. `is_superadmin`
+  segue imutável depois de definido como TRUE.
 - **Auditoria automática:** qualquer mudança em configurações, templates, horários,
   departamentos etc. é registrada sozinha em `config_audit_log` (quem, o quê, valor
   antigo → novo).
@@ -153,6 +159,10 @@ São as "funções de banco" que as telas acionam diretamente:
 - **`encerrar_atendimento`** — encerrar.
 - **`cron_reativar_bot`** — religa o bot na data agendada (usada por uma tarefa automática).
 - **`payload_notificacao_admin`** — monta os dados do aviso para a supervisão.
+- **`admin_list_user_whatsapps`** — devolve `id`+`whatsapp` dos colaboradores para a tela
+  de Colaboradores. Só retorna o número para **admin** (superadmin/`manage_users`) — que vê
+  todos — e para a **própria linha** do chamador. É a porta de leitura do telefone pessoal,
+  já que a coluna `users.whatsapp` não é mais legível direto pelo cliente (PII/LGPD).
 
 ### Uma "vista" (view)
 - **`vw_pendentes`** — uma consulta pronta que junta atendimentos pendentes com dados do

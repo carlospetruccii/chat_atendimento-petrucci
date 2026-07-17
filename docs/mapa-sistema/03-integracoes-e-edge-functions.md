@@ -177,6 +177,26 @@ Recebe o áudio gravado, guarda no cofre `mensagens-midia`, grava a mensagem e e
 Igual ao áudio, para arquivos (limite **16 MB**). Guarda no cofre, grava a mensagem
 (com legenda) e envia pela Z‑API.
 
+#### 5b. `notificar-repasse` — avisa o colaborador no WhatsApp pessoal
+Chamada pelo frontend (best‑effort, `void`) logo após um repasse (`repassar_atendimento`)
+ou atribuição de pendente (`assign_pendente_a_usuario`) concluir. Manda ao **WhatsApp
+pessoal** do colaborador que recebeu a conversa um aviso do tipo *"🔔 Novo atendimento pra
+você — Fulano foi repassado por Beltrano…"*. Regras de segurança (tudo server‑side):
+
+- **Nunca envia para número do payload** — o destino é sempre resolvido de `users.whatsapp`.
+- **Não avisa a si mesmo** (se quem repassou = quem recebeu, pula).
+- Só dispara sobre um repasse **real e vigente**: confere que `atendimento.assigned_to` é o
+  destinatário **e** que existe um `timeline_event` `repassado`/`reservado` recente (2 min)
+  **cujo autor é o próprio chamador**.
+- **Idempotência/anti‑spam:** claim atômico em `timeline_events.notificacao_repasse_enviada_at`
+  → no máximo **1 aviso por evento**.
+- Respostas ao cliente são genéricas (`{ ok: true }`) para não virar oráculo de enumeração;
+  o motivo real (skip/enviado/falha) fica só no log.
+- Sem número cadastrado → no‑op silencioso. Falha no envio **não** quebra o repasse.
+
+Envia pela **uazapi** (`_shared/uazapi-client.ts`, `enviarTexto`). Opcional: secret
+`APP_URL` inclui um link do painel no aviso.
+
 #### 6. `cleanup-disparo-acidental-bot` — limpeza pontual (⚠️ histórica)
 Uma função **de uso único**, criada para **desfazer um disparo acidental do robô** que
 aconteceu numa data específica de 2026‑05‑12. Apaga aquelas mensagens no WhatsApp (via
@@ -196,7 +216,9 @@ Cria/atualiza clientes — um por vez ("single") ou em lote por planilha ("csv_b
 
 #### 9. `criar-colaborador`
 Cria um novo atendente: gera o acesso no Supabase Auth **e** a linha em `users`. Usada
-pela aba **Colaboradores**. Exige ser superadmin ou ter `manage_users`.
+pela aba **Colaboradores**. Exige ser superadmin ou ter `manage_users`. Aceita o campo
+opcional **`whatsapp`** (telefone pessoal) — normaliza para E.164 no servidor (idempotente)
+e grava em `users.whatsapp`, usado depois pelo aviso de repasse.
 
 #### 9b. `google-contacts` — contatos do Google (People API)
 Backend da integração com os **contatos do Google** (feita em 02/07/2026).

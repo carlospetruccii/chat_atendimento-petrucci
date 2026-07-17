@@ -50,6 +50,7 @@ removido — ela está **dormindo**, pronta para ser reativada no futuro.
 | **[03 — Integrações e Edge Functions](03-integracoes-e-edge-functions.md)** | As 13 funções de backend; todo ponto de contato com o WhatsApp; onde está a Z‑API; as tarefas automáticas (crons). |
 | **[04 — Multi‑empresa e autenticação](04-multiempresa-e-autenticacao.md)** | Login, papéis (permissões), a "trava" de isolamento por empresa e como ligá‑la. |
 | **[05 — Dados de exemplo e riscos](05-dados-de-exemplo-e-riscos.md)** | Onde há dados mockados / "Empresa Exemplo", e os pontos de atenção antes de limpar os mocks e ligar a uazapi. |
+| **[08 — Notificação de repasse no WhatsApp](08-notificacao-repasse-whatsapp.md)** | Aviso no WhatsApp pessoal do colaborador ao repassar/atribuir atendimento; correções de segurança (escalonamento de privilégio e PII do telefone); estado do rollout. |
 
 ---
 
