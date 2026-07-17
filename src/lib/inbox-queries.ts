@@ -421,6 +421,25 @@ export async function marcarConversaLida(atendimentoId: string): Promise<void> {
 }
 
 /**
+ * Avisa no WhatsApp pessoal do colaborador que um atendimento foi repassado/
+ * atribuído a ele. Best-effort: chamada logo após o repasse concluir, nunca
+ * derruba a UI nem bloqueia o fluxo — a Edge Function revalida server-side que
+ * o repasse é real e vigente antes de disparar a uazapi. Colaborador sem
+ * WhatsApp cadastrado simplesmente não recebe (a função responde ok/skip).
+ */
+export async function notificarRepasse(
+  atendimentoId: string,
+  toUserId: string,
+): Promise<void> {
+  const { error } = await supabase.functions.invoke("notificar-repasse", {
+    body: { atendimento_id: atendimentoId, to_user_id: toUserId },
+  });
+  if (error) {
+    console.warn("[inbox] notificar-repasse falhou:", error.message);
+  }
+}
+
+/**
  * Envia áudio gravado pelo atendente. Faz upload + dispatch via edge function
  * `send-whatsapp-audio` (que escreve no bucket privado e chama a Z-API).
  */

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { normalizarE164 } from "./phone";
 
 export const TRIAGEM_DEPT_ID = "00000000-0000-0000-0000-000000000010";
 export const FALLBACK_COR = "#64748b";
@@ -105,6 +106,7 @@ export interface ColaboradorRow {
   id: string;
   nome: string;
   email: string | null;
+  whatsapp: string | null;
   ativo: boolean;
   disponivel: boolean;
   is_superadmin: boolean;
@@ -123,7 +125,7 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
     supabase
       .from("users")
       .select(
-        "id, nome, email, ativo, disponivel, is_superadmin, department_id, created_at, departments:department_id(nome, cor)",
+        "id, nome, email, whatsapp, ativo, disponivel, is_superadmin, department_id, created_at, departments:department_id(nome, cor)",
       )
       .eq("is_system_user", false)
       .order("nome"),
@@ -145,6 +147,7 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
       id: u.id,
       nome: u.nome,
       email: u.email,
+      whatsapp: u.whatsapp ?? null,
       ativo: u.ativo,
       disponivel: u.disponivel,
       is_superadmin: u.is_superadmin,
@@ -160,8 +163,16 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
 
 export async function updateColaborador(
   id: string,
-  input: { nome: string; department_id: string | null; ativo: boolean; disponivel: boolean },
+  input: {
+    nome: string;
+    department_id: string | null;
+    ativo: boolean;
+    disponivel: boolean;
+    whatsapp: string | null;
+  },
 ) {
+  // Normaliza defensivamente para E.164 (bate com a CHECK do banco).
+  const whatsapp = input.whatsapp ? normalizarE164(input.whatsapp) : null;
   const { error } = await supabase
     .from("users")
     .update({
@@ -169,6 +180,7 @@ export async function updateColaborador(
       department_id: input.department_id,
       ativo: input.ativo,
       disponivel: input.disponivel,
+      whatsapp,
     })
     .eq("id", id);
   if (error) throw error;
@@ -185,6 +197,7 @@ export async function criarColaborador(input: {
   password: string;
   role: "administrador" | "colaborador";
   department_id: string | null;
+  whatsapp: string | null;
 }) {
   const { data, error } = await supabase.functions.invoke("criar-colaborador", {
     body: input,

@@ -22,6 +22,20 @@ function json(status: number, body: unknown) {
   });
 }
 
+// Normaliza um número para E.164 (+55...). Sem DDI, assume Brasil para 10–11
+// dígitos. Retorna null se não formar um E.164 válido (mesma regra da CHECK).
+function normalizarE164(input: string): string | null {
+  const trimmed = (input ?? "").trim();
+  // Idempotente: se já é E.164 válido, devolve como está (não re-prefixa DDI).
+  if (/^\+[1-9][0-9]{7,14}$/.test(trimmed)) return trimmed;
+  let d = trimmed.replace(/\D/g, "");
+  d = d.replace(/^0+/, "");
+  if (!d) return null;
+  if (d.length === 10 || d.length === 11) d = "55" + d;
+  const e164 = "+" + d;
+  return /^\+[1-9][0-9]{7,14}$/.test(e164) ? e164 : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
@@ -69,6 +83,7 @@ Deno.serve(async (req) => {
     password?: string;
     role?: string;
     department_id?: string | null;
+    whatsapp?: string | null;
   };
   try {
     body = await req.json();
@@ -78,6 +93,12 @@ Deno.serve(async (req) => {
   const nome = body.nome?.trim();
   const email = body.email?.trim().toLowerCase();
   const password = body.password;
+  // WhatsApp pessoal (opcional). Se veio preenchido, precisa ser E.164 válido.
+  const whatsappRaw = body.whatsapp?.trim();
+  const whatsapp = whatsappRaw ? normalizarE164(whatsappRaw) : null;
+  if (whatsappRaw && !whatsapp) {
+    return json(400, { error: "WhatsApp inválido. Use DDD + número (ex.: 11 91234-5678)." });
+  }
   // Compat: sem role explícito, mantém o comportamento antigo (colaborador).
   const role = (body.role ?? "colaborador").trim();
   const isAdmin = role === "administrador";
@@ -130,6 +151,7 @@ Deno.serve(async (req) => {
     nome,
     email,
     department_id,
+    whatsapp,
     ativo: true,
     disponivel: true,
     is_superadmin: isAdmin,

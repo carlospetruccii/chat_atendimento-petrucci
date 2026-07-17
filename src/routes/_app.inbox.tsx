@@ -36,6 +36,7 @@ import {
   sendInboxAudio,
   sendInboxMedia,
   marcarConversaLida,
+  notificarRepasse,
   listClientAtendimentosVisiveis,
   initialsOf,
   statusLabel,
@@ -1030,6 +1031,8 @@ function RepassarModal({
 
     setObservacao("");
     toast.success(`Atendimento repassado para ${selectedUser.nome}`);
+    // Avisa o colaborador no WhatsApp pessoal (best-effort, não bloqueia).
+    void notificarRepasse(atendimentoId, selectedUser.id);
     onDone();
   };
 

@@ -1,5 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
-import { initialsOf, FALLBACK_DEPT_COR, type AtendimentoStatus } from "./inbox-queries";
+import {
+  initialsOf,
+  FALLBACK_DEPT_COR,
+  notificarRepasse,
+  type AtendimentoStatus,
+} from "./inbox-queries";
 
 export { initialsOf, FALLBACK_DEPT_COR };
 
@@ -162,6 +167,8 @@ export async function claimAtendimento(
     p_user_id: assignTo,
   });
   if (error) throw error;
+  // Atribuiu para outro colaborador → avisa no WhatsApp pessoal dele.
+  if (data === true) void notificarRepasse(atendimentoId, assignTo);
   return data === true;
 }
 

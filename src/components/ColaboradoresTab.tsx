@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, UserX, UserCheck, UsersRound, Search, X, Loader2 } from "lucide-react";
+import { Pencil, UserX, UserCheck, UsersRound, Search, X, Loader2, Phone } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -23,6 +23,7 @@ import {
   updateColaborador,
 } from "@/lib/configuracoes-queries";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { normalizarE164, formatarNumero } from "@/lib/phone";
 
 function initials(n: string) {
   return n
@@ -52,6 +53,7 @@ interface FormState {
   password: string;
   role: PapelForm;
   department_id: string;
+  whatsapp: string;
   ativo: boolean;
   disponivel: boolean;
 }
@@ -84,6 +86,7 @@ export function ColaboradoresTab() {
     password: "",
     role: "colaborador",
     department_id: "",
+    whatsapp: "",
     ativo: true,
     disponivel: true,
   });
@@ -109,6 +112,7 @@ export function ColaboradoresTab() {
       password: "",
       role: "colaborador",
       department_id: depts[0]?.id ?? "",
+      whatsapp: "",
       ativo: true,
       disponivel: true,
     });
@@ -124,6 +128,7 @@ export function ColaboradoresTab() {
       password: "",
       role: c.role === "colaborador" ? "colaborador" : "administrador",
       department_id: c.department_id ?? "",
+      whatsapp: c.whatsapp ?? "",
       ativo: c.ativo,
       disponivel: c.disponivel,
     });
@@ -175,6 +180,9 @@ export function ColaboradoresTab() {
     // Departamento é obrigatório só para colaborador (admin não tem departamento).
     if (form.role === "colaborador" && !form.department_id)
       e.department_id = "Departamento é obrigatório";
+    // WhatsApp é opcional; se preenchido, precisa ser um número válido.
+    if (form.whatsapp.trim() && !normalizarE164(form.whatsapp))
+      e.whatsapp = "Número inválido. Use DDD + número (ex.: 11 91234-5678).";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -182,6 +190,7 @@ export function ColaboradoresTab() {
   function save() {
     if (!validate()) return;
     const isColab = form.role === "colaborador";
+    const whatsapp = form.whatsapp.trim() ? normalizarE164(form.whatsapp) : null;
     if (editing) {
       updateMut.mutate({
         id: editing.id,
@@ -190,6 +199,7 @@ export function ColaboradoresTab() {
           department_id: isColab ? form.department_id : null,
           ativo: form.ativo,
           disponivel: form.disponivel,
+          whatsapp,
         },
       });
     } else {
@@ -199,6 +209,7 @@ export function ColaboradoresTab() {
         password: form.password,
         role: form.role,
         department_id: isColab ? form.department_id : null,
+        whatsapp,
       });
     }
   }
@@ -312,6 +323,12 @@ export function ColaboradoresTab() {
                       </span>
                     </p>
                     <p className="truncate text-xs text-muted-foreground">{c.email ?? "—"}</p>
+                    {c.whatsapp && (
+                      <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                        <Phone className="h-3 w-3 shrink-0" strokeWidth={1.7} />
+                        {formatarNumero(c.whatsapp)}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -424,6 +441,27 @@ export function ColaboradoresTab() {
                   </p>
                 )}
                 {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-foreground">
+                  WhatsApp pessoal
+                </label>
+                <input
+                  type="tel"
+                  value={form.whatsapp}
+                  onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+                  placeholder="(11) 91234-5678"
+                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                    errors.whatsapp ? "border-destructive" : "border-border"
+                  }`}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Recebe um aviso no WhatsApp quando um atendimento for repassado a esta pessoa.
+                  Opcional.
+                </p>
+                {errors.whatsapp && (
+                  <p className="mt-1 text-xs text-destructive">{errors.whatsapp}</p>
+                )}
               </div>
               {!editing && (
                 <div>

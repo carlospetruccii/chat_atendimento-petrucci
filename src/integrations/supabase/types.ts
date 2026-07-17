@@ -1191,6 +1191,7 @@ export type Database = {
           is_system_user: boolean
           nome: string
           updated_at: string
+          whatsapp: string | null
         }
         Insert: {
           ativo?: boolean
@@ -1203,6 +1204,7 @@ export type Database = {
           is_system_user?: boolean
           nome: string
           updated_at?: string
+          whatsapp?: string | null
         }
         Update: {
           ativo?: boolean
@@ -1215,6 +1217,7 @@ export type Database = {
           is_system_user?: boolean
           nome?: string
           updated_at?: string
+          whatsapp?: string | null
         }
         Relationships: [
           {
