@@ -351,6 +351,22 @@ export async function verWebhook(): Promise<unknown> {
 }
 
 // ————————————————————————————————————————————————————————————————
+// MARCAR COMO LIDO (confirmação de leitura / "tique azul")
+// ————————————————————————————————————————————————————————————————
+
+// Marca o chat inteiro como lido no WhatsApp — POST /chat/read.
+// Isso zera o contador de não lidas E dispara a confirmação de leitura
+// (o "tique azul") para o remetente, DESDE QUE a conta conectada esteja com
+// "confirmações de leitura" habilitado nas configurações do WhatsApp.
+// Endpoint de chat aceita número em dígitos puros (mesmo padrão de /chat/details).
+export async function marcarChatComoLido(telefone: string): Promise<unknown> {
+  return await chamar("POST", "/chat/read", {
+    number: soDigitos(telefone),
+    read: true,
+  });
+}
+
+// ————————————————————————————————————————————————————————————————
 // CONTATO (nome / detalhes do chat)
 // ————————————————————————————————————————————————————————————————
 

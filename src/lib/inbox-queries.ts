@@ -406,6 +406,21 @@ export async function sendInboxMessage(params: {
 }
 
 /**
+ * Marca a conversa como lida no WhatsApp (dispara o "tique azul" para o
+ * remetente). Best-effort: nunca derruba a UI — a Edge Function ainda revalida
+ * server-side que quem chamou é o atendente responsável e o atendimento está
+ * em andamento antes de acionar a uazapi.
+ */
+export async function marcarConversaLida(atendimentoId: string): Promise<void> {
+  const { error } = await supabase.functions.invoke("mark-chat-read", {
+    body: { atendimento_id: atendimentoId },
+  });
+  if (error) {
+    console.warn("[inbox] mark-chat-read falhou:", error.message);
+  }
+}
+
+/**
  * Envia áudio gravado pelo atendente. Faz upload + dispatch via edge function
  * `send-whatsapp-audio` (que escreve no bucket privado e chama a Z-API).
  */

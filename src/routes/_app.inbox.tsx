@@ -35,6 +35,7 @@ import {
   sendInboxMessage,
   sendInboxAudio,
   sendInboxMedia,
+  marcarConversaLida,
   listClientAtendimentosVisiveis,
   initialsOf,
   statusLabel,
@@ -184,6 +185,23 @@ function InboxPage() {
 
   // Modo supervisão: Administrador abriu uma conversa que NÃO está atribuída a ela
   const supervisionMode = !!current && canViewAll && current.assignedTo !== user?.id;
+
+  // "Tique azul": marca a conversa como lida no WhatsApp SOMENTE quando quem
+  // abriu é o atendente responsável E o atendimento está em andamento. Assim
+  // pré-visualizar na lista ou um admin apenas espiando (supervisionMode) não
+  // dispara a confirmação de leitura. Dispara ao abrir, ao "atender" (o status
+  // vira em_atendimento) e a cada mensagem nova enquanto a conversa está aberta
+  // (lastMessageAt muda via realtime → refaz). Idempotente no lado do WhatsApp.
+  useEffect(() => {
+    if (
+      current &&
+      user?.id &&
+      current.assignedTo === user.id &&
+      current.status === "em_atendimento"
+    ) {
+      void marcarConversaLida(current.id);
+    }
+  }, [current?.id, current?.assignedTo, current?.status, current?.lastMessageAt, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Atendimentos do mesmo cliente que entram no scroll contínuo.
   const atendimentosQuery = useQuery({
