@@ -257,6 +257,19 @@ aviso de tempos em tempos e respeita o horário comercial. (Renomeada de
 De tempos em tempos: **reenvia** mensagens que falharam (até 3 tentativas, com espera
 crescente). É o que garante que uma mensagem não se perca se a Z‑API estiver instável.
 
+#### 14. `cron-alerta-atendimento-parado`
+A cada 5 min: avisa o **responsável fixo** (hoje a Leticia) no **WhatsApp pessoal** quando
+um cliente fica **sem atendimento** — atendimento em `pendente`/`em_triagem` há mais que
+`tempo_alerta_atendimento_parado` min (padrão **90**). Repete a cada
+`intervalo_repeticao_alerta_atendimento_parado` min (padrão **30**) enquanto continuar
+parado. Objetivo: o responsável relatar aos superiores. Alerta **paralelo/independente** do
+`cron-notificacao-admin` (destino, prazo e gatilho próprios). Respeita kill‑switch e horário
+comercial. Idempotência via **claim atômico** por janela na tabela
+`alertas_atendimento_parado` (`UNIQUE(atendimento_id, janela)`) — no máximo 1 aviso por
+janela, à prova de execução concorrente. O número do responsável vem de `users.whatsapp`
+(nunca de payload); o `user_id` é fixo no código, com override opcional em
+`system_config.user_id_alerta_atendimento_parado`.
+
 ---
 
 ## As tarefas automáticas (crons)
@@ -271,6 +284,7 @@ Elas são agendadas pelo próprio Postgres (pg_cron). Desde 02/07/2026 os jobs e
 | `cron-notificacao-admin` | a cada **5 minutos** | Sim |
 | `cron-encerramento-automatico` | a cada **30 minutos** | Sim |
 | `cron-bot-reactivation` | **1x/dia** (03:00 UTC = 00:00 BRT) | — (é justamente quem religa) |
+| `cron-alerta-atendimento-parado` | a cada **5 minutos** | Sim — migration `20260720121000_agenda_cron_alerta_atendimento_parado.sql` |
 | `google-contatos-sync` → `google-contacts` (`sync`) | a cada **15 minutos** | Não (independe do bot; no‑op se a conta Google não estiver conectada) — migrations `20260702120500_google_agenda_cron.sql` (criou) e `20260702200000_rename_agenda_para_contatos.sql` (renomeou o job) |
 
 > "Depende do bot ligado" = respeita o **kill‑switch** (`bot_ativo`). Com o bot desligado
