@@ -1,23 +1,23 @@
 // Edge Function: notificar-repasse
 // Avisa no WhatsApp PESSOAL do colaborador que um atendimento foi
-// repassado/atribuído a ele. Chamada pelo frontend logo após um repasse
-// (repassar_atendimento) ou atribuição de pendente (assign_pendente_a_usuario)
-// concluir com sucesso.
+// repassado/atribuído a ele.
 //
-// Contrato com o frontend:
-//   POST { atendimento_id: string, to_user_id: string }
+// DOIS caminhos de entrada, ambos convergindo no mesmo envio idempotente:
 //
-// Fluxo:
-//  1. Valida JWT do usuário (quem repassou).
-//  2. Confere que o atendimento existe e que `assigned_to` == to_user_id
-//     (só notifica sobre um repasse REAL e vigente — evita spam/replay).
-//  3. Confere que houve um evento de repasse/atribuição recente para esse
-//     colaborador (janela de 2 min) — trava anti-abuso.
-//  4. Busca o WhatsApp pessoal do colaborador. Sem número → no-op (skip).
-//  5. Envia o aviso via uazapi. Falha no envio NÃO quebra o repasse.
+//  A) INTERNO (recomendado / robusto): disparado por um trigger no banco
+//     (net.http_post) logo que o evento de repasse é gravado. Autenticado por
+//     `x-internal-secret` (segredo em public.app_secrets, RLS deny-all).
+//     Payload: { timeline_event_id }. Não depende do navegador.
 //
-// SECURITY: nunca envia para número arbitrário vindo do payload — o destino é
-// sempre resolvido do cadastro do colaborador (users.whatsapp).
+//  B) USUÁRIO (legado / redundante): chamado pelo frontend após o repasse.
+//     Autenticado pelo JWT de quem repassou. Payload: { atendimento_id,
+//     to_user_id }. Exige um evento de repasse recente (janela de 2 min).
+//
+// Idempotência: o claim atômico em timeline_events.notificacao_repasse_enviada_at
+// garante NO MÁXIMO 1 aviso por evento, mesmo se os dois caminhos rodarem.
+//
+// SECURITY: nunca envia para número vindo do payload — o destino é sempre
+// resolvido do cadastro do colaborador (users.whatsapp).
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
@@ -27,17 +27,15 @@ const FUNCAO = "notificar-repasse";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-internal-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Janela em que um evento de repasse/atribuição é considerado "recente".
+// Janela em que um evento de repasse/atribuição é considerado "recente" (modo B).
 const JANELA_EVENTO_MS = 2 * 60 * 1000;
 
-interface PayloadNotificacao {
-  atendimento_id?: string;
-  to_user_id?: string;
-}
+const TIPOS_EVENTO = ["repassado", "reservado"];
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -69,6 +67,14 @@ export function montarMensagem(params: {
   return linhas.join("\n");
 }
 
+function extrairObservacao(payload: unknown): string | null {
+  const obs = (payload as { observacao?: unknown } | null)?.observacao;
+  return typeof obs === "string" && obs.trim() ? obs.trim() : null;
+}
+
+// deno-lint-ignore no-explicit-any
+type Supa = any;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: CORS_HEADERS });
@@ -78,53 +84,108 @@ Deno.serve(async (req: Request) => {
   }
 
   const cron = iniciarCronometro();
-  const supabase = getSupabaseAdmin();
+  const supabase: Supa = getSupabaseAdmin();
 
-  // 1) Autenticação: resolve o usuário a partir do JWT.
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const jwt = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : "";
-  if (!jwt) {
-    log({ funcao: FUNCAO, evento: "sem_token", status: "erro", duracao_ms: cron() });
-    return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+  // Contexto resolvido pelos dois modos:
+  let atendimentoId: string | undefined;
+  let toUserId: string | undefined;
+  let callerId: string | undefined; // ator (quem repassou)
+  let eventoId: string | undefined; // linha a ser reivindicada (claim)
+  let observacao: string | null = null;
+
+  const internalSecret = (req.headers.get("x-internal-secret") ?? "").trim();
+
+  if (internalSecret) {
+    // ---------- MODO A: INTERNO (trigger) ----------
+    const { data: secretRow } = await supabase
+      .from("app_secrets")
+      .select("value")
+      .eq("key", "repasse_internal")
+      .maybeSingle();
+    const esperado = (secretRow?.value as string | undefined) ?? "";
+    if (!esperado || internalSecret !== esperado) {
+      log({ funcao: FUNCAO, evento: "internal_secret_invalido", status: "erro", duracao_ms: cron() });
+      return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+    }
+
+    let payload: { timeline_event_id?: string };
+    try {
+      payload = (await req.json()) as { timeline_event_id?: string };
+    } catch {
+      return jsonResponse({ ok: false, erro: "payload_invalido" }, 400);
+    }
+    eventoId = payload.timeline_event_id?.trim();
+    if (!eventoId) {
+      return jsonResponse(
+        { ok: false, erro: "campos_obrigatorios", detalhe: "timeline_event_id é obrigatório" },
+        400,
+      );
+    }
+
+    const { data: ev } = await supabase
+      .from("timeline_events")
+      .select("id, atendimento_id, actor_user_id, target_user_id, tipo_evento, payload")
+      .eq("id", eventoId)
+      .maybeSingle();
+
+    // Respostas genéricas ({ ok: true }) para não virarem oráculo de enumeração.
+    if (!ev) return jsonResponse({ ok: true });
+    if (
+      !TIPOS_EVENTO.includes(ev.tipo_evento as string) ||
+      !ev.target_user_id ||
+      !ev.actor_user_id ||
+      ev.actor_user_id === ev.target_user_id
+    ) {
+      return jsonResponse({ ok: true });
+    }
+
+    atendimentoId = ev.atendimento_id as string;
+    toUserId = ev.target_user_id as string;
+    callerId = ev.actor_user_id as string;
+    observacao = extrairObservacao(ev.payload);
+  } else {
+    // ---------- MODO B: USUÁRIO (frontend) ----------
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7).trim()
+      : "";
+    if (!jwt) {
+      log({ funcao: FUNCAO, evento: "sem_token", status: "erro", duracao_ms: cron() });
+      return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+    }
+
+    const { data: userRes, error: errUser } = await supabase.auth.getUser(jwt);
+    if (errUser || !userRes?.user) {
+      log({ funcao: FUNCAO, evento: "token_invalido", status: "erro", duracao_ms: cron(), erro_msg: errUser?.message });
+      return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+    }
+    callerId = userRes.user.id;
+
+    let payload: { atendimento_id?: string; to_user_id?: string };
+    try {
+      payload = (await req.json()) as { atendimento_id?: string; to_user_id?: string };
+    } catch {
+      return jsonResponse({ ok: false, erro: "payload_invalido" }, 400);
+    }
+    atendimentoId = payload.atendimento_id?.trim();
+    toUserId = payload.to_user_id?.trim();
+    if (!atendimentoId || !toUserId) {
+      return jsonResponse(
+        { ok: false, erro: "campos_obrigatorios", detalhe: "atendimento_id e to_user_id são obrigatórios" },
+        400,
+      );
+    }
+    if (toUserId === callerId) {
+      return jsonResponse({ ok: true, skipped: "auto_atribuicao" });
+    }
   }
 
-  const { data: userRes, error: errUser } = await supabase.auth.getUser(jwt);
-  if (errUser || !userRes?.user) {
-    log({
-      funcao: FUNCAO,
-      evento: "token_invalido",
-      status: "erro",
-      duracao_ms: cron(),
-      erro_msg: errUser?.message,
-    });
-    return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
-  }
-  const callerId = userRes.user.id;
+  const skip = (motivo: string): Response => {
+    log({ funcao: FUNCAO, evento: motivo, status: "ok", atendimento_id: atendimentoId, duracao_ms: cron() });
+    return jsonResponse({ ok: true });
+  };
 
-  // 2) Parse do payload.
-  let payload: PayloadNotificacao;
-  try {
-    payload = (await req.json()) as PayloadNotificacao;
-  } catch {
-    return jsonResponse({ ok: false, erro: "payload_invalido" }, 400);
-  }
-  const atendimentoId = payload.atendimento_id?.trim();
-  const toUserId = payload.to_user_id?.trim();
-  if (!atendimentoId || !toUserId) {
-    return jsonResponse(
-      { ok: false, erro: "campos_obrigatorios", detalhe: "atendimento_id e to_user_id são obrigatórios" },
-      400,
-    );
-  }
-
-  // Não faz sentido avisar a si mesmo (ex.: auto-assumir um pendente).
-  if (toUserId === callerId) {
-    return jsonResponse({ ok: true, skipped: "auto_atribuicao" });
-  }
-
-  // 3) Carrega o atendimento + nome do cliente + departamento atual.
+  // ---------- Fluxo compartilhado ----------
   const { data: atend, error: errAtend } = await supabase
     .from("atendimentos")
     .select(
@@ -134,52 +195,34 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
 
   if (errAtend) {
-    log({
-      funcao: FUNCAO,
-      evento: "leitura_atendimento",
-      status: "erro",
-      atendimento_id: atendimentoId,
-      duracao_ms: cron(),
-      erro_msg: errAtend.message,
-    });
+    log({ funcao: FUNCAO, evento: "leitura_atendimento", status: "erro", atendimento_id: atendimentoId, duracao_ms: cron(), erro_msg: errAtend.message });
     return jsonResponse({ ok: false, erro: "erro_interno" }, 500);
   }
-  // Respostas de "não enviado" são sempre genéricas ({ ok: true }) para não
-  // servirem de oráculo de enumeração; o motivo real vai só para o log interno.
-  const skip = (motivo: string): Response => {
-    log({
-      funcao: FUNCAO,
-      evento: motivo,
-      status: "ok",
-      atendimento_id: atendimentoId,
-      duracao_ms: cron(),
-    });
-    return jsonResponse({ ok: true });
-  };
-
   if (!atend) return skip("atendimento_nao_encontrado");
 
-  // Anti-abuso: só notifica se o colaborador realmente detém o atendimento agora.
+  // Só notifica se o colaborador realmente detém o atendimento agora.
   if (atend.assigned_to !== toUserId) return skip("assigned_to_divergente");
 
-  // Anti-abuso: exige um evento de repasse/atribuição recente cujo AUTOR seja o
-  // próprio chamador — só quem realmente fez o repasse pode disparar o aviso.
-  const desdeIso = new Date(Date.now() - JANELA_EVENTO_MS).toISOString();
-  const { data: evento } = await supabase
-    .from("timeline_events")
-    .select("id, payload")
-    .eq("atendimento_id", atendimentoId)
-    .eq("target_user_id", toUserId)
-    .eq("actor_user_id", callerId)
-    .in("tipo_evento", ["repassado", "reservado"])
-    .gte("created_at", desdeIso)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // MODO B: resolve o evento recente (autor = chamador) para o claim.
+  if (!eventoId) {
+    const desdeIso = new Date(Date.now() - JANELA_EVENTO_MS).toISOString();
+    const { data: evento } = await supabase
+      .from("timeline_events")
+      .select("id, payload")
+      .eq("atendimento_id", atendimentoId)
+      .eq("target_user_id", toUserId)
+      .eq("actor_user_id", callerId)
+      .in("tipo_evento", TIPOS_EVENTO)
+      .gte("created_at", desdeIso)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!evento) return skip("sem_evento_recente");
+    eventoId = evento.id as string;
+    observacao = extrairObservacao(evento.payload);
+  }
 
-  if (!evento) return skip("sem_evento_recente");
-
-  // 4) WhatsApp pessoal do colaborador. Sem número → no-op.
+  // WhatsApp pessoal do colaborador. Sem número → no-op.
   const { data: destino, error: errDestino } = await supabase
     .from("users")
     .select("nome, whatsapp, ativo, is_system_user")
@@ -193,20 +236,21 @@ Deno.serve(async (req: Request) => {
   const numeroDestino = (destino.whatsapp ?? "").replace(/\D/g, "");
   if (!numeroDestino) return skip("destino_sem_whatsapp");
 
-  // Idempotência/anti-spam: reivindica o evento com um claim atômico. Só quem
-  // marca `notificacao_repasse_enviada_at` (NULL → agora) segue e envia; chamadas
-  // repetidas do mesmo evento caem aqui e param (no máximo 1 aviso por evento).
-  const { data: claimed } = await supabase
-    .from("timeline_events")
-    .update({ notificacao_repasse_enviada_at: new Date().toISOString() })
-    .eq("id", (evento as { id: string }).id)
-    .is("notificacao_repasse_enviada_at", null)
-    .select("id")
-    .maybeSingle();
+  // Idempotência: claim atômico via INSERT no ledger (timeline_events é
+  // append-only, então NÃO dá pra usar UPDATE de coluna lá). Quem insere
+  // primeiro envia; conflito (já existe) → já foi notificado.
+  const { data: claimIns, error: errClaim } = await supabase
+    .from("repasse_notificacoes")
+    .upsert({ timeline_event_id: eventoId }, { onConflict: "timeline_event_id", ignoreDuplicates: true })
+    .select("timeline_event_id");
 
-  if (!claimed) return skip("ja_notificado");
+  if (errClaim) {
+    // Nunca mais falhar em silêncio: propaga o erro do claim.
+    log({ funcao: FUNCAO, evento: "claim_erro", status: "erro", atendimento_id: atendimentoId, duracao_ms: cron(), erro_msg: errClaim.message });
+    return jsonResponse({ ok: false, erro: "erro_interno" }, 500);
+  }
+  if (!claimIns || claimIns.length === 0) return skip("ja_notificado");
 
-  // Nome de quem repassou (= o próprio chamador, já validado como autor do evento).
   const { data: ator } = await supabase
     .from("users")
     .select("nome")
@@ -217,11 +261,6 @@ Deno.serve(async (req: Request) => {
   const departamento = (atend as { departments?: { nome?: string | null } }).departments;
   const clienteNome = cliente?.nome?.trim() || cliente?.numero_whatsapp || "Cliente";
 
-  const payloadEvento = (evento as { payload?: { observacao?: unknown } | null }).payload;
-  const observacao = typeof payloadEvento?.observacao === "string" && payloadEvento.observacao.trim()
-    ? payloadEvento.observacao.trim()
-    : null;
-
   const mensagem = montarMensagem({
     clienteNome,
     departamentoNome: departamento?.nome?.trim() || null,
@@ -230,19 +269,15 @@ Deno.serve(async (req: Request) => {
     appUrl: Deno.env.get("APP_URL")?.trim() || null,
   });
 
-  // 5) Envio em background — o aviso não pode segurar/quebrar o repasse.
+  // Envio em background — o aviso não pode segurar/quebrar o repasse.
   const tarefa = (async () => {
     const t = iniciarCronometro();
     try {
       await enviarTexto({ telefone: numeroDestino, mensagem });
-      log({
-        funcao: FUNCAO,
-        evento: "aviso_enviado",
-        status: "ok",
-        atendimento_id: atendimentoId,
-        duracao_ms: t(),
-      });
+      log({ funcao: FUNCAO, evento: "aviso_enviado", status: "ok", atendimento_id: atendimentoId, duracao_ms: t() });
     } catch (err) {
+      // Solta o claim para permitir nova tentativa (ex.: caminho redundante do front).
+      await supabase.from("repasse_notificacoes").delete().eq("timeline_event_id", eventoId);
       log({
         funcao: FUNCAO,
         evento: "aviso_falha",

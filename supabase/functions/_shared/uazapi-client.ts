@@ -26,6 +26,9 @@
 // no banco continua (cosmético) e passa a guardar o `id` da uazapi.
 
 const MAX_TENTATIVAS = 3;
+// Timeout por requisição — evita que uma conexão pendurada na uazapi trave a
+// Edge Function (ex.: o loop do cron de alertas) indefinidamente.
+const REQUEST_TIMEOUT_MS = 20_000;
 
 function getBaseUrl(): string {
   const url = Deno.env.get("UAZAPI_URL");
@@ -82,11 +85,19 @@ async function chamar(
   let ultimoErro: UazapiError | null = null;
 
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
-    const resp = await fetch(url, {
-      method: metodo,
-      headers,
-      body: payload !== undefined ? JSON.stringify(payload) : undefined,
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: metodo,
+        headers,
+        body: payload !== undefined ? JSON.stringify(payload) : undefined,
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (resp.ok) {
       const texto = await resp.text();

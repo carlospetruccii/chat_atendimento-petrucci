@@ -1,14 +1,17 @@
 // Edge Function: cron-alerta-atendimento-parado
-// Roda a cada 5min via pg_cron. Avisa o RESPONSÁVEL (hoje a Leticia) no WhatsApp
-// pessoal quando um cliente fica sem atendimento — atendimento em 'pendente' ou
-// 'em_triagem' há mais que system_config.tempo_alerta_atendimento_parado minutos
-// (default 90). Repete a cada intervalo_repeticao_alerta_atendimento_parado
-// minutos (default 30) enquanto continuar parado. Assim o responsável consegue
-// ficar ciente e agir no atendimento parado.
+// Roda a cada 5min via pg_cron. Avisa o RESPONSÁVEL no WhatsApp pessoal quando
+// um cliente fica sem atendimento — atendimento em 'pendente'/'em_triagem' por
+// mais que system_config.tempo_alerta_atendimento_parado MINUTOS ÚTEIS (default
+// 90). "Minutos úteis" = tempo dentro do EXPEDIENTE DO DEPARTAMENTO do
+// atendimento (respeita almoço, feriados e fim de semana). Fora do expediente
+// conta 0, então cliente que chega 18h só começa a contar no próximo dia útil.
 //
-// Respeita kill switch (bot_ativo) e horário comercial quando
-// notificacao_apenas_horario_comercial=true. Alerta paralelo e independente do
-// cron-notificacao-admin (destino, prazo e gatilho próprios).
+// Destinatário por departamento: departments.alert_recipient_user_id; se nulo,
+// cai no responsável padrão (Leticia / system_config.user_id_alerta_...).
+//
+// Repete a cada intervalo_repeticao_alerta_atendimento_parado minutos (default
+// 30) enquanto continuar parado. Respeita kill switch (bot_ativo). O gate de
+// horário é feito por minutos úteis (por depto), não mais global.
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo } from "../_shared/kill-switch.ts";
@@ -16,14 +19,11 @@ import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { enviarTexto, ZapiError } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "cron-alerta-atendimento-parado";
-const LIMITE = 50;
 const TEMPO_DEFAULT = 90;
 const REPETICAO_DEFAULT = 30;
 
-// Responsável fixo pelo alerta (decisão "fixar a Leticia"). O NÚMERO é resolvido
-// de users.whatsapp em runtime — então trocar o número no cadastro basta.
-// Trocar de pessoa: sobrescreva com o system_config user_id_alerta_atendimento_parado
-// (ou ajuste esta constante e redeploy).
+// Responsável padrão (quando o departamento não define alert_recipient_user_id).
+// O NÚMERO é resolvido de users.whatsapp em runtime.
 const RESPONSAVEL_USER_ID_DEFAULT = "15d58f66-c8d5-422c-a618-d2712b9029ed"; // Leticia Vitória
 
 const TEMPLATE_FALLBACK =
@@ -34,18 +34,11 @@ function configToInt(valor: unknown, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-function configToBool(valor: unknown, fallback: boolean): boolean {
-  const v = String(valor ?? "").trim().toLowerCase();
-  if (v === "true") return true;
-  if (v === "false") return false;
-  return fallback;
-}
-
 function interpolar(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
 }
 
-// Formata minutos de espera: 45 → "45 min"; 90 → "1h30"; 60 → "1h".
+// Formata minutos: 45 → "45 min"; 90 → "1h30"; 60 → "1h".
 function formatarEspera(min: number): string {
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
@@ -53,9 +46,23 @@ function formatarEspera(min: number): string {
   return m === 0 ? `${h}h` : `${h}h${m.toString().padStart(2, "0")}`;
 }
 
+// deno-lint-ignore no-explicit-any
+type Supa = any;
+
+interface Parado {
+  atendimento_id: string;
+  company_id: string | null;
+  current_department_id: string | null;
+  cliente_nome: string | null;
+  cliente_numero: string | null;
+  dept_nome: string | null;
+  business_min: number;
+  recipient_user_id: string | null;
+}
+
 Deno.serve(async (_req: Request) => {
   const cron = iniciarCronometro();
-  const supabase = getSupabaseAdmin();
+  const supabase: Supa = getSupabaseAdmin();
 
   try {
     // 1) Kill switch
@@ -72,10 +79,9 @@ Deno.serve(async (_req: Request) => {
         "tempo_alerta_atendimento_parado",
         "intervalo_repeticao_alerta_atendimento_parado",
         "user_id_alerta_atendimento_parado",
-        "notificacao_apenas_horario_comercial",
       ]);
     const cfg = new Map<string, string | null>(
-      (cfgs ?? []).map((c) => [c.chave as string, (c.valor as string | null) ?? null]),
+      (cfgs ?? []).map((c: { chave: string; valor: string | null }) => [c.chave, c.valor ?? null]),
     );
 
     const tempoMin = configToInt(cfg.get("tempo_alerta_atendimento_parado"), TEMPO_DEFAULT);
@@ -83,42 +89,10 @@ Deno.serve(async (_req: Request) => {
       cfg.get("intervalo_repeticao_alerta_atendimento_parado"),
       REPETICAO_DEFAULT,
     );
-    const apenasHorario = configToBool(cfg.get("notificacao_apenas_horario_comercial"), true);
-    const responsavelId =
+    const responsavelDefault =
       (cfg.get("user_id_alerta_atendimento_parado") ?? "").trim() || RESPONSAVEL_USER_ID_DEFAULT;
 
-    // 3) Horário comercial
-    if (apenasHorario) {
-      const { data: hc } = await supabase.rpc("esta_em_horario_comercial", {
-        ts: new Date().toISOString(),
-      });
-      if (hc !== true) {
-        log({ funcao: FUNCAO, evento: "pulado_fora_horario", status: "ok", duracao_ms: cron() });
-        return new Response(JSON.stringify({ ok: true, acao: "fora_horario" }));
-      }
-    }
-
-    // 4) Responsável + número (sempre do cadastro; nunca de payload externo)
-    const { data: resp, error: errResp } = await supabase
-      .from("users")
-      .select("nome, whatsapp, ativo, is_system_user")
-      .eq("id", responsavelId)
-      .maybeSingle();
-
-    const numeroResp = (resp?.whatsapp ?? "").replace(/\D/g, "");
-    if (errResp || !resp || resp.ativo === false || resp.is_system_user === true || !numeroResp) {
-      // Distingue config inválida (erro na query, ex.: uuid malformado) de "sem responsável".
-      log({
-        funcao: FUNCAO,
-        evento: "sem_responsavel_valido",
-        status: "ok",
-        duracao_ms: cron(),
-        erro_msg: errResp?.message,
-      });
-      return new Response(JSON.stringify({ ok: true, acao: "sem_responsavel" }));
-    }
-
-    // 5) Template (fallback embutido se não houver)
+    // 3) Template (fallback embutido se não houver)
     const { data: tpl } = await supabase
       .from("templates_mensagem")
       .select("texto")
@@ -127,38 +101,53 @@ Deno.serve(async (_req: Request) => {
       .maybeSingle();
     const template = (tpl?.texto as string | null)?.trim() || TEMPLATE_FALLBACK;
 
-    // 6) Candidatos: pendente/triagem parados há >= tempoMin
-    const cutoffIso = new Date(Date.now() - tempoMin * 60_000).toISOString();
-    const { data: candidatos, error: errSel } = await supabase
-      .from("atendimentos")
-      .select(
-        "id, created_at, company_id, current_department_id, clients:client_id(nome, numero_whatsapp), departments:current_department_id(nome)",
-      )
-      .in("status", ["pendente", "em_triagem"])
-      .lte("created_at", cutoffIso)
-      .order("created_at", { ascending: true })
-      .limit(LIMITE);
+    // 4) Candidatos: parados há >= tempoMin MINUTOS ÚTEIS (cálculo no banco por
+    // departamento). Já vem com o destinatário resolvido.
+    const { data: candidatos, error: errSel } = await supabase.rpc("get_atendimentos_parados", {
+      p_tempo_min: tempoMin,
+    });
 
     if (errSel) {
       log({ funcao: FUNCAO, evento: "selecao_erro", status: "erro", duracao_ms: cron(), erro_msg: errSel.message });
       return new Response(JSON.stringify({ ok: false }), { status: 500 });
     }
 
-    const lista = candidatos ?? [];
+    const lista = (candidatos ?? []) as Parado[];
     const agoraMs = Date.now();
     let enviadas = 0;
     let falhas = 0;
 
-    // Janela de repetição atual (dedup atômico anti-corrida): alinha o "agora" a
-    // blocos de repetMin minutos. O claim único (atendimento_id, janela) garante
-    // no máximo 1 aviso por atendimento por janela, mesmo com execuções concorrentes.
+    // Cache de número por destinatário (evita reconsultar users no mesmo tick).
+    const numeroCache = new Map<string, string | null>();
+    const resolveNumero = async (userId: string): Promise<string | null> => {
+      if (numeroCache.has(userId)) return numeroCache.get(userId) ?? null;
+      const { data: u } = await supabase
+        .from("users")
+        .select("whatsapp, ativo, is_system_user")
+        .eq("id", userId)
+        .maybeSingle();
+      const numero = (u?.whatsapp ?? "").replace(/\D/g, "");
+      const valido = !!u && u.ativo !== false && u.is_system_user !== true && !!numero;
+      const val = valido ? numero : null;
+      numeroCache.set(userId, val);
+      return val;
+    };
+
+    // Janela de repetição atual (dedup atômico anti-corrida): blocos de repetMin.
     const janelaIso = new Date(Math.floor(agoraMs / (repetMin * 60_000)) * repetMin * 60_000).toISOString();
 
-    for (const at of lista) {
-      const atId = at.id as string;
+    // Deadline auto-imposto: não estoura o tempo do gateway se a uazapi travar.
+    // O que sobrar é reprocessado no próximo tick (claim é por item/janela).
+    const DEADLINE_MS = 120_000;
 
-      // Claim atômico da janela: só quem CRIA a linha segue e envia; execuções
-      // concorrentes (ou o mesmo atendimento já avisado nesta janela) caem fora.
+    for (const at of lista) {
+      if (Date.now() - agoraMs > DEADLINE_MS) {
+        log({ funcao: FUNCAO, evento: "deadline_atingido", status: "ok", extra: { enviadas, falhas } });
+        break;
+      }
+      const atId = at.atendimento_id;
+
+      // Claim atômico da janela: no máximo 1 aviso por atendimento por janela.
       const { data: claim, error: errClaim } = await supabase
         .from("alertas_atendimento_parado")
         .upsert(
@@ -171,16 +160,40 @@ Deno.serve(async (_req: Request) => {
         falhas++;
         continue;
       }
-      if (!claim || claim.length === 0) continue; // já avisado nesta janela → dedup
+      if (!claim || claim.length === 0) continue; // já avisado nesta janela
       const claimId = claim[0].id as string;
 
-      const cliente = (at as { clients?: { nome?: string | null; numero_whatsapp?: string } }).clients;
-      const departamento = (at as { departments?: { nome?: string | null } }).departments;
-      const telefoneCli = (cliente?.numero_whatsapp ?? "").trim();
-      const nomeCliente = (cliente?.nome ?? telefoneCli ?? "Cliente").trim() || "Cliente";
-      const deptNome = (departamento?.nome ?? "").trim() || "Triagem";
-      const createdMs = at.created_at ? new Date(at.created_at as string).getTime() : agoraMs;
-      const esperaMin = Math.max(0, Math.floor((agoraMs - createdMs) / 60_000));
+      // Destinatário do departamento; se não tiver número válido (ex.: Larissa
+      // sem WhatsApp), cai no responsável padrão pra o alerta não sumir.
+      let recipientId = (at.recipient_user_id ?? "").trim() || responsavelDefault;
+      let numeroResp = await resolveNumero(recipientId);
+      if (!numeroResp && recipientId !== responsavelDefault) {
+        log({
+          funcao: FUNCAO,
+          evento: "destinatario_fallback",
+          status: "ok",
+          atendimento_id: atId,
+          extra: { recipient_user_id: recipientId, fallback: responsavelDefault },
+        });
+        recipientId = responsavelDefault;
+        numeroResp = await resolveNumero(recipientId);
+      }
+      if (!numeroResp) {
+        // Nem o destinatário do depto nem o padrão têm número. Mantém o claim da
+        // janela (não fica reenviando toda hora) e loga para diagnóstico.
+        log({
+          funcao: FUNCAO,
+          evento: "destinatario_sem_numero",
+          status: "ok",
+          atendimento_id: atId,
+          extra: { recipient_user_id: recipientId },
+        });
+        continue;
+      }
+
+      const telefoneCli = (at.cliente_numero ?? "").trim();
+      const nomeCliente = (at.cliente_nome ?? telefoneCli ?? "Cliente").trim() || "Cliente";
+      const deptNome = (at.dept_nome ?? "").trim() || "Triagem";
       const telefoneFmt = telefoneCli
         ? (telefoneCli.startsWith("+") ? telefoneCli : `+${telefoneCli.replace(/\D/g, "")}`)
         : "";
@@ -189,7 +202,7 @@ Deno.serve(async (_req: Request) => {
         nome_cliente: nomeCliente,
         telefone: telefoneFmt,
         departamento: deptNome,
-        tempo_aguardando: formatarEspera(esperaMin),
+        tempo_aguardando: formatarEspera(Math.max(0, at.business_min ?? 0)),
       });
 
       try {
