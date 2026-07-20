@@ -22,6 +22,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { enviarTexto } from "../_shared/uazapi-client.ts";
+import { montarMensagem } from "../_shared/formato.ts";
 
 const FUNCAO = "notificar-repasse";
 
@@ -42,29 +43,6 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
-}
-
-// Monta o texto do aviso. Pura para facilitar leitura/teste.
-export function montarMensagem(params: {
-  clienteNome: string;
-  departamentoNome: string | null;
-  atorNome: string | null;
-  observacao: string | null;
-  appUrl: string | null;
-}): string {
-  const linhas: string[] = ["🔔 Novo atendimento pra você"];
-  const porQuem = params.atorNome ? ` por ${params.atorNome}` : "";
-  linhas.push("");
-  linhas.push(`*${params.clienteNome}* foi repassado(a) pra você${porQuem}.`);
-  if (params.departamentoNome) linhas.push(`🏷️ ${params.departamentoNome}`);
-  if (params.observacao) linhas.push(`📝 ${params.observacao}`);
-  linhas.push("");
-  linhas.push(
-    params.appUrl
-      ? `Abra o painel para atender: ${params.appUrl}`
-      : "Abra o painel para atender.",
-  );
-  return linhas.join("\n");
 }
 
 function extrairObservacao(payload: unknown): string | null {

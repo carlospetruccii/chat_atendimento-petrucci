@@ -17,6 +17,7 @@ import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { enviarTexto, ZapiError } from "../_shared/uazapi-client.ts";
+import { formatarEspera, interpolar } from "../_shared/formato.ts";
 
 const FUNCAO = "cron-alerta-atendimento-parado";
 const TEMPO_DEFAULT = 90;
@@ -32,18 +33,6 @@ const TEMPLATE_FALLBACK =
 function configToInt(valor: unknown, fallback: number): number {
   const n = parseInt(String(valor ?? "").trim(), 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-function interpolar(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
-}
-
-// Formata minutos: 45 → "45 min"; 90 → "1h30"; 60 → "1h".
-function formatarEspera(min: number): string {
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? `${h}h` : `${h}h${m.toString().padStart(2, "0")}`;
 }
 
 // deno-lint-ignore no-explicit-any
