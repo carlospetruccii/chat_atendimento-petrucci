@@ -27,7 +27,7 @@ const REPETICAO_DEFAULT = 30;
 const RESPONSAVEL_USER_ID_DEFAULT = "15d58f66-c8d5-422c-a618-d2712b9029ed"; // Leticia Vitória
 
 const TEMPLATE_FALLBACK =
-  "⏰ *Atendimento sem resposta*\n\nO cliente *{{nome_cliente}}* ({{telefone}}) está há {{tempo_aguardando}} sem atendimento no setor {{departamento}}.\n\nPor favor, repasse aos superiores.";
+  "⏰ *Atendimento sem resposta*\n\nO cliente *{{nome_cliente}}* ({{telefone}}) está há {{tempo_aguardando}} sem atendimento no setor {{departamento}}.";
 
 function configToInt(valor: unknown, fallback: number): number {
   const n = parseInt(String(valor ?? "").trim(), 10);

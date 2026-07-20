@@ -17,7 +17,7 @@ ON CONFLICT (company_id, chave) DO NOTHING;
 -- Template do aviso (a função tem um texto-fallback embutido se este sumir).
 INSERT INTO public.templates_mensagem (company_id, chave, texto, variacoes, ativo)
 SELECT c.id, 'alerta_atendimento_parado',
-  E'⏰ *Atendimento sem resposta*\n\nO cliente *{{nome_cliente}}* ({{telefone}}) está há {{tempo_aguardando}} sem atendimento no setor {{departamento}}.\n\nPor favor, repasse aos superiores.',
+  E'⏰ *Atendimento sem resposta*\n\nO cliente *{{nome_cliente}}* ({{telefone}}) está há {{tempo_aguardando}} sem atendimento no setor {{departamento}}.',
   ARRAY[]::text[], true
 FROM public.companies c
 ON CONFLICT (company_id, chave) DO NOTHING;
