@@ -3,6 +3,7 @@ import { useSignedMediaUrl } from "@/hooks/useSignedMediaUrl";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { MediaLoading } from "./MediaLoading";
 import { MediaError } from "./MediaError";
+import { ZoomableImage } from "./ZoomableImage";
 
 export function MediaImage({ storagePath, caption }: { storagePath: string; caption?: string | null }) {
   const { data: url, isLoading, error } = useSignedMediaUrl(storagePath);
@@ -23,7 +24,9 @@ export function MediaImage({ storagePath, caption }: { storagePath: string; capt
       {caption && <p className="text-sm whitespace-pre-wrap break-words">{caption}</p>}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-[90vw] max-h-[90vh] p-2 bg-black/95 border-none">
-          <img src={url} alt={caption ?? "Imagem"} className="w-full h-auto max-h-[85vh] object-contain" />
+          <div className="h-[85vh] w-full">
+            <ZoomableImage src={url} alt={caption ?? "Imagem"} />
+          </div>
         </DialogContent>
       </Dialog>
     </div>
