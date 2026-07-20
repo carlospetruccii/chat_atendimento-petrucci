@@ -262,7 +262,7 @@ A cada 5 min: avisa o **responsável fixo** (hoje a Leticia) no **WhatsApp pesso
 um cliente fica **sem atendimento** — atendimento em `pendente`/`em_triagem` há mais que
 `tempo_alerta_atendimento_parado` min (padrão **90**). Repete a cada
 `intervalo_repeticao_alerta_atendimento_parado` min (padrão **30**) enquanto continuar
-parado. Objetivo: o responsável relatar aos superiores. Alerta **paralelo/independente** do
+parado. Objetivo: o responsável ficar ciente e agir no atendimento parado. Alerta **paralelo/independente** do
 `cron-notificacao-admin` (destino, prazo e gatilho próprios). Respeita kill‑switch e horário
 comercial. Idempotência via **claim atômico** por janela na tabela
 `alertas_atendimento_parado` (`UNIQUE(atendimento_id, janela)`) — no máximo 1 aviso por

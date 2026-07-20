@@ -4,7 +4,7 @@
 // 'em_triagem' há mais que system_config.tempo_alerta_atendimento_parado minutos
 // (default 90). Repete a cada intervalo_repeticao_alerta_atendimento_parado
 // minutos (default 30) enquanto continuar parado. Assim o responsável consegue
-// relatar aos superiores.
+// ficar ciente e agir no atendimento parado.
 //
 // Respeita kill switch (bot_ativo) e horário comercial quando
 // notificacao_apenas_horario_comercial=true. Alerta paralelo e independente do

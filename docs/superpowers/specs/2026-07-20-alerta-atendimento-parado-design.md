@@ -4,7 +4,7 @@
 
 ## Objetivo
 Quando um cliente fica **mais de 1h30 sem atendimento**, disparar um aviso no **WhatsApp
-pessoal** de um responsável (hoje a Leticia) para ela relatar aos superiores. Alerta
+pessoal** de um responsável (hoje a Leticia) para ela ficar ciente e agir. Alerta
 **paralelo e independente** do aviso ao Administrador que já existe.
 
 ## Decisões (do brainstorming)
