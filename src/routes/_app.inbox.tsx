@@ -16,6 +16,7 @@ import {
   Reply,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { linkifyText } from "@/lib/linkify";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   Dialog,
@@ -754,7 +755,9 @@ function InboxPage() {
                               (m.mediaMetadata as { kind?: string } | null)?.kind === "lista_opcoes" ? (
                                 <ListaOpcoesPreview message={m} />
                               ) : (
-                                <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                                <p className="whitespace-pre-wrap break-words">
+                                  {linkifyText(m.content)}
+                                </p>
                               )
                             ) : (
                               <MessageMedia message={m} />
