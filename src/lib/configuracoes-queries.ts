@@ -200,6 +200,27 @@ export async function setColaboradorAtivo(id: string, ativo: boolean) {
   if (error) throw error;
 }
 
+// Troca o papel de um colaborador existente (admin ↔ colaborador). Passa pela
+// Edge Function porque muda o gate de acesso (users.is_superadmin) + o papel
+// canônico (company_members) de forma consistente e só permite ao dono.
+export async function alterarPapelColaborador(input: {
+  user_id: string;
+  role: "administrador" | "colaborador";
+  department_id: string | null;
+}) {
+  const { data, error } = await supabase.functions.invoke("alterar-papel-colaborador", {
+    body: input,
+  });
+  if (error) {
+    const ctx = (error as { context?: { body?: unknown } }).context;
+    throw new Error(
+      (typeof ctx?.body === "string" && ctx.body) || error.message || "Falha ao alterar papel",
+    );
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 export async function criarColaborador(input: {
   nome: string;
   email: string;

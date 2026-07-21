@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import {
+  alterarPapelColaborador,
   ColaboradorRow,
   criarColaborador,
   fetchColaboradores,
@@ -73,6 +74,13 @@ export function ColaboradoresTab() {
 
   const colaboradores = colaboradoresQ.data ?? [];
   const depts = (deptsQ.data ?? []).filter((d) => d.id !== TRIAGEM_DEPT_ID && d.ativo);
+
+  // Só o dono pode promover/rebaixar (bate com a RLS de company_members).
+  const meRole = useMemo(
+    () => colaboradores.find((c) => c.id === me?.id)?.role ?? null,
+    [colaboradores, me?.id],
+  );
+  const isOwnerMe = meRole === "dono";
 
   const [search, setSearch] = useState("");
   const [filterDept, setFilterDept] = useState("Todos");
@@ -148,8 +156,18 @@ export function ColaboradoresTab() {
   });
 
   const updateMut = useMutation({
-    mutationFn: (vars: { id: string; input: Parameters<typeof updateColaborador>[1] }) =>
-      updateColaborador(vars.id, vars.input),
+    mutationFn: async (vars: {
+      id: string;
+      input: Parameters<typeof updateColaborador>[1];
+      roleChange?: { role: "administrador" | "colaborador"; department_id: string | null };
+    }) => {
+      // A troca de papel muda o acesso (is_superadmin) + o papel canônico, então
+      // vai pela Edge Function antes de salvar os demais campos do perfil.
+      if (vars.roleChange) {
+        await alterarPapelColaborador({ user_id: vars.id, ...vars.roleChange });
+      }
+      await updateColaborador(vars.id, vars.input);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["colaboradores"] });
       qc.invalidateQueries({ queryKey: ["departments"] });
@@ -192,6 +210,9 @@ export function ColaboradoresTab() {
     const isColab = form.role === "colaborador";
     const whatsapp = form.whatsapp.trim() ? normalizarE164(form.whatsapp) : null;
     if (editing) {
+      const currentRole: PapelForm =
+        editing.role === "colaborador" ? "colaborador" : "administrador";
+      const roleChanged = canEditRole && form.role !== currentRole;
       updateMut.mutate({
         id: editing.id,
         input: {
@@ -201,6 +222,9 @@ export function ColaboradoresTab() {
           disponivel: form.disponivel,
           whatsapp,
         },
+        roleChange: roleChanged
+          ? { role: form.role, department_id: isColab ? form.department_id : null }
+          : undefined,
       });
     } else {
       createMut.mutate({
@@ -224,6 +248,8 @@ export function ColaboradoresTab() {
   }
 
   const isSelfSuper = editing?.is_superadmin && me?.id === editing?.id;
+  // Toggle de papel na edição: só o dono, nunca no próprio cadastro nem em outro dono.
+  const canEditRole = !!editing && isOwnerMe && editing.role !== "dono" && editing.id !== me?.id;
   const saving = createMut.isPending || updateMut.isPending;
 
   return (
@@ -484,7 +510,7 @@ export function ColaboradoresTab() {
                   )}
                 </div>
               )}
-              {!editing && (
+              {(!editing || canEditRole) && (
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-foreground">Papel</label>
                   <select
@@ -495,6 +521,11 @@ export function ColaboradoresTab() {
                     <option value="colaborador">Colaborador (atendente de um departamento)</option>
                     <option value="administrador">Administrador (acesso total)</option>
                   </select>
+                  {editing && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Alterar o papel muda o acesso da pessoa ao sistema.
+                    </p>
+                  )}
                 </div>
               )}
               {form.role === "colaborador" && (
