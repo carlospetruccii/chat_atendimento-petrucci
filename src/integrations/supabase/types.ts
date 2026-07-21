@@ -14,129 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
-      contatos: {
+      alertas_atendimento_parado: {
         Row: {
-          company_id: string
+          atendimento_id: string
+          company_id: string | null
           created_at: string
-          emails: Json
-          etag: string | null
-          google_resource_name: string
           id: string
-          nome: string | null
-          numero_raw: string | null
-          numero_whatsapp: string | null
-          updated_at: string
+          janela: string
         }
         Insert: {
-          company_id?: string
+          atendimento_id: string
+          company_id?: string | null
           created_at?: string
-          emails?: Json
-          etag?: string | null
-          google_resource_name: string
           id?: string
-          nome?: string | null
-          numero_raw?: string | null
-          numero_whatsapp?: string | null
-          updated_at?: string
+          janela: string
         }
         Update: {
-          company_id?: string
+          atendimento_id?: string
+          company_id?: string | null
           created_at?: string
-          emails?: Json
-          etag?: string | null
-          google_resource_name?: string
           id?: string
-          nome?: string | null
-          numero_raw?: string | null
-          numero_whatsapp?: string | null
-          updated_at?: string
+          janela?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "alertas_atendimento_parado_atendimento_id_fkey"
+            columns: ["atendimento_id"]
+            isOneToOne: false
+            referencedRelation: "atendimentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alertas_atendimento_parado_atendimento_id_fkey"
+            columns: ["atendimento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_pendentes"
+            referencedColumns: ["atendimento_id"]
+          },
+        ]
       }
-      sessoes_triagem: {
+      app_secrets: {
         Row: {
-          ativo: boolean
-          company_id: string
           created_at: string
-          created_by: string | null
-          id: string
-          nome: string | null
-          numero_whatsapp: string
-          updated_at: string
+          key: string
+          value: string
         }
         Insert: {
-          ativo?: boolean
-          company_id?: string
           created_at?: string
-          created_by?: string | null
-          id?: string
-          nome?: string | null
-          numero_whatsapp: string
-          updated_at?: string
+          key: string
+          value: string
         }
         Update: {
-          ativo?: boolean
-          company_id?: string
           created_at?: string
-          created_by?: string | null
-          id?: string
-          nome?: string | null
-          numero_whatsapp?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      google_integration: {
-        Row: {
-          access_token: string | null
-          company_id: string
-          connected: boolean
-          connected_email: string | null
-          contacts_count: number
-          created_at: string
-          id: string
-          last_sync_at: string | null
-          last_sync_error: string | null
-          last_sync_status: string | null
-          refresh_token: string | null
-          scope: string | null
-          sync_token: string | null
-          token_expiry: string | null
-          updated_at: string
-        }
-        Insert: {
-          access_token?: string | null
-          company_id?: string
-          connected?: boolean
-          connected_email?: string | null
-          contacts_count?: number
-          created_at?: string
-          id?: string
-          last_sync_at?: string | null
-          last_sync_error?: string | null
-          last_sync_status?: string | null
-          refresh_token?: string | null
-          scope?: string | null
-          sync_token?: string | null
-          token_expiry?: string | null
-          updated_at?: string
-        }
-        Update: {
-          access_token?: string | null
-          company_id?: string
-          connected?: boolean
-          connected_email?: string | null
-          contacts_count?: number
-          created_at?: string
-          id?: string
-          last_sync_at?: string | null
-          last_sync_error?: string | null
-          last_sync_status?: string | null
-          refresh_token?: string | null
-          scope?: string | null
-          sync_token?: string | null
-          token_expiry?: string | null
-          updated_at?: string
+          key?: string
+          value?: string
         }
         Relationships: []
       }
@@ -624,8 +555,91 @@ export type Database = {
           },
         ]
       }
+      contatos: {
+        Row: {
+          company_id: string
+          created_at: string
+          emails: Json
+          etag: string | null
+          google_resource_name: string
+          id: string
+          nome: string | null
+          numero_raw: string | null
+          numero_whatsapp: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string
+          created_at?: string
+          emails?: Json
+          etag?: string | null
+          google_resource_name: string
+          id?: string
+          nome?: string | null
+          numero_raw?: string | null
+          numero_whatsapp?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          emails?: Json
+          etag?: string | null
+          google_resource_name?: string
+          id?: string
+          nome?: string | null
+          numero_raw?: string | null
+          numero_whatsapp?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agenda_contatos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      department_business_hours: {
+        Row: {
+          created_at: string
+          department_id: string
+          dia_semana: number
+          fim: string
+          id: string
+          inicio: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          dia_semana: number
+          fim: string
+          id?: string
+          inicio: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          dia_semana?: number
+          fim?: string
+          id?: string
+          inicio?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "department_business_hours_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
+          alert_recipient_user_id: string | null
           ativo: boolean
           company_id: string
           cor: string
@@ -635,6 +649,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          alert_recipient_user_id?: string | null
           ativo?: boolean
           company_id?: string
           cor?: string
@@ -644,6 +659,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          alert_recipient_user_id?: string | null
           ativo?: boolean
           company_id?: string
           cor?: string
@@ -654,7 +670,76 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "departments_alert_recipient_user_id_fkey"
+            columns: ["alert_recipient_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "departments_company_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_integration: {
+        Row: {
+          access_token: string | null
+          company_id: string
+          connected: boolean
+          connected_email: string | null
+          contacts_count: number
+          created_at: string
+          id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
+          last_sync_status: string | null
+          refresh_token: string | null
+          scope: string | null
+          sync_token: string | null
+          token_expiry: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          company_id?: string
+          connected?: boolean
+          connected_email?: string | null
+          contacts_count?: number
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          sync_token?: string | null
+          token_expiry?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          company_id?: string
+          connected?: boolean
+          connected_email?: string | null
+          contacts_count?: number
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          sync_token?: string | null
+          token_expiry?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_integration_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -910,6 +995,80 @@ export type Database = {
         }
         Relationships: []
       }
+      repasse_notificacoes: {
+        Row: {
+          enviada_at: string
+          timeline_event_id: string
+        }
+        Insert: {
+          enviada_at?: string
+          timeline_event_id: string
+        }
+        Update: {
+          enviada_at?: string
+          timeline_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repasse_notificacoes_timeline_event_id_fkey"
+            columns: ["timeline_event_id"]
+            isOneToOne: true
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessoes_triagem: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          nome: string | null
+          numero_whatsapp: string
+          sem_triagem: boolean
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome?: string | null
+          numero_whatsapp: string
+          sem_triagem?: boolean
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome?: string | null
+          numero_whatsapp?: string
+          sem_triagem?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessoes_triagem_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessoes_triagem_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_config: {
         Row: {
           chave: string
@@ -1046,6 +1205,7 @@ export type Database = {
           created_at: string
           from_department_id: string | null
           id: string
+          notificacao_repasse_enviada_at: string | null
           payload: Json | null
           target_user_id: string | null
           tipo_evento: Database["public"]["Enums"]["tipo_evento_timeline"]
@@ -1058,6 +1218,7 @@ export type Database = {
           created_at?: string
           from_department_id?: string | null
           id?: string
+          notificacao_repasse_enviada_at?: string | null
           payload?: Json | null
           target_user_id?: string | null
           tipo_evento: Database["public"]["Enums"]["tipo_evento_timeline"]
@@ -1070,6 +1231,7 @@ export type Database = {
           created_at?: string
           from_department_id?: string | null
           id?: string
+          notificacao_repasse_enviada_at?: string | null
           payload?: Json | null
           target_user_id?: string | null
           tipo_evento?: Database["public"]["Enums"]["tipo_evento_timeline"]
@@ -1286,6 +1448,15 @@ export type Database = {
           whatsapp: string
         }[]
       }
+      alterar_papel_membro: {
+        Args: {
+          p_company_id: string
+          p_department_id: string
+          p_is_admin: boolean
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       assign_pendente_a_usuario: {
         Args: { p_atendimento_id: string; p_user_id: string }
         Returns: boolean
@@ -1308,9 +1479,26 @@ export type Database = {
         Returns: boolean
       }
       esta_em_horario_comercial: { Args: { ts: string }; Returns: boolean }
+      get_atendimentos_parados: {
+        Args: { p_tempo_min: number }
+        Returns: {
+          atendimento_id: string
+          business_min: number
+          cliente_nome: string
+          cliente_numero: string
+          company_id: string
+          current_department_id: string
+          dept_nome: string
+          recipient_user_id: string
+        }[]
+      }
       has_permission: { Args: { flag: string }; Returns: boolean }
       is_member_of: { Args: { p_company_id: string }; Returns: boolean }
       is_owner_of: { Args: { p_company_id: string }; Returns: boolean }
+      minutos_uteis_decorridos: {
+        Args: { p_department_id: string; p_fim: string; p_inicio: string }
+        Returns: number
+      }
       payload_notificacao_admin: {
         Args: { p_atendimento_id: string }
         Returns: Json
@@ -1383,8 +1571,8 @@ export type Database = {
         | "aguardando_inicio"
         | "aguardando_departamento"
         | "aguardando_assunto"
-        | "aguardando_colaborador"
         | "concluida"
+        | "aguardando_colaborador"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1568,8 +1756,8 @@ export const Constants = {
         "aguardando_inicio",
         "aguardando_departamento",
         "aguardando_assunto",
-        "aguardando_colaborador",
         "concluida",
+        "aguardando_colaborador",
       ],
     },
   },

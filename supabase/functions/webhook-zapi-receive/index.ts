@@ -14,6 +14,12 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { baixarMidiaMensagem, buscarNomeContato } from "../_shared/uazapi-client.ts";
+import {
+  devePularReabertura,
+  montarNovoAtendimento,
+  resolverModoSessao,
+  type SessaoTriagemRow,
+} from "./logic.ts";
 
 const FUNCAO = "webhook-zapi-receive";
 const BUCKET = "mensagens-midia";
@@ -1288,18 +1294,28 @@ Deno.serve(async (req: Request) => {
 
     // 3c.3.b.2) Lista de Sessões: se o número está cadastrado (e ativo), o
     // atendimento novo roda o fluxo INTERNO (saudação personalizada → escolhe
-    // departamento → escolhe o colaborador). Só importa quando vamos criar um
-    // atendimento do zero, então a consulta fica restrita a esse caso.
-    let ehSessao = false;
+    // departamento → escolhe o colaborador) ou pula a triagem por completo
+    // (modo "sem_triagem"). Só importa quando vamos criar um atendimento do
+    // zero, então a consulta fica restrita a esse caso.
+    let modoSessao = resolverModoSessao(null);
     if (!atend) {
       const { data: cli } = await supabase
         .from("clients").select("numero_whatsapp").eq("id", cliente.id).maybeSingle();
       const numeroCli = (cli as { numero_whatsapp: string } | null)?.numero_whatsapp ?? null;
       if (numeroCli) {
-        const { data: ses } = await supabase
-          .from("sessoes_triagem").select("id")
+        const { data: ses, error: sesErr } = await supabase
+          .from("sessoes_triagem").select("sem_triagem")
           .eq("numero_whatsapp", numeroCli).eq("ativo", true).limit(1).maybeSingle();
-        ehSessao = !!ses;
+        if (sesErr) {
+          log({
+            funcao: FUNCAO,
+            evento: "sessoes_triagem_lookup_erro",
+            status: "erro",
+            client_id: cliente.id,
+            erro_msg: sesErr.message,
+          });
+        }
+        modoSessao = resolverModoSessao(ses as SessaoTriagemRow | null);
       }
     }
 
@@ -1307,9 +1323,11 @@ Deno.serve(async (req: Request) => {
     // atendimento encerrado nas últimas 24h se ele tiver conversa externa
     // ou se foi encerrado por inatividade. Evita que um cliente sendo
     // atendido pelo WhatsApp pessoal volte para a triagem do bot.
-    // Números da Lista de Sessões pulam a reabertura: sempre reiniciam o fluxo
-    // interno (podem querer falar com pessoas diferentes a cada contato).
-    if (!atend && !ehSessao) {
+    // Números do fluxo de sessão (setor+colaborador) pulam a reabertura:
+    // sempre reiniciam o fluxo interno (podem querer falar com pessoas
+    // diferentes a cada contato). "sem_triagem" não tem esse motivo e segue
+    // como cliente normal.
+    if (!atend && !devePularReabertura(modoSessao)) {
       // Inbound do cliente: encerramento manual é definitivo. Só reabre
       // automaticamente encerramentos por inatividade; qualquer outra coisa
       // (inclusive close manual com conversa externa antiga) inicia triagem nova.
@@ -1340,14 +1358,7 @@ Deno.serve(async (req: Request) => {
       const agora = new Date().toISOString();
       const { data: novoAtend, error: errAt } = await supabase
         .from("atendimentos")
-        .insert({
-          client_id: cliente.id,
-          status: "em_triagem",
-          current_department_id: null,
-          assigned_to: null,
-          triagem_started_at: agora,
-          is_sessao: ehSessao,
-        })
+        .insert(montarNovoAtendimento(cliente.id, modoSessao, agora))
         .select("id, status, current_department_id, triagem_started_at, created_at")
         .single();
       if (errAt) {
@@ -1405,6 +1416,7 @@ Deno.serve(async (req: Request) => {
           status: "ok",
           atendimento_id: atend.id,
           client_id: cliente.id,
+          extra: { modo_sessao: modoSessao },
         });
       }
     }

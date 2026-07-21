@@ -30,6 +30,7 @@ export function SessoesTab() {
   const qc = useQueryClient();
   const [nome, setNome] = useState("");
   const [numero, setNumero] = useState("");
+  const [semTriagem, setSemTriagem] = useState(false);
   const [busca, setBusca] = useState("");
   const [buscaAtiva, setBuscaAtiva] = useState("");
 
@@ -49,16 +50,18 @@ export function SessoesTab() {
       toast.success("Número adicionado à Lista de Sessões.");
       setNome("");
       setNumero("");
+      setSemTriagem(false);
       invalidar();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao adicionar."),
   });
 
   const addContatoM = useMutation({
-    mutationFn: (c: Contato) =>
-      addSessao({ numero: c.numero_whatsapp ?? "", nome: c.nome ?? null }),
+    mutationFn: ({ contato, semTriagem }: { contato: Contato; semTriagem: boolean }) =>
+      addSessao({ numero: contato.numero_whatsapp ?? "", nome: contato.nome ?? null, semTriagem }),
     onSuccess: () => {
       toast.success("Contato adicionado à Lista de Sessões.");
+      setSemTriagem(false);
       invalidar();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao adicionar."),
@@ -93,12 +96,36 @@ export function SessoesTab() {
           <h2 className="text-base font-semibold text-foreground">Lista de Sessões</h2>
           <p className="text-sm text-muted-foreground">
             Números liberados (gerentes, diretoria, contatos internos) que{" "}
-            <strong>não passam pela triagem de cliente</strong>. Ao chamar, a pessoa
-            recebe uma saudação pelo nome, escolhe o setor e depois com qual
-            colaborador quer falar. É opcional — deixe vazio se não quiser usar.
+            <strong>não passam pela triagem de cliente</strong>. Por padrão, a pessoa recebe uma
+            saudação pelo nome, escolhe o setor e depois com qual colaborador quer falar — mas dá
+            para marcar um número para não ter <strong>nenhuma</strong> triagem, direto na fila
+            geral. É opcional — deixe vazio se não quiser usar.
           </p>
         </div>
       </div>
+
+      {/* Modo — vale para o próximo número adicionado, manual ou por contato */}
+      <label
+        htmlFor="sem-triagem-switch"
+        className="mb-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-border bg-card p-4"
+      >
+        <Switch
+          id="sem-triagem-switch"
+          checked={semTriagem}
+          onCheckedChange={setSemTriagem}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="block text-sm font-medium text-foreground">
+            Adicionar sem nenhuma triagem
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Vale para o próximo número adicionado (manual ou por contato salvo). A mensagem cai
+            direto na fila geral de Pendentes — sem saudação, sem perguntas do bot. Desligado
+            (padrão), a pessoa escolhe o setor e depois com quem quer falar.
+          </span>
+        </span>
+      </label>
 
       {/* Adicionar manualmente */}
       <div className="rounded-2xl border border-border bg-card p-5">
@@ -108,7 +135,7 @@ export function SessoesTab() {
           onSubmit={(e) => {
             e.preventDefault();
             if (!numero.trim()) return;
-            addM.mutate({ numero, nome });
+            addM.mutate({ numero, nome, semTriagem });
           }}
         >
           <div className="flex-1">
@@ -191,7 +218,7 @@ export function SessoesTab() {
                         size="sm"
                         variant="outline"
                         disabled={semNumero || jaNaLista || addContatoM.isPending}
-                        onClick={() => addContatoM.mutate(c)}
+                        onClick={() => addContatoM.mutate({ contato: c, semTriagem })}
                       >
                         <Plus className="h-4 w-4" />
                         {jaNaLista ? "Já na lista" : "Adicionar"}
@@ -229,8 +256,13 @@ export function SessoesTab() {
             {sessoes.map((s: SessaoRow) => (
               <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {s.nome ?? "Sem nome"}
+                  <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <span className="truncate">{s.nome ?? "Sem nome"}</span>
+                    {s.sem_triagem && (
+                      <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-primary">
+                        Sem triagem
+                      </span>
+                    )}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
                     {formatarNumero(s.numero_whatsapp)}

@@ -14,20 +14,25 @@ export interface SessaoRow {
   numero_whatsapp: string;
   nome: string | null;
   ativo: boolean;
+  sem_triagem: boolean;
   created_at: string;
 }
 
 export async function fetchSessoes(): Promise<SessaoRow[]> {
   const { data, error } = await supabase
     .from("sessoes_triagem")
-    .select("id, numero_whatsapp, nome, ativo, created_at")
+    .select("id, numero_whatsapp, nome, ativo, sem_triagem, created_at")
     .order("nome", { ascending: true, nullsFirst: false })
     .order("numero_whatsapp", { ascending: true });
   if (error) throw error;
   return (data ?? []) as SessaoRow[];
 }
 
-export async function addSessao(input: { numero: string; nome?: string | null }): Promise<void> {
+export async function addSessao(input: {
+  numero: string;
+  nome?: string | null;
+  semTriagem?: boolean;
+}): Promise<void> {
   const e164 = normalizarE164(input.numero);
   if (!e164) {
     throw new Error("Número inválido. Use DDD + número (ex.: 11 91234-5678).");
@@ -36,6 +41,7 @@ export async function addSessao(input: { numero: string; nome?: string | null })
   const { error } = await supabase.from("sessoes_triagem").insert({
     numero_whatsapp: e164,
     nome: input.nome?.trim() || null,
+    sem_triagem: input.semTriagem ?? false,
     created_by: auth.user?.id ?? null,
   });
   if (error) {
