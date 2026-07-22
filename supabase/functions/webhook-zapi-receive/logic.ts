@@ -1,24 +1,28 @@
-// Lógica pura de criação de atendimento a partir da Lista de Sessões. Sem
-// I/O: recebe o que já foi lido do banco (linha de sessoes_triagem, se
-// houver) e decide os campos do INSERT em atendimentos. Isolada aqui para
-// ser testável sem mockar o Supabase (mesmo padrão de
-// alterar-papel-colaborador/logic.ts).
+// Lógica pura de criação de atendimento a partir das listas de números
+// liberados. Sem I/O: recebe o que já foi lido do banco e decide os campos do
+// INSERT em atendimentos. Isolada aqui para ser testável sem mockar o Supabase
+// (mesmo padrão de alterar-papel-colaborador/logic.ts).
+//
+// Duas listas INDEPENDENTES (tabelas separadas):
+//   - "Sem Triagem" (numeros_sem_triagem): pula TODA interação com o bot.
+//   - "Lista de Sessões" (sessoes_triagem): roda o fluxo interno (setor → pessoa).
 
 /**
- * - "normal": número não está na Lista de Sessões → triagem normal de cliente.
- * - "sessao": está na lista, roda o fluxo interno (escolhe setor → colaborador).
- * - "sem_triagem": está na lista marcado para pular tudo → cai direto em
- *   Pendentes geral, sem nenhuma mensagem de bot.
+ * - "normal": número não está em nenhuma lista → triagem normal de cliente.
+ * - "sessao": está na Lista de Sessões → fluxo interno (escolhe setor → colaborador).
+ * - "sem_triagem": está na lista Sem Triagem → cai direto em Pendentes geral,
+ *   sem nenhuma mensagem de bot.
  */
 export type ModoSessao = "normal" | "sessao" | "sem_triagem";
 
-export interface SessaoTriagemRow {
-  sem_triagem: boolean;
-}
-
-export function resolverModoSessao(row: SessaoTriagemRow | null): ModoSessao {
-  if (!row) return "normal";
-  return row.sem_triagem ? "sem_triagem" : "sessao";
+/**
+ * Decide o modo a partir da presença (ativa) do número em cada lista. "Sem
+ * Triagem" tem prioridade: se o número estiver nas duas, pular tudo vence.
+ */
+export function resolverModo(estaSemTriagem: boolean, estaEmSessao: boolean): ModoSessao {
+  if (estaSemTriagem) return "sem_triagem";
+  if (estaEmSessao) return "sessao";
+  return "normal";
 }
 
 export interface NovoAtendimentoFields {

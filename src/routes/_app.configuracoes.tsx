@@ -9,6 +9,7 @@ import { DepartamentosTab } from "@/components/DepartamentosTab";
 import { OperacaoTab } from "@/components/OperacaoTab";
 import { GoogleContatosTab } from "@/components/GoogleContatosTab";
 import { SessoesTab } from "@/components/SessoesTab";
+import { SemTriagemSection } from "@/components/SemTriagemSection";
 import { ConexaoWhatsAppTab } from "@/components/ConexaoWhatsAppTab";
 
 export const Route = createFileRoute("/_app/configuracoes")({
@@ -71,7 +72,13 @@ function ConfiguracoesPage() {
         {active === "Templates" && <TemplatesTab />}
         {active === "Colaboradores" && <ColaboradoresTab />}
         {active === "Operação" && <OperacaoTab />}
-        {active === "Lista de Sessões" && <SessoesTab />}
+        {active === "Lista de Sessões" && (
+          <div className="space-y-12">
+            <SessoesTab />
+            <div className="border-t border-border" />
+            <SemTriagemSection />
+          </div>
+        )}
         {active === "Contatos Google" && <GoogleContatosTab />}
         {active === "Conexão do WhatsApp" && <ConexaoWhatsAppTab />}
         {!tabs.includes(active) && <EmBreve name={active} />}

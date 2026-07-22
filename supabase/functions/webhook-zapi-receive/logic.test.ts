@@ -1,23 +1,29 @@
-// Testes unitários da lógica pura de criação de atendimento a partir da
-// Lista de Sessões (normal / sessão / sem triagem).
+// Testes unitários da lógica pura de criação de atendimento.
+// Há DUAS listas independentes de números liberados:
+//   - "Sem Triagem" (numeros_sem_triagem): pula TODA interação com o bot.
+//   - "Lista de Sessões" (sessoes_triagem): roda o fluxo interno (setor → pessoa).
 // Rodar: deno test supabase/functions/webhook-zapi-receive/logic.test.ts
 
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { devePularReabertura, montarNovoAtendimento, resolverModoSessao } from "./logic.ts";
+import { devePularReabertura, montarNovoAtendimento, resolverModo } from "./logic.ts";
 
 const AGORA = "2026-07-21T12:00:00.000Z";
 const CLIENT_ID = "cliente-1";
 
-Deno.test("resolverModoSessao: número fora da lista é normal", () => {
-  assertEquals(resolverModoSessao(null), "normal");
+Deno.test("resolverModo: fora das duas listas é normal", () => {
+  assertEquals(resolverModo(false, false), "normal");
 });
 
-Deno.test("resolverModoSessao: número na lista sem sem_triagem é modo sessão", () => {
-  assertEquals(resolverModoSessao({ sem_triagem: false }), "sessao");
+Deno.test("resolverModo: só na Lista de Sessões é modo sessão", () => {
+  assertEquals(resolverModo(false, true), "sessao");
 });
 
-Deno.test("resolverModoSessao: número marcado sem_triagem é modo sem_triagem", () => {
-  assertEquals(resolverModoSessao({ sem_triagem: true }), "sem_triagem");
+Deno.test("resolverModo: na lista Sem Triagem é modo sem_triagem", () => {
+  assertEquals(resolverModo(true, false), "sem_triagem");
+});
+
+Deno.test("resolverModo: Sem Triagem tem prioridade se estiver nas duas", () => {
+  assertEquals(resolverModo(true, true), "sem_triagem");
 });
 
 Deno.test("montarNovoAtendimento: modo normal não é sessão nem vem concluído", () => {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Contact, Loader2, Plus, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { Contact, Loader2, Plus, Search, Trash2, UserPlus, ZapOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -17,36 +17,36 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  addSessao,
-  fetchSessoes,
+  addSemTriagem,
+  fetchSemTriagem,
   formatarNumero,
-  removeSessao,
-  setSessaoAtivo,
-  type SessaoRow,
-} from "@/lib/sessoes-queries";
+  removeSemTriagem,
+  setSemTriagemAtivo,
+  type SemTriagemRow,
+} from "@/lib/sem-triagem-queries";
 import { listContatos, type Contato } from "@/lib/contatos-queries";
 
-export function SessoesTab() {
+export function SemTriagemSection() {
   const qc = useQueryClient();
   const [nome, setNome] = useState("");
   const [numero, setNumero] = useState("");
   const [busca, setBusca] = useState("");
   const [buscaAtiva, setBuscaAtiva] = useState("");
 
-  const sessoesQ = useQuery({ queryKey: ["sessoes"], queryFn: fetchSessoes });
+  const listaQ = useQuery({ queryKey: ["numeros-sem-triagem"], queryFn: fetchSemTriagem });
 
   const contatosQ = useQuery({
-    queryKey: ["sessoes-contatos", buscaAtiva],
+    queryKey: ["sem-triagem-contatos", buscaAtiva],
     queryFn: () => listContatos({ search: buscaAtiva, pageSize: 8 }),
     enabled: buscaAtiva.trim().length > 0,
   });
 
-  const invalidar = () => qc.invalidateQueries({ queryKey: ["sessoes"] });
+  const invalidar = () => qc.invalidateQueries({ queryKey: ["numeros-sem-triagem"] });
 
   const addM = useMutation({
-    mutationFn: addSessao,
+    mutationFn: addSemTriagem,
     onSuccess: () => {
-      toast.success("Número adicionado à Lista de Sessões.");
+      toast.success("Número adicionado à lista Sem Triagem.");
       setNome("");
       setNumero("");
       invalidar();
@@ -56,22 +56,22 @@ export function SessoesTab() {
 
   const addContatoM = useMutation({
     mutationFn: (c: Contato) =>
-      addSessao({ numero: c.numero_whatsapp ?? "", nome: c.nome ?? null }),
+      addSemTriagem({ numero: c.numero_whatsapp ?? "", nome: c.nome ?? null }),
     onSuccess: () => {
-      toast.success("Contato adicionado à Lista de Sessões.");
+      toast.success("Contato adicionado à lista Sem Triagem.");
       invalidar();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao adicionar."),
   });
 
   const toggleM = useMutation({
-    mutationFn: ({ id, ativo }: { id: string; ativo: boolean }) => setSessaoAtivo(id, ativo),
+    mutationFn: ({ id, ativo }: { id: string; ativo: boolean }) => setSemTriagemAtivo(id, ativo),
     onSuccess: () => invalidar(),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao atualizar."),
   });
 
   const removeM = useMutation({
-    mutationFn: removeSessao,
+    mutationFn: removeSemTriagem,
     onSuccess: () => {
       toast.success("Número removido da lista.");
       invalidar();
@@ -79,23 +79,23 @@ export function SessoesTab() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao remover."),
   });
 
-  const sessoes = sessoesQ.data ?? [];
-  const numerosJaNaLista = new Set(sessoes.map((s) => s.numero_whatsapp));
+  const itens = listaQ.data ?? [];
+  const numerosJaNaLista = new Set(itens.map((s) => s.numero_whatsapp));
 
   return (
     <div className="max-w-2xl">
       {/* Cabeçalho */}
       <div className="mb-6 flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent">
-          <Users className="h-5 w-5 text-primary" strokeWidth={1.75} />
+          <ZapOff className="h-5 w-5 text-primary" strokeWidth={1.75} />
         </div>
         <div>
-          <h2 className="text-base font-semibold text-foreground">Lista de Sessões</h2>
+          <h2 className="text-base font-semibold text-foreground">Sem Triagem</h2>
           <p className="text-sm text-muted-foreground">
-            Números liberados (gerentes, diretoria, contatos internos) que{" "}
-            <strong>não passam pela triagem de cliente</strong>. Ao chamar, a pessoa
-            recebe uma saudação pelo nome, escolhe o setor e depois com qual
-            colaborador quer falar. É opcional — deixe vazio se não quiser usar.
+            Números que <strong>não recebem nenhuma triagem</strong>. Ao mandar mensagem, a pessoa{" "}
+            <strong>não</strong> conversa com o bot — nem saudação, nem escolha de setor ou
+            colaborador. A conversa cai direto na fila geral de Pendentes para um atendente assumir.
+            É diferente da Lista de Sessões (que ainda pergunta setor e pessoa).
           </p>
         </div>
       </div>
@@ -116,7 +116,7 @@ export function SessoesTab() {
             <Input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              placeholder="Ex.: Maria (Diretoria)"
+              placeholder="Ex.: Cristiane"
             />
           </div>
           <div className="flex-1">
@@ -178,13 +178,11 @@ export function SessoesTab() {
                   return (
                     <li key={c.id} className="flex items-center justify-between gap-3 py-2.5">
                       <div className="min-w-0">
-                        <p className="truncate text-sm text-foreground">
-                          {c.nome ?? "Sem nome"}
-                        </p>
+                        <p className="truncate text-sm text-foreground">{c.nome ?? "Sem nome"}</p>
                         <p className="truncate text-xs text-muted-foreground">
                           {c.numero_whatsapp
                             ? formatarNumero(c.numero_whatsapp)
-                            : c.numero_raw ?? "sem número"}
+                            : (c.numero_raw ?? "sem número")}
                         </p>
                       </div>
                       <Button
@@ -208,14 +206,14 @@ export function SessoesTab() {
       {/* Lista atual */}
       <div className="mt-6">
         <h3 className="mb-3 text-sm font-semibold text-foreground">
-          Números na lista {sessoes.length > 0 && `(${sessoes.length})`}
+          Números na lista {itens.length > 0 && `(${itens.length})`}
         </h3>
 
-        {sessoesQ.isLoading ? (
+        {listaQ.isLoading ? (
           <div className="flex items-center justify-center rounded-2xl border border-border bg-card py-12 text-muted-foreground">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando…
           </div>
-        ) : sessoes.length === 0 ? (
+        ) : itens.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card py-12 text-center">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-accent">
               <Contact className="h-5 w-5 text-primary" strokeWidth={1.5} />
@@ -226,7 +224,7 @@ export function SessoesTab() {
           </div>
         ) : (
           <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
-            {sessoes.map((s: SessaoRow) => (
+            {itens.map((s: SemTriagemRow) => (
               <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">
@@ -248,15 +246,21 @@ export function SessoesTab() {
                   </div>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Remover da Lista de Sessões?</AlertDialogTitle>
+                        <AlertDialogTitle>Remover da lista Sem Triagem?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          {s.nome ? `${s.nome} (${formatarNumero(s.numero_whatsapp)})` : formatarNumero(s.numero_whatsapp)}{" "}
+                          {s.nome
+                            ? `${s.nome} (${formatarNumero(s.numero_whatsapp)})`
+                            : formatarNumero(s.numero_whatsapp)}{" "}
                           voltará a passar pela triagem normal de cliente ao chamar.
                         </AlertDialogDescription>
                       </AlertDialogHeader>

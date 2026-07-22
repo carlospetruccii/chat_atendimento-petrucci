@@ -977,6 +977,54 @@ export type Database = {
           },
         ]
       }
+      numeros_sem_triagem: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          nome: string | null
+          numero_whatsapp: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome?: string | null
+          numero_whatsapp: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome?: string | null
+          numero_whatsapp?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "numeros_sem_triagem_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "numeros_sem_triagem_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_config: {
         Row: {
           chave: string
@@ -1027,7 +1075,6 @@ export type Database = {
           id: string
           nome: string | null
           numero_whatsapp: string
-          sem_triagem: boolean
           updated_at: string
         }
         Insert: {
@@ -1038,7 +1085,6 @@ export type Database = {
           id?: string
           nome?: string | null
           numero_whatsapp: string
-          sem_triagem?: boolean
           updated_at?: string
         }
         Update: {
@@ -1049,7 +1095,6 @@ export type Database = {
           id?: string
           nome?: string | null
           numero_whatsapp?: string
-          sem_triagem?: boolean
           updated_at?: string
         }
         Relationships: [

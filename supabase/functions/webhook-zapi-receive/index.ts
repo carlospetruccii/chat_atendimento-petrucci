@@ -14,12 +14,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { baixarMidiaMensagem, buscarNomeContato } from "../_shared/uazapi-client.ts";
-import {
-  devePularReabertura,
-  montarNovoAtendimento,
-  resolverModoSessao,
-  type SessaoTriagemRow,
-} from "./logic.ts";
+import { devePularReabertura, montarNovoAtendimento, resolverModo } from "./logic.ts";
 
 const FUNCAO = "webhook-zapi-receive";
 const BUCKET = "mensagens-midia";
@@ -1292,30 +1287,44 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 3c.3.b.2) Lista de Sessões: se o número está cadastrado (e ativo), o
-    // atendimento novo roda o fluxo INTERNO (saudação personalizada → escolhe
-    // departamento → escolhe o colaborador) ou pula a triagem por completo
-    // (modo "sem_triagem"). Só importa quando vamos criar um atendimento do
-    // zero, então a consulta fica restrita a esse caso.
-    let modoSessao = resolverModoSessao(null);
+    // 3c.3.b.2) Duas listas independentes de números liberados, consultadas só
+    // quando vamos criar um atendimento do zero:
+    //   - Sem Triagem (numeros_sem_triagem): pula TODA interação com o bot →
+    //     atendimento já nasce concluído, direto em Pendentes geral.
+    //   - Lista de Sessões (sessoes_triagem): roda o fluxo interno (saudação
+    //     personalizada → escolhe departamento → escolhe o colaborador).
+    // "Sem Triagem" tem prioridade caso o número esteja nas duas.
+    let modoSessao = resolverModo(false, false);
     if (!atend) {
       const { data: cli } = await supabase
         .from("clients").select("numero_whatsapp").eq("id", cliente.id).maybeSingle();
       const numeroCli = (cli as { numero_whatsapp: string } | null)?.numero_whatsapp ?? null;
       if (numeroCli) {
-        const { data: ses, error: sesErr } = await supabase
-          .from("sessoes_triagem").select("sem_triagem")
-          .eq("numero_whatsapp", numeroCli).eq("ativo", true).limit(1).maybeSingle();
-        if (sesErr) {
+        const [semTriagemRes, sessaoRes] = await Promise.all([
+          supabase.from("numeros_sem_triagem").select("id")
+            .eq("numero_whatsapp", numeroCli).eq("ativo", true).limit(1).maybeSingle(),
+          supabase.from("sessoes_triagem").select("id")
+            .eq("numero_whatsapp", numeroCli).eq("ativo", true).limit(1).maybeSingle(),
+        ]);
+        if (semTriagemRes.error) {
+          log({
+            funcao: FUNCAO,
+            evento: "numeros_sem_triagem_lookup_erro",
+            status: "erro",
+            client_id: cliente.id,
+            erro_msg: semTriagemRes.error.message,
+          });
+        }
+        if (sessaoRes.error) {
           log({
             funcao: FUNCAO,
             evento: "sessoes_triagem_lookup_erro",
             status: "erro",
             client_id: cliente.id,
-            erro_msg: sesErr.message,
+            erro_msg: sessaoRes.error.message,
           });
         }
-        modoSessao = resolverModoSessao(ses as SessaoTriagemRow | null);
+        modoSessao = resolverModo(!!semTriagemRes.data, !!sessaoRes.data);
       }
     }
 
