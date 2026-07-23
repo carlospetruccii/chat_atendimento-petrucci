@@ -111,15 +111,22 @@ export async function listInboxConversations(
   const ids = rows.map((r) => r.id);
   const { data: lastMsgs, error: msgErr } = await supabase
     .from("mensagens")
-    .select("atendimento_id, content, tipo, created_at")
+    .select("atendimento_id, content, tipo, direction, created_at")
     .in("atendimento_id", ids)
     .order("created_at", { ascending: false });
   if (msgErr) throw msgErr;
 
-  const previewByAtendimento = new Map<string, { content: string | null; tipo: string }>();
+  const previewByAtendimento = new Map<
+    string,
+    { content: string | null; tipo: string; direction: string }
+  >();
   for (const m of lastMsgs ?? []) {
     if (!previewByAtendimento.has(m.atendimento_id)) {
-      previewByAtendimento.set(m.atendimento_id, { content: m.content, tipo: m.tipo });
+      previewByAtendimento.set(m.atendimento_id, {
+        content: m.content,
+        tipo: m.tipo,
+        direction: m.direction,
+      });
     }
   }
 
@@ -134,7 +141,7 @@ export async function listInboxConversations(
     const dept = r.department as { id: string; nome: string; cor: string } | null;
     const assigned = r.assigned as { id: string; nome: string } | null;
     const preview = previewByAtendimento.get(r.id);
-    const previewText =
+    const previewBody =
       preview?.content ??
       (preview?.tipo === "imagem"
         ? "📷 Imagem"
@@ -147,6 +154,8 @@ export async function listInboxConversations(
               : preview?.tipo
                 ? `(${preview.tipo})`
                 : "");
+    const previewText =
+      previewBody && preview?.direction === "outbound" ? `Você: ${previewBody}` : previewBody;
 
     return {
       id: r.id,
@@ -305,6 +314,93 @@ export async function listClientAtendimentosVisiveis(params: {
       lastMessageAt: r.last_message_at,
     };
   });
+}
+
+// ============ Cadeia de atendentes (linha do tempo) ============
+
+// Um passo da cadeia de quem atendeu: a pessoa que assumiu o atendimento e,
+// quando o evento registra, em qual departamento.
+export interface AtendenteChainItem {
+  userId: string;
+  nome: string;
+  departmentNome: string | null;
+  departmentCor: string | null;
+  at: string;
+}
+
+// Eventos que atribuem o atendimento a uma PESSOA (target_user_id). Não inclui
+// 'encerrado' (o ator que fecha já é o último da cadeia) nem os
+// 'iniciado_atendimento' de origem externa (sem target).
+const EVENTOS_ATRIBUICAO = [
+  "reservado",
+  "atribuido",
+  "iniciado_atendimento",
+  "reabertura_automatica",
+  "repassado",
+] as const;
+
+export interface RawTimelineRow {
+  atendimento_id: string;
+  target_user_id: string | null;
+  created_at: string;
+  target: { nome: string } | null;
+  to_department: { nome: string; cor: string } | null;
+}
+
+// PURA: monta, por atendimento, a sequência ordenada de quem atendeu, colapsando
+// repetições consecutivas da mesma pessoa (só marca troca de responsável).
+// `rows` precisa vir ordenado por created_at ASC.
+export function construirCadeiasAtendentes(
+  rows: RawTimelineRow[],
+): Record<string, AtendenteChainItem[]> {
+  const porAtendimento: Record<string, AtendenteChainItem[]> = {};
+  for (const r of rows) {
+    if (!r.target_user_id) continue;
+    const cadeia = (porAtendimento[r.atendimento_id] ??= []);
+    const anterior = cadeia[cadeia.length - 1];
+    if (anterior && anterior.userId === r.target_user_id) {
+      // Mesma pessoa de novo em sequência: atualiza só o departamento se veio um.
+      if (r.to_department) {
+        anterior.departmentNome = r.to_department.nome;
+        anterior.departmentCor = r.to_department.cor;
+      }
+      continue;
+    }
+    cadeia.push({
+      userId: r.target_user_id,
+      nome: r.target?.nome ?? "—",
+      departmentNome: r.to_department?.nome ?? null,
+      departmentCor: r.to_department?.cor ?? null,
+      at: r.created_at,
+    });
+  }
+  return porAtendimento;
+}
+
+/**
+ * Cadeia de atendentes de vários atendimentos, para a Linha do tempo.
+ * Retorna um mapa atendimento_id → passos (na ordem em que assumiram).
+ * Só admin/view_all abre a Linha do tempo; a RLS de timeline_events já
+ * restringe o que cada um pode ler.
+ */
+export async function listAtendentesChain(
+  atendimentoIds: string[],
+): Promise<Record<string, AtendenteChainItem[]>> {
+  if (atendimentoIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from("timeline_events")
+    .select(
+      `atendimento_id, target_user_id, created_at,
+       target:users!timeline_events_target_user_id_fkey ( nome ),
+       to_department:departments!timeline_events_to_department_id_fkey ( nome, cor )`,
+    )
+    .in("atendimento_id", atendimentoIds)
+    .in("tipo_evento", EVENTOS_ATRIBUICAO)
+    .not("target_user_id", "is", null)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) throw error;
+  return construirCadeiasAtendentes((data ?? []) as unknown as RawTimelineRow[]);
 }
 
 /**
