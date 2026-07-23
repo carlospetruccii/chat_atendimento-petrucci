@@ -15,3 +15,28 @@ verify_jwt = false
 # do Google ficam só no servidor (tabela google_integration).
 [functions.google-contacts]
 verify_jwt = false
+
+# Endpoint público chamado pela Meta (WhatsApp Cloud API oficial): GET faz o
+# handshake de verificação (hub.challenge), POST entrega eventos. A Meta não
+# manda JWT do Supabase, validação é via hub.verify_token/META_WHATSAPP_VERIFY_TOKEN.
+[functions.webhook-meta-whatsapp]
+verify_jwt = false
+
+# TEMPORÁRIO: ferramenta de teste manual (curl) pra disparar envio via WhatsApp
+# Cloud API. Sem JWT de propósito pra teste rápido — endpoint fica público,
+# rotacionar pra verify_jwt=true (ou trancar) antes de qualquer uso real.
+[functions.whatsapp-send]
+verify_jwt = false
+
+# TEMPORÁRIO, uso único: registra o número no WhatsApp Cloud API (POST
+# /register). Não aceita input no corpo (phone_number_id/token/pin só via env),
+# então mesmo público não dá pra ninguém trocar o PIN chamando de fora.
+# Considerar deletar depois que o registro for confirmado.
+[functions.whatsapp-register]
+verify_jwt = false
+
+# TEMPORÁRIO, diagnóstico pontual: 4 GETs fixos na Graph API (nenhum input
+# aceito, endpoints hardcoded) pra debugar o erro 133010 na migração de
+# coexistência. Deletar depois de resolvido.
+[functions.whatsapp-graph-check]
+verify_jwt = false
