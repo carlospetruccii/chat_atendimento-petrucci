@@ -198,8 +198,13 @@ async function sincronizar(
   try {
     resultado = await rodar(usarIncremental ? syncToken : null);
   } catch (err) {
-    // 410 GONE → syncToken expirou; refaz do zero (full sync).
-    if (err instanceof GoogleError && err.status === 410) {
+    // syncToken expirado → refaz do zero (full sync). A doc do Google promete
+    // 410 GONE, mas na prática o token expirado também vem como 400 com a
+    // mensagem "Sync token is expired" no corpo — tratamos os dois.
+    const tokenExpirado =
+      err instanceof GoogleError &&
+      (err.status === 410 || (err.status === 400 && /sync token/i.test(err.body)));
+    if (tokenExpirado) {
       log({ funcao: FUNCAO, evento: "sync_token_expirado", status: "ok" });
       usarIncremental = false;
       syncToken = null;
