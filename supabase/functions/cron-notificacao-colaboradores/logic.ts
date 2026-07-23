@@ -15,16 +15,16 @@ export function departamentoNotificavel(departmentId: string | null | undefined)
 export interface ColaboradorLike {
   ativo: boolean | null;
   is_system_user: boolean | null;
-  is_superadmin: boolean | null;
   whatsapp: string | null;
 }
 
-// Colaborador recebe o aviso se: ativo, não é usuário de sistema, NÃO é admin
-// (admin já recebe o lembrete de atraso) e tem WhatsApp cadastrado.
+// Colaborador recebe o aviso se: ativo, não é usuário de sistema e tem WhatsApp
+// cadastrado. Um administrador também recebe QUANDO tiver esse departamento
+// atribuído — a query que chama esta função já filtra por department_id, então
+// um admin sem departamento atribuído nunca aparece aqui.
 export function colaboradorRecebe(u: ColaboradorLike): boolean {
   if (u.ativo === false) return false;
   if (u.is_system_user === true) return false;
-  if (u.is_superadmin === true) return false;
   return soDigitos(u.whatsapp ?? "").length > 0;
 }
 

@@ -3,7 +3,9 @@
 // Apenas superadmin OU usuário com permissão 'manage_users' pode chamar.
 //
 // Papéis (single-tenant; seguem dono/administrador/colaborador):
-//   - 'administrador' → is_superadmin = true, sem departamento (enxerga tudo).
+//   - 'administrador' → is_superadmin = true, enxerga tudo. Departamento é
+//     opcional: se atribuído, o admin passa a receber os avisos de novo
+//     pendente daquele setor (como um colaborador dele).
 //   - 'colaborador'   → is_superadmin = false, departamento obrigatório.
 // A pessoa entra com uma senha TEMPORÁRIA e é obrigada a trocá-la no 1º acesso
 // (marcador em user_metadata.must_change_password = true).
@@ -102,7 +104,7 @@ Deno.serve(async (req) => {
   // Compat: sem role explícito, mantém o comportamento antigo (colaborador).
   const role = (body.role ?? "colaborador").trim();
   const isAdmin = role === "administrador";
-  const department_id = isAdmin ? null : body.department_id;
+  const department_id = body.department_id ?? null;
 
   if (role !== "administrador" && role !== "colaborador") {
     return json(400, { error: "Papel inválido (use 'administrador' ou 'colaborador')" });

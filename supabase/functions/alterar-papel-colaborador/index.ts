@@ -5,7 +5,8 @@
 //
 // Mantém as DUAS fontes consistentes numa só operação:
 //   - users.is_superadmin  → é o que libera (ou tranca) o acesso de admin.
-//   - users.department_id  → null para admin, obrigatório para colaborador.
+//   - users.department_id  → obrigatório para colaborador; opcional para admin
+//     (se atribuído, o admin passa a receber os avisos de novo pendente do setor).
 //   - company_members.role → papel canônico (+ department_id espelhado).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { Papel, resolverTrocaPapel } from "./logic.ts";

@@ -72,3 +72,28 @@ Segue o padrão já existente de `cron-alerta-atendimento-parado` e `cron-notifi
 - Lembretes repetidos (o admin já cobre atraso).
 - Notificação em canais que não WhatsApp pessoal.
 - Configurar por-departamento quem recebe (é sempre o time do depto).
+
+## Adendo (mesmo dia): admin pode ter departamento atribuído
+
+Caso real: Leticia é admin e é a única "responsável" natural do departamento
+"Outros" — mas admin não tinha `department_id`, então "Outros" ficava sem
+ninguém pra avisar (a regra original excluía todo `is_superadmin`).
+
+Decisão: permitir atribuir um departamento a um admin (opcional). Ele continua
+com acesso total (a visibilidade é por `role`/`is_superadmin`, nunca por
+`department_id` — confirmado em toda a base: RLS, RPCs e frontend fazem
+`is_superadmin OR department_id = ...`, nunca dependem de `department_id` ser
+nulo). O único efeito prático de atribuir um departamento a um admin é ele
+passar a **receber os avisos de novo pendente** daquele setor, como um
+colaborador normal.
+
+Mudanças:
+- `cron-notificacao-colaboradores/logic.ts`: `colaboradorRecebe` não exclui
+  mais `is_superadmin` — a elegibilidade por departamento já vem da query SQL
+  (`users.department_id = deptId`), então um admin só aparece ali se tiver
+  aquele departamento atribuído.
+- `alterar-papel-colaborador` (Edge Function + RPC `alterar_papel_membro`) e
+  `criar-colaborador`: pararam de forçar `department_id = null` na promoção/
+  criação de admin. Continua opcional.
+- `ColaboradoresTab.tsx`: seletor de Departamento aparece também para
+  administrador (rotulado "opcional", com texto explicativo).

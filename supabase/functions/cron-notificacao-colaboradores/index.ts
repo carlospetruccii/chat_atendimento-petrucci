@@ -2,9 +2,11 @@
 // Roda a cada 1min via pg_cron. Quando o toggle
 // system_config.notificar_colaboradores_pendente está ligado, avisa no WhatsApp
 // pessoal TODOS os colaboradores ativos do departamento sempre que um cliente
-// cai como 'pendente' naquele departamento. Nunca avisa o admin (ele já recebe
-// o lembrete de atraso). Uma vez por cliente por departamento (ledger com claim
-// atômico). Respeita o kill switch (bot_ativo) — pausa junto quando o bot está off.
+// cai como 'pendente' naquele departamento. Um administrador só entra nessa lista
+// se tiver esse departamento atribuído em users.department_id (admin sem
+// departamento não recebe — ele já tem o lembrete de atraso à parte). Uma vez
+// por cliente por departamento (ledger com claim atômico). Respeita o kill
+// switch (bot_ativo) — pausa junto quando o bot está off.
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo } from "../_shared/kill-switch.ts";
@@ -91,7 +93,7 @@ Deno.serve(async (_req: Request) => {
       if (colabCache.has(deptId)) return colabCache.get(deptId)!;
       const { data: users } = await supabase
         .from("users")
-        .select("whatsapp, ativo, is_system_user, is_superadmin")
+        .select("whatsapp, ativo, is_system_user")
         .eq("department_id", deptId);
       const destinos = (users ?? [])
         .filter((u: Parameters<typeof colaboradorRecebe>[0]) => colaboradorRecebe(u))

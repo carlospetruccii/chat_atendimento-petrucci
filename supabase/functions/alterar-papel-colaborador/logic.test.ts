@@ -19,6 +19,13 @@ Deno.test("promove colaborador → administrador (sem departamento)", () => {
   assertEquals(r, { ok: true, isAdmin: true, departmentId: null });
 });
 
+Deno.test("promove colaborador → administrador com departamento atribuído (opcional)", () => {
+  // Admin pode ter um departamento marcado — continua vendo tudo, mas passa a
+  // receber os avisos de novo pendente daquele setor.
+  const r = resolverTrocaPapel({ ...base, novoRole: "administrador", departmentId: "dept-outros" });
+  assertEquals(r, { ok: true, isAdmin: true, departmentId: "dept-outros" });
+});
+
 Deno.test("rebaixa administrador → colaborador com departamento", () => {
   const r = resolverTrocaPapel({
     ...base,

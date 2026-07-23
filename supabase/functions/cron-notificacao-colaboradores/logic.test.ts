@@ -25,7 +25,6 @@ Deno.test("departamentoNotificavel: nulo/vazio/triagem não passa", () => {
 const base: ColaboradorLike = {
   ativo: true,
   is_system_user: false,
-  is_superadmin: false,
   whatsapp: "+5511999998888",
 };
 
@@ -40,10 +39,6 @@ Deno.test("colaboradorRecebe: indisponível (ativo=true) ainda recebe", () => {
 
 Deno.test("colaboradorRecebe: inativo não recebe", () => {
   assertEquals(colaboradorRecebe({ ...base, ativo: false }), false);
-});
-
-Deno.test("colaboradorRecebe: admin (superadmin) nunca recebe", () => {
-  assertEquals(colaboradorRecebe({ ...base, is_superadmin: true }), false);
 });
 
 Deno.test("colaboradorRecebe: usuário de sistema não recebe", () => {

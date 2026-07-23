@@ -195,7 +195,7 @@ export function ColaboradoresTab() {
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = "E-mail inválido";
       if (!form.password || form.password.length < 8) e.password = "Mínimo 8 caracteres";
     }
-    // Departamento é obrigatório só para colaborador (admin não tem departamento).
+    // Departamento é obrigatório só para colaborador (admin pode ter, mas é opcional).
     if (form.role === "colaborador" && !form.department_id)
       e.department_id = "Departamento é obrigatório";
     // WhatsApp é opcional; se preenchido, precisa ser um número válido.
@@ -207,24 +207,32 @@ export function ColaboradoresTab() {
 
   function save() {
     if (!validate()) return;
-    const isColab = form.role === "colaborador";
     const whatsapp = form.whatsapp.trim() ? normalizarE164(form.whatsapp) : null;
+    const department_id = form.department_id || null;
     if (editing) {
       const currentRole: PapelForm =
         editing.role === "colaborador" ? "colaborador" : "administrador";
       const roleChanged = canEditRole && form.role !== currentRole;
+      // O departamento de um administrador só é espelhado em company_members
+      // pela RPC de troca de papel (dual-write atômico). Se só o departamento
+      // mudou — sem trocar o papel — força a mesma chamada mesmo assim, senão
+      // users.department_id e company_members.department_id ficam divergentes.
+      const deptChangedForAdmin =
+        canEditRole &&
+        form.role === "administrador" &&
+        department_id !== (editing.department_id ?? null);
+      const roleChange =
+        roleChanged || deptChangedForAdmin ? { role: form.role, department_id } : undefined;
       updateMut.mutate({
         id: editing.id,
         input: {
           nome: form.nome,
-          department_id: isColab ? form.department_id : null,
+          department_id,
           ativo: form.ativo,
           disponivel: form.disponivel,
           whatsapp,
         },
-        roleChange: roleChanged
-          ? { role: form.role, department_id: isColab ? form.department_id : null }
-          : undefined,
+        roleChange,
       });
     } else {
       createMut.mutate({
@@ -232,7 +240,7 @@ export function ColaboradoresTab() {
         email: form.email.trim(),
         password: form.password,
         role: form.role,
-        department_id: isColab ? form.department_id : null,
+        department_id,
         whatsapp,
       });
     }
@@ -528,30 +536,37 @@ export function ColaboradoresTab() {
                   )}
                 </div>
               )}
-              {form.role === "colaborador" && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-foreground">
-                    Departamento
-                  </label>
-                  <select
-                    value={form.department_id}
-                    onChange={(e) => setForm({ ...form, department_id: e.target.value })}
-                    className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                      errors.department_id ? "border-destructive" : "border-border"
-                    }`}
-                  >
-                    <option value="">Selecione...</option>
-                    {depts.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.nome}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.department_id && (
-                    <p className="mt-1 text-xs text-destructive">{errors.department_id}</p>
-                  )}
-                </div>
-              )}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-foreground">
+                  Departamento{form.role === "administrador" && " (opcional)"}
+                </label>
+                <select
+                  value={form.department_id}
+                  onChange={(e) => setForm({ ...form, department_id: e.target.value })}
+                  disabled={!!editing && form.role === "administrador" && !canEditRole}
+                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                    errors.department_id ? "border-destructive" : "border-border"
+                  }`}
+                >
+                  <option value="">{form.role === "administrador" ? "Nenhum" : "Selecione..."}</option>
+                  {depts.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.nome}
+                    </option>
+                  ))}
+                </select>
+                {errors.department_id && (
+                  <p className="mt-1 text-xs text-destructive">{errors.department_id}</p>
+                )}
+                {form.role === "administrador" && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Administrador continua vendo tudo. Atribuir um departamento só
+                    faz esta pessoa passar a receber os avisos de novo pendente
+                    daquele setor.
+                    {!!editing && !canEditRole && " Só o dono pode alterar."}
+                  </p>
+                )}
+              </div>
 
               {editing && (
                 <>

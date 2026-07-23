@@ -29,7 +29,9 @@ export type ResultadoTroca =
  *  - Só o dono troca papéis (bate com a RLS de company_members).
  *  - Não se pode trocar o próprio papel nem o de outro dono.
  *  - Papel válido é apenas 'administrador' ou 'colaborador'.
- *  - Colaborador exige departamento; administrador não tem departamento.
+ *  - Colaborador exige departamento. Administrador pode ter um departamento
+ *    atribuído (opcional) — continua enxergando tudo, mas passa a receber os
+ *    avisos de novo pendente daquele setor como se fosse um colaborador dele.
  */
 export function resolverTrocaPapel(e: EntradaTroca): ResultadoTroca {
   if (e.callerRole !== "dono") {
@@ -53,7 +55,7 @@ export function resolverTrocaPapel(e: EntradaTroca): ResultadoTroca {
   }
 
   const isAdmin = e.novoRole === "administrador";
-  const departmentId = isAdmin ? null : (e.departmentId ?? "").trim() || null;
+  const departmentId = (e.departmentId ?? "").trim() || null;
 
   if (!isAdmin && !departmentId) {
     return { ok: false, status: 400, error: "Colaborador exige um departamento." };
