@@ -276,6 +276,7 @@ export const TEMPLATE_VARS: Record<string, string[]> = {
   sessao_pergunta_colaborador: ["departamento", "lista_colaboradores"],
   sessao_confirmacao: ["colaborador"],
   notificacao_admin: ["nome_cliente", "telefone", "departamento", "tempo_aguardando"],
+  notificacao_colaborador: ["nome_cliente", "telefone", "departamento"],
   encerramento: [],
   fora_horario: [],
   repasse: [],
@@ -303,6 +304,7 @@ export const TEMPLATE_LABEL: Record<string, string> = {
   sessao_pergunta_colaborador: "Sessão · Pergunta de colaborador",
   sessao_confirmacao: "Sessão · Confirmação de encaminhamento",
   notificacao_admin: "Notificação ao administrador",
+  notificacao_colaborador: "Aviso ao colaborador (novo pendente)",
   encerramento: "Encerramento",
   fora_horario: "Fora do horário",
   repasse: "Aviso de repasse",
@@ -634,6 +636,7 @@ export interface OperacaoConfig {
   triagem_reinicia_ao_virar_dia: boolean;
   triagem_lembrete_ativo: boolean;
   triagem_lembrete_minutos: number;
+  notificar_colaboradores_pendente: boolean;
 }
 
 export async function fetchOperacaoConfig(): Promise<OperacaoConfig> {
@@ -648,6 +651,7 @@ export async function fetchOperacaoConfig(): Promise<OperacaoConfig> {
       "triagem_reinicia_ao_virar_dia",
       "triagem_lembrete_ativo",
       "triagem_lembrete_minutos",
+      "notificar_colaboradores_pendente",
     ]);
   if (error) throw error;
   const map = new Map((data ?? []).map((r) => [r.chave, r.valor]));
@@ -659,6 +663,7 @@ export async function fetchOperacaoConfig(): Promise<OperacaoConfig> {
     triagem_reinicia_ao_virar_dia: (map.get("triagem_reinicia_ao_virar_dia") ?? "true") === "true",
     triagem_lembrete_ativo: (map.get("triagem_lembrete_ativo") ?? "true") === "true",
     triagem_lembrete_minutos: parseInt(map.get("triagem_lembrete_minutos") ?? "30", 10) || 30,
+    notificar_colaboradores_pendente: map.get("notificar_colaboradores_pendente") === "true",
   };
 }
 
@@ -677,6 +682,15 @@ export async function setTriagemLembreteAtivo(ativo: boolean) {
     .from("system_config")
     .update({ valor: String(ativo), updated_by: auth.user?.id ?? null })
     .eq("chave", "triagem_lembrete_ativo");
+  if (error) throw error;
+}
+
+export async function setNotificarColaboradoresPendente(ativo: boolean) {
+  const { data: auth } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from("system_config")
+    .update({ valor: String(ativo), updated_by: auth.user?.id ?? null })
+    .eq("chave", "notificar_colaboradores_pendente");
   if (error) throw error;
 }
 

@@ -33,6 +33,7 @@ import {
   fetchOperacaoConfig,
   setBotAtivacaoProgramada,
   setBotAtivo,
+  setNotificarColaboradoresPendente,
   setPendentesAbertosATodos,
   setTriagemLembreteAtivo,
   setTriagemLembreteMinutos,
@@ -112,6 +113,19 @@ export function OperacaoTab() {
         ativo
           ? "Triagem reiniciará automaticamente quando o cliente voltar a falar em outro dia."
           : "Triagem não reinicia mais ao virar o dia.",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const toggleNotifColabMut = useMutation({
+    mutationFn: (ativo: boolean) => setNotificarColaboradoresPendente(ativo),
+    onSuccess: (_d, ativo) => {
+      qc.invalidateQueries({ queryKey: ["operacao-config"] });
+      toast.success(
+        ativo
+          ? "Aviso ligado — colaboradores serão avisados quando cair um pendente."
+          : "Aviso desligado.",
       );
     },
     onError: (e: Error) => toast.error(e.message),
@@ -348,6 +362,41 @@ export function OperacaoTab() {
             Salvar tempo
           </Button>
         </div>
+      </div>
+
+      {/* Bloco 1.9 — Aviso ao colaborador quando cai um pendente */}
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-foreground">
+              Avisar colaboradores de novos pendentes
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Quando ligado, sempre que um cliente cai como pendente em um
+              departamento, o sistema manda uma mensagem no WhatsApp pessoal de
+              todos os colaboradores ativos daquele departamento avisando que há
+              cliente para atender. O administrador não recebe (ele já é avisado
+              quando o atendimento atrasa). O texto fica em Configurações →
+              Templates → <em>Aviso ao colaborador (novo pendente)</em>.
+            </p>
+          </div>
+          <Switch
+            checked={cfg.notificar_colaboradores_pendente}
+            disabled={toggleNotifColabMut.isPending}
+            onCheckedChange={(v) => toggleNotifColabMut.mutate(v)}
+            className="scale-125"
+          />
+        </div>
+
+        {cfg.notificar_colaboradores_pendente && !ativo && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <AlertTriangle className="h-5 w-5 shrink-0" strokeWidth={2} />
+            <div className="font-medium">
+              Avisos pausados — o bot está desligado. Eles voltam assim que o bot
+              for religado.
+            </div>
+          </div>
+        )}
       </div>
 
       <AlertDialog open={confirmOpenPendentes} onOpenChange={setConfirmOpenPendentes}>
