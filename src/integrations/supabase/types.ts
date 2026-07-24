@@ -71,6 +71,63 @@ export type Database = {
         }
         Relationships: []
       }
+      atendimento_leituras: {
+        Row: {
+          atendimento_id: string
+          company_id: string
+          last_read_at: string
+          user_id: string
+        }
+        Insert: {
+          atendimento_id: string
+          company_id: string
+          last_read_at?: string
+          user_id: string
+        }
+        Update: {
+          atendimento_id?: string
+          company_id?: string
+          last_read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "atendimento_leituras_atend_same_company_fk"
+            columns: ["atendimento_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "atendimentos"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "atendimento_leituras_atendimento_id_fkey"
+            columns: ["atendimento_id"]
+            isOneToOne: false
+            referencedRelation: "atendimentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atendimento_leituras_atendimento_id_fkey"
+            columns: ["atendimento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_pendentes"
+            referencedColumns: ["atendimento_id"]
+          },
+          {
+            foreignKeyName: "atendimento_leituras_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atendimento_leituras_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       atendimentos: {
         Row: {
           assigned_at: string | null
@@ -88,6 +145,7 @@ export type Database = {
           id: string
           is_sessao: boolean
           last_message_at: string | null
+          last_outbound_message_at: string | null
           status: Database["public"]["Enums"]["status_atendimento"]
           transferred_count: number
           triagem_estagio: Database["public"]["Enums"]["triagem_estagio"]
@@ -114,6 +172,7 @@ export type Database = {
           id?: string
           is_sessao?: boolean
           last_message_at?: string | null
+          last_outbound_message_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
           transferred_count?: number
           triagem_estagio?: Database["public"]["Enums"]["triagem_estagio"]
@@ -140,6 +199,7 @@ export type Database = {
           id?: string
           is_sessao?: boolean
           last_message_at?: string | null
+          last_outbound_message_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
           transferred_count?: number
           triagem_estagio?: Database["public"]["Enums"]["triagem_estagio"]
@@ -977,6 +1037,52 @@ export type Database = {
           },
         ]
       }
+      notificacoes_colaborador_pendente: {
+        Row: {
+          atendimento_id: string
+          company_id: string | null
+          created_at: string
+          department_id: string
+          id: string
+        }
+        Insert: {
+          atendimento_id: string
+          company_id?: string | null
+          created_at?: string
+          department_id: string
+          id?: string
+        }
+        Update: {
+          atendimento_id?: string
+          company_id?: string | null
+          created_at?: string
+          department_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notificacoes_colaborador_pendente_atendimento_id_fkey"
+            columns: ["atendimento_id"]
+            isOneToOne: false
+            referencedRelation: "atendimentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notificacoes_colaborador_pendente_atendimento_id_fkey"
+            columns: ["atendimento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_pendentes"
+            referencedColumns: ["atendimento_id"]
+          },
+          {
+            foreignKeyName: "notificacoes_colaborador_pendente_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       numeros_sem_triagem: {
         Row: {
           ativo: boolean
@@ -1537,9 +1643,21 @@ export type Database = {
           recipient_user_id: string
         }[]
       }
+      get_atendimentos_unread_counts: {
+        Args: { p_atendimento_ids: string[] }
+        Returns: {
+          atendimento_id: string
+          unread: number
+        }[]
+      }
+      get_my_inbox_unread_total: { Args: never; Returns: number }
       has_permission: { Args: { flag: string }; Returns: boolean }
       is_member_of: { Args: { p_company_id: string }; Returns: boolean }
       is_owner_of: { Args: { p_company_id: string }; Returns: boolean }
+      marcar_atendimento_lido: {
+        Args: { p_atendimento_id: string }
+        Returns: undefined
+      }
       minutos_uteis_decorridos: {
         Args: { p_department_id: string; p_fim: string; p_inicio: string }
         Returns: number

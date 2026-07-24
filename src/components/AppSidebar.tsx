@@ -40,7 +40,7 @@ const menuItems: MenuItem[] = [
     icon: BarChart,
     gate: { anyOf: ["view_all_departments"] },
   },
-  { title: "Inbox", url: "/inbox", icon: MessageCircle },
+  { title: "Inbox", url: "/inbox", icon: MessageCircle, badgeKey: "inbox" },
   { title: "Pendentes", url: "/pendentes", icon: Clock, badgeKey: "pendentes" },
   { title: "Contatos", url: "/contatos", icon: BookUser },
   { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
@@ -96,6 +96,23 @@ export function AppSidebar() {
   });
   const pendentesCount = pendentesCountQ.data ?? 0;
 
+  const inboxUnreadQ = useQuery({
+    queryKey: ["inbox-unread-total"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_my_inbox_unread_total");
+      if (error) throw error;
+      return data ?? 0;
+    },
+    enabled: !!user,
+    refetchInterval: 30_000,
+  });
+  const inboxUnreadCount = inboxUnreadQ.data ?? 0;
+
+  const badgeCounts: Record<string, number> = {
+    pendentes: pendentesCount,
+    inbox: inboxUnreadCount,
+  };
+
   const showPlaceholders = loading && !user;
   const visible = showPlaceholders
     ? menuItems
@@ -111,7 +128,8 @@ export function AppSidebar() {
           {visible.map((item) => {
             const active = pathname.startsWith(item.url);
             const Icon = item.icon;
-            const showBadge = item.badgeKey === "pendentes" && pendentesCount > 0;
+            const badgeCount = item.badgeKey ? (badgeCounts[item.badgeKey] ?? 0) : 0;
+            const showBadge = badgeCount > 0;
             return (
               <Tooltip key={item.url}>
                 <TooltipTrigger asChild>
@@ -127,7 +145,7 @@ export function AppSidebar() {
                     <Icon className="h-5 w-5" strokeWidth={1.75} />
                     {showBadge && (
                       <span className="badge-counter absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none">
-                        {pendentesCount > 99 ? "99+" : pendentesCount}
+                        {badgeCount > 99 ? "99+" : badgeCount}
                       </span>
                     )}
                   </Link>

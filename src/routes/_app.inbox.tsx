@@ -37,6 +37,7 @@ import {
   sendInboxAudio,
   sendInboxMedia,
   marcarConversaLida,
+  marcarAtendimentoLido,
   notificarRepasse,
   listClientAtendimentosVisiveis,
   initialsOf,
@@ -205,6 +206,16 @@ function InboxPage() {
     }
   }, [current?.id, current?.assignedTo, current?.status, current?.lastMessageAt, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Badge interno de não lidas: zera para quem abriu, ao abrir — independente
+  // de quem é o responsável ou do status (diferente do "tique azul" acima).
+  useEffect(() => {
+    if (!current || !user?.id) return;
+    void marcarAtendimentoLido(current.id).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
+    });
+  }, [current?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Atendimentos do mesmo cliente que entram no scroll contínuo.
   const atendimentosQuery = useQuery({
     queryKey: [
@@ -279,6 +290,7 @@ function InboxPage() {
         (payload) => {
           const row = payload.new as { id?: string; atendimento_id?: string } | null;
           queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
+          queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
           if (row?.id && row.atendimento_id) {
             chatCallbacksRef.current.onRealtimeInsert(row.id, row.atendimento_id);
           }
@@ -290,19 +302,17 @@ function InboxPage() {
         (payload) => {
           const row = payload.new as { id?: string; atendimento_id?: string } | null;
           queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
+          queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
           if (row?.id && row.atendimento_id) {
             chatCallbacksRef.current.onRealtimeUpdate(row.id, row.atendimento_id);
           }
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "atendimentos" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
-          queryClient.invalidateQueries({ queryKey: ["inbox", "client-atendimentos"] });
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "atendimentos" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
+        queryClient.invalidateQueries({ queryKey: ["inbox", "client-atendimentos"] });
+        queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -516,13 +526,20 @@ function InboxPage() {
                         {initialsOf(c.clientNome)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2">
                           <span className="text-sm font-medium text-foreground truncate">
                             {c.clientNome}
                           </span>
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {formatTime(c.lastMessageAt)}
-                          </span>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <span className="text-xs text-muted-foreground">
+                              {formatTime(c.lastMessageAt)}
+                            </span>
+                            {c.unread > 0 && (
+                              <span className="badge-counter flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none">
+                                {c.unread}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground truncate">
                           {c.lastMessagePreview || "—"}

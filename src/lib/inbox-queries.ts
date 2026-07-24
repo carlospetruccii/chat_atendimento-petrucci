@@ -136,6 +136,15 @@ export async function listInboxConversations(
     .filter((n): n is string => Boolean(n));
   const contatoNames = await fetchContatoNamesByNumbers(numeros);
 
+  const { data: unreadRows, error: unreadErr } = await supabase.rpc(
+    "get_atendimentos_unread_counts",
+    { p_atendimento_ids: ids },
+  );
+  if (unreadErr) throw unreadErr;
+  const unreadByAtendimento = new Map<string, number>(
+    (unreadRows ?? []).map((u) => [u.atendimento_id, u.unread]),
+  );
+
   return rows.map((r) => {
     const client = r.client as { id: string; nome: string | null; numero_whatsapp: string };
     const dept = r.department as { id: string; nome: string; cor: string } | null;
@@ -171,7 +180,7 @@ export async function listInboxConversations(
       assignedNome: assigned?.nome ?? null,
       lastMessageAt: r.last_message_at ?? r.created_at,
       lastMessagePreview: previewText,
-      unread: 0,
+      unread: unreadByAtendimento.get(r.id) ?? 0,
     };
   });
 }
@@ -513,6 +522,20 @@ export async function marcarConversaLida(atendimentoId: string): Promise<void> {
   });
   if (error) {
     console.warn("[inbox] mark-chat-read falhou:", error.message);
+  }
+}
+
+/**
+ * Zera o contador de mensagens não lidas (badge interno) para quem chamou,
+ * ao abrir a conversa. Independente do "tique azul" do WhatsApp acima —
+ * qualquer usuário que abrir a conversa marca como lida para si mesmo.
+ */
+export async function marcarAtendimentoLido(atendimentoId: string): Promise<void> {
+  const { error } = await supabase.rpc("marcar_atendimento_lido", {
+    p_atendimento_id: atendimentoId,
+  });
+  if (error) {
+    console.warn("[inbox] marcar_atendimento_lido falhou:", error.message);
   }
 }
 
