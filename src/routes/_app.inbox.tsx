@@ -58,6 +58,10 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { AttachMenu, MAX_ATTACHMENT_BYTES, type PickedFile } from "@/components/inbox/AttachMenu";
 import { MediaPreviewDialog, type MediaTipo } from "@/components/inbox/MediaPreviewDialog";
 import { IniciarAtendimentoDialog } from "@/components/inbox/IniciarAtendimentoDialog";
+import {
+  RichMessageComposer,
+  type RichMessageComposerHandle,
+} from "@/components/inbox/RichMessageComposer";
 
 interface InboxSearch {
   conversation?: string;
@@ -112,7 +116,8 @@ function InboxPage() {
   const canViewAll = !!user && (user.isSuperadmin || user.permissions.includes("view_all_departments"));
 
   const [selected, setSelected] = useState<string | null>(search.conversation ?? null);
-  const [draft, setDraft] = useState("");
+  const [hasDraft, setHasDraft] = useState(false);
+  const composerRef = useRef<RichMessageComposerHandle>(null);
   const [sending, setSending] = useState(false);
   const recorder = useAudioRecorder();
   const [recordedAudio, setRecordedAudio] = useState<
@@ -334,7 +339,8 @@ function InboxPage() {
 
 
   const handleSend = async () => {
-    if (!current || !draft.trim()) return;
+    const content = composerRef.current?.getMarkdownText().trim() ?? "";
+    if (!current || !content) return;
     setSending(true);
     try {
       await sendInboxMessage({
@@ -342,13 +348,17 @@ function InboxPage() {
         clientId: current.clientId,
         departmentId: current.departmentId,
         userId: user.id,
-        content: draft.trim(),
+        content,
         replyToMessageId: replyTo?.id ?? null,
       });
-      setDraft("");
+      composerRef.current?.clear();
+      setHasDraft(false);
       setReplyTo(null);
       // Realtime já vai trazer; força scroll para o fim na próxima paint.
-      requestAnimationFrame(() => chat.scrollToBottom(true));
+      requestAnimationFrame(() => {
+        chat.scrollToBottom(true);
+        composerRef.current?.focus();
+      });
     } catch (e) {
       toast.error("Não foi possível enviar a mensagem.");
       console.error(e);
@@ -412,15 +422,14 @@ function InboxPage() {
     setPendingMedia({ file: picked.file, tipo });
   };
 
-  const handlePasteImage = (e: React.ClipboardEvent<HTMLInputElement>) => {
+  const handlePasteImage = (event: ClipboardEvent) => {
     if (sending) return;
-    const item = Array.from(e.clipboardData.items).find((it) =>
+    const item = Array.from(event.clipboardData?.items ?? []).find((it) =>
       it.type.startsWith("image/"),
     );
     if (!item) return;
     const file = item.getAsFile();
     if (!file) return;
-    e.preventDefault();
     if (file.size > MAX_ATTACHMENT_BYTES) {
       toast.error("Arquivo muito grande (máx 16 MB).");
       return;
@@ -878,20 +887,13 @@ function InboxPage() {
                           onPick={handleAttachPick}
                           onError={(msg) => toast.error(msg)}
                         />
-                      <input
-                        type="text"
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSend();
-                          }
-                        }}
-                        onPaste={handlePasteImage}
+                      <RichMessageComposer
+                        ref={composerRef}
                         placeholder="Digite uma mensagem..."
-                        className="flex-1 bg-transparent text-sm outline-none disabled:opacity-50"
                         disabled={sending}
+                        onHasContentChange={setHasDraft}
+                        onPasteImage={handlePasteImage}
+                        onEnterSend={handleSend}
                       />
                       <button
                         type="button"
@@ -904,7 +906,7 @@ function InboxPage() {
                       </button>
                       <button
                         onClick={handleSend}
-                        disabled={sending || !draft.trim()}
+                        disabled={sending || !hasDraft}
                         className="rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                       >
                         {sending ? (
