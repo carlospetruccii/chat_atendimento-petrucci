@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-const MAX_BYTES = 16 * 1024 * 1024;
+export const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
+const MAX_BYTES = MAX_ATTACHMENT_BYTES;
 
 export type AttachKind = "document" | "media" | "camera";
 

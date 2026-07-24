@@ -54,7 +54,7 @@ import { agruparMensagens, type AtendimentoMeta } from "@/lib/inbox-history";
 import { ClientHistorySheet } from "@/components/inbox/ClientHistorySheet";
 import { AudioRecorderBar } from "@/components/inbox/AudioRecorderBar";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
-import { AttachMenu, type PickedFile } from "@/components/inbox/AttachMenu";
+import { AttachMenu, MAX_ATTACHMENT_BYTES, type PickedFile } from "@/components/inbox/AttachMenu";
 import { MediaPreviewDialog, type MediaTipo } from "@/components/inbox/MediaPreviewDialog";
 import { IniciarAtendimentoDialog } from "@/components/inbox/IniciarAtendimentoDialog";
 
@@ -400,6 +400,22 @@ function InboxPage() {
         ? "image"
         : "document";
     setPendingMedia({ file: picked.file, tipo });
+  };
+
+  const handlePasteImage = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (sending) return;
+    const item = Array.from(e.clipboardData.items).find((it) =>
+      it.type.startsWith("image/"),
+    );
+    if (!item) return;
+    const file = item.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error("Arquivo muito grande (máx 16 MB).");
+      return;
+    }
+    handleAttachPick({ file, kind: "media" });
   };
 
   const handleSendMedia = async (caption: string) => {
@@ -855,6 +871,7 @@ function InboxPage() {
                             handleSend();
                           }
                         }}
+                        onPaste={handlePasteImage}
                         placeholder="Digite uma mensagem..."
                         className="flex-1 bg-transparent text-sm outline-none disabled:opacity-50"
                         disabled={sending}
