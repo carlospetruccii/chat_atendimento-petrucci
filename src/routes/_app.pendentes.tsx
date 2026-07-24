@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { linkifyText } from "@/lib/linkify";
+import { formatWhatsAppText } from "@/lib/whatsapp-format";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -573,7 +573,7 @@ function PreviewBubble({ m }: { m: PreviewMessage }) {
       >
         {isText ? (
           m.content ? (
-            <p className="whitespace-pre-wrap break-words">{linkifyText(m.content)}</p>
+            <p className="whitespace-pre-wrap break-words">{formatWhatsAppText(m.content)}</p>
           ) : (
             <p className="italic text-muted-foreground">(sem conteúdo)</p>
           )

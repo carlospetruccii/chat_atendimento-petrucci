@@ -16,7 +16,7 @@ import {
   Reply,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { linkifyText } from "@/lib/linkify";
+import { formatWhatsAppText } from "@/lib/whatsapp-format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   Dialog,
@@ -789,7 +789,7 @@ function InboxPage() {
                                 <ListaOpcoesPreview message={m} />
                               ) : (
                                 <p className="whitespace-pre-wrap break-words">
-                                  {linkifyText(m.content)}
+                                  {formatWhatsAppText(m.content)}
                                 </p>
                               )
                             ) : (
