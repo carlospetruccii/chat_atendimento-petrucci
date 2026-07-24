@@ -2,6 +2,11 @@ import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { formatWhatsAppText } from "./whatsapp-format";
 
+// `ReactElement` sem parâmetros de tipo tipa `.props` como `unknown` nesta
+// versão de @types/react. Damos um shape explícito só pro que os testes leem.
+type TextMarkElement = ReactElement<{ children?: string }>;
+type LinkMarkElement = ReactElement<{ href?: string }>;
+
 function renderedText(nodes: ReturnType<typeof formatWhatsAppText>): string {
   // Achata os ReactNode[] pra comparar só o texto visível, ignorando tags.
   return nodes
@@ -31,7 +36,7 @@ describe("formatWhatsAppText", () => {
   it("renderiza *negrito* como <strong>", () => {
     const result = formatWhatsAppText("oi *tudo bem*?");
     expect(result[0]).toBe("oi ");
-    const strong = result[1] as ReactElement;
+    const strong = result[1] as TextMarkElement;
     expect(strong.type).toBe("strong");
     expect(strong.props.children).toBe("tudo bem");
     expect(result[2]).toBe("?");
@@ -39,21 +44,21 @@ describe("formatWhatsAppText", () => {
 
   it("renderiza _itálico_ como <em>", () => {
     const result = formatWhatsAppText("_urgente_");
-    const em = result[0] as ReactElement;
+    const em = result[0] as TextMarkElement;
     expect(em.type).toBe("em");
     expect(em.props.children).toBe("urgente");
   });
 
   it("renderiza ~tachado~ como <s>", () => {
     const result = formatWhatsAppText("~cancelado~");
-    const s = result[0] as ReactElement;
+    const s = result[0] as TextMarkElement;
     expect(s.type).toBe("s");
     expect(s.props.children).toBe("cancelado");
   });
 
   it("renderiza ```monoespaçado``` como <code>", () => {
     const result = formatWhatsAppText("```codigo_com_underscore```");
-    const code = result[0] as ReactElement;
+    const code = result[0] as TextMarkElement;
     expect(code.type).toBe("code");
     expect(code.props.children).toBe("codigo_com_underscore");
   });
@@ -80,7 +85,7 @@ describe("formatWhatsAppText", () => {
     const result = formatWhatsAppText("olha isso: https://exemplo.com/pagina, *importante*");
     const link = result.find(
       (node) => typeof node === "object" && node !== null && (node as ReactElement).type === "a",
-    ) as ReactElement;
+    ) as LinkMarkElement;
     expect(link.props.href).toBe("https://exemplo.com/pagina");
   });
 
@@ -88,7 +93,7 @@ describe("formatWhatsAppText", () => {
     const result = formatWhatsAppText("veja https://exemplo.com.");
     const link = result.find(
       (node) => typeof node === "object" && node !== null && (node as ReactElement).type === "a",
-    ) as ReactElement;
+    ) as LinkMarkElement;
     expect(link.props.href).toBe("https://exemplo.com");
     expect(result[result.length - 1]).toBe(".");
   });
