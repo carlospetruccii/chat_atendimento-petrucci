@@ -46,3 +46,4 @@ package-lock.json
 # Claude Code preview/tooling
 .claude/
 !.env.production
+.superpowers/
