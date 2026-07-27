@@ -19,6 +19,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { marcarChatComoLido, ZapiError } from "../_shared/uazapi-client.ts";
+import { exigirMembroAtivo } from "../_shared/empresa.ts";
 
 const FUNCAO = "mark-chat-read";
 
@@ -31,6 +32,8 @@ const CORS_HEADERS = {
 
 interface Payload {
   atendimento_id?: string;
+  // Alternativa ao atendimento: marcar um GRUPO como lido. Um dos dois.
+  grupo_id?: string;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -82,11 +85,74 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: false, erro: "payload_invalido" }, 400);
   }
   const atendimentoId = payload.atendimento_id?.trim();
-  if (!atendimentoId) {
+  const grupoId = payload.grupo_id?.trim();
+  if (!atendimentoId && !grupoId) {
     return jsonResponse(
-      { ok: false, erro: "campos_obrigatorios", detalhe: "atendimento_id é obrigatório" },
+      { ok: false, erro: "campos_obrigatorios", detalhe: "atendimento_id ou grupo_id é obrigatório" },
       400,
     );
+  }
+
+  // 2b) Caminho GRUPO. A autorização aqui é mais simples de propósito: grupo não
+  // tem responsável nem status, então basta ser membro da empresa dona do grupo
+  // (o "tique azul" do grupo não revela nada além do que quem abriu já vê).
+  if (grupoId) {
+    const membro = await exigirMembroAtivo(supabase, userId);
+    if (!membro) return jsonResponse({ ok: false, erro: "forbidden" }, 403);
+    const companyId = membro.companyId;
+
+    const { data: grupo, error: errGrupo } = await supabase
+      .from("grupos")
+      .select("id, company_id, wa_jid, ativo")
+      .eq("id", grupoId)
+      .maybeSingle();
+
+    if (errGrupo) {
+      log({
+        funcao: FUNCAO,
+        evento: "leitura_grupo",
+        status: "erro",
+        duracao_ms: cron(),
+        erro_msg: errGrupo.message,
+      });
+      return jsonResponse({ ok: false, erro: "erro_interno" }, 500);
+    }
+    if (!grupo) return jsonResponse({ ok: false, erro: "grupo_nao_encontrado" }, 404);
+    if (grupo.company_id !== companyId) return jsonResponse({ ok: false, erro: "forbidden" }, 403);
+    if (grupo.ativo !== true) {
+      return jsonResponse({ ok: true, marcado: false, motivo: "grupo_inativo" });
+    }
+
+    const jid = grupo.wa_jid as string;
+    const tarefaGrupo = (async () => {
+      const t = iniciarCronometro();
+      try {
+        await marcarChatComoLido(jid);
+        log({ funcao: FUNCAO, evento: "grupo_marcado_lido", status: "ok", duracao_ms: t() });
+      } catch (err) {
+        log({
+          funcao: FUNCAO,
+          evento: "grupo_marcar_lido_falha",
+          status: "erro",
+          duracao_ms: t(),
+          erro_msg: err instanceof Error ? err.message : String(err),
+          extra: { uazapi_status: err instanceof ZapiError ? err.status : null },
+        });
+      }
+    })();
+
+    const edgeGrupo = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+      .EdgeRuntime;
+    if (edgeGrupo?.waitUntil) edgeGrupo.waitUntil(tarefaGrupo);
+    else tarefaGrupo.catch(() => {});
+
+    return jsonResponse({ ok: true, marcado: true });
+  }
+
+  // Salvaguarda para o compilador: sem grupo_id, atendimento_id existe (já
+  // validado acima).
+  if (!atendimentoId) {
+    return jsonResponse({ ok: false, erro: "campos_obrigatorios" }, 400);
   }
 
   // 3) Carrega atendimento + número do cliente.

@@ -13,8 +13,11 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
-import { baixarMidiaMensagem, buscarNomeContato } from "../_shared/uazapi-client.ts";
+import { buscarNomeContato } from "../_shared/uazapi-client.ts";
+import { deduzirExtensao, obterBytesMidia } from "../_shared/midia-download.ts";
 import { devePularReabertura, montarNovoAtendimento, resolverModo } from "./logic.ts";
+import { normalizarJidGrupo } from "./grupos-logic.ts";
+import { registrarMensagemGrupo } from "./grupos.ts";
 
 const FUNCAO = "webhook-zapi-receive";
 const BUCKET = "mensagens-midia";
@@ -186,6 +189,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+// Compara dois segredos em tempo constante (não sai no primeiro byte diferente).
+// O comprimento em si não é secreto, então a saída antecipada por tamanho é ok.
+function comparaConstante(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 // Normaliza número para E.164 com '+'. Aceita "<numero>@s.whatsapp.net",
 // "@c.us", "@lid" ou dígitos puros — extrai só os dígitos e prefixa '+'.
 function normalizarNumero(n: string | null | undefined): string | null {
@@ -230,10 +242,18 @@ function extrairLid(raw: string | null | undefined): string | null {
   return digits || null;
 }
 
-function ehGrupo(data: Record<string, unknown>): boolean {
-  if ((data as { isGroup?: unknown }).isGroup === true) return true;
-  const chatid = (data as { chatid?: string }).chatid;
-  return typeof chatid === "string" && chatid.includes("@g.us");
+// Só é grupo quando existe um JID de grupo utilizável (`...@g.us`), no payload ou
+// no envelope. `isGroup` sozinho NÃO basta: um payload com `isGroup: true` e
+// `chatid` individual entraria no desvio de grupo, não resolveria JID e a
+// mensagem seria descartada — uma primitiva de supressão de mensagem de cliente.
+// Sem JID de grupo, segue o fluxo normal de atendimento.
+function ehGrupo(
+  data: Record<string, unknown>,
+  envelope?: Record<string, unknown>,
+): boolean {
+  return normalizarJidGrupo(data.chatid) !== null ||
+    normalizarJidGrupo((data as { chatId?: unknown }).chatId) !== null ||
+    normalizarJidGrupo(envelope?.chatid) !== null;
 }
 
 // Mascara LID para logs (RNF-S10): mantém 4 primeiros e 2 últimos.
@@ -469,23 +489,6 @@ async function reabrirAtendimentoEncerrado(
   return { id: enc.id, current_department_id: enc.current_department_id };
 }
 
-function deduzirExtensao(mime: string | null | undefined, fallback: string): string {
-  if (!mime) return fallback;
-  const map: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "image/gif": "gif",
-    "audio/ogg": "ogg",
-    "audio/mpeg": "mp3",
-    "audio/mp4": "m4a",
-    "audio/aac": "aac",
-    "video/mp4": "mp4",
-    "application/pdf": "pdf",
-  };
-  return map[mime.toLowerCase()] ?? fallback;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: CORS_HEADERS });
@@ -514,9 +517,19 @@ Deno.serve(async (req: Request) => {
   // 2b) Validação de origem: a uazapi inclui o token da instância no corpo
   // (`token`). Conferimos contra o secret UAZAPI_TOKEN — é o jeito real como a
   // uazapi entrega e não depende de query string.
+  //
+  // FAIL-CLOSED: sem o secret configurado, RECUSA. Antes a condição era
+  // `if (expectedToken && ...)`, ou seja, secret ausente = qualquer POST aceito.
+  // Isso passou a importar muito mais quando o desvio de grupo começou a GRAVAR:
+  // um payload forjado criaria grupos e mensagens com autoria inventada e
+  // dispararia download de mídia de URL arbitrária.
   const expectedToken = Deno.env.get("UAZAPI_TOKEN");
+  if (!expectedToken) {
+    log({ funcao: FUNCAO, evento: "secret_ausente", status: "erro", duracao_ms: cron() });
+    return jsonResponse({ ok: false, erro: "misconfigured" }, 503);
+  }
   const bodyToken = typeof envelope.token === "string" ? (envelope.token as string) : null;
-  if (expectedToken && bodyToken !== expectedToken) {
+  if (!bodyToken || !comparaConstante(bodyToken, expectedToken)) {
     log({ funcao: FUNCAO, evento: "token_invalido", status: "erro", duracao_ms: cron() });
     return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
   }
@@ -567,13 +580,17 @@ Deno.serve(async (req: Request) => {
       (payload.messageid as string | undefined) ??
       null;
 
+  // Mensagem de grupo é decidida aqui porque muda o resto do roteamento.
+  const ehMensagemDeGrupo = ehEventoMensagem && ehGrupo(payload, envelope);
+
   // `quoted`: id (owner:messageid) da mensagem citada. Resolve para nossa
-  // mensagens.id correspondente, se existir.
+  // mensagens.id correspondente, se existir. Em grupo NÃO fazemos esta busca:
+  // a citação de grupo mora em `grupo_mensagens` e é resolvida lá dentro.
   const quotedId =
     (typeof payload.quoted === "string" ? (payload.quoted as string) : null) ??
       null;
   let replyToMessageId: string | null = null;
-  if (quotedId) {
+  if (quotedId && !ehMensagemDeGrupo) {
     const { data: refRow } = await supabase
       .from("mensagens")
       .select("id")
@@ -613,16 +630,57 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: true });
   }
 
-  // Guard: mensagens de grupo são descartadas explicitamente. chatid termina
-  // em "@g.us" e violaria o CHECK E.164 ao tentar criar cliente.
-  if (ehEventoMensagem && ehGrupo(payload)) {
-    log({
-      funcao: FUNCAO,
-      evento: "evento_ignorado",
-      status: "ok",
-      extra: { motivo: "mensagem_grupo", event: eventStr },
-    });
-    return jsonResponse({ ok: true });
+  // Desvio de GRUPO: chatid termina em "@g.us". Sai do fluxo de atendimento
+  // inteiro (não cria cliente — o JID violaria o CHECK E.164 — nem atendimento,
+  // triagem ou bot) e vai para `grupo_mensagens`, que é o caminho paralelo.
+  if (ehMensagemDeGrupo) {
+    const parsedGrupo = parseMensagem(payload);
+    if (!parsedGrupo) {
+      log({
+        funcao: FUNCAO,
+        evento: "evento_ignorado",
+        status: "ok",
+        extra: { motivo: "grupo_sem_conteudo", event: eventStr },
+      });
+      return jsonResponse({ ok: true });
+    }
+
+    try {
+      const res = await registrarMensagemGrupo({
+        supabase,
+        payload,
+        // Só o que é usado: o envelope inteiro carrega `token` (= UAZAPI_TOKEN em
+        // texto claro) e não tem por que descer para a camada de escrita.
+        envelope: { chat: envelope.chat, chatid: envelope.chatid },
+        parsed: parsedGrupo,
+        uazapiMessageId: zapiMessageId,
+        quotedUazapiId: quotedId,
+      });
+      if (!res.ok) {
+        log({
+          funcao: FUNCAO,
+          evento: "evento_ignorado",
+          status: "ok",
+          extra: { motivo: res.motivo ?? "grupo_nao_registrado", event: eventStr },
+        });
+      }
+      return jsonResponse({
+        ok: true,
+        grupo: true,
+        mensagem_id: res.mensagemId,
+        duplicada: res.duplicada ?? false,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log({
+        funcao: FUNCAO,
+        evento: "grupo_erro_inesperado",
+        status: "erro",
+        erro_msg: msg.slice(0, 200),
+      });
+      // 200 mesmo assim: a uazapi não deve reenviar em loop.
+      return jsonResponse({ ok: true, erro_interno: true });
+    }
   }
 
   try {
@@ -662,6 +720,25 @@ Deno.serve(async (req: Request) => {
           continue;
         }
         if (!data || data.length === 0) {
+          // Não é mensagem de atendimento: pode ser de GRUPO. O evento de status
+          // não diz se o chat é grupo, então a tentativa em grupo_mensagens é o
+          // que distingue — sem ela todo "entregue/lido" de grupo viraria órfão.
+          const { data: dataGrupo } = await supabase
+            .from("grupo_mensagens")
+            .update({ status_whatsapp: novoStatus })
+            .eq("uazapi_message_id", id)
+            .select("id");
+          if (dataGrupo && dataGrupo.length > 0) {
+            atualizadas++;
+            log({
+              funcao: FUNCAO,
+              evento: "status_atualizado_grupo",
+              status: "ok",
+              mensagem_id: dataGrupo[0].id,
+              extra: { uazapi_message_id: id, status_novo: novoStatus },
+            });
+            continue;
+          }
           orfaos++;
           log({
             funcao: FUNCAO,
@@ -1532,50 +1609,6 @@ interface DownloadParams {
   urlOriginal: string | null;
   tipo: TipoMensagem;
   metaInicial: Record<string, unknown>;
-}
-
-// Baixa os bytes da mídia: tenta data.fileURL (http/https) direto; se falhar,
-// cai para POST /message/download da uazapi (retorna base64).
-async function obterBytesMidia(
-  urlOriginal: string | null,
-  zapiMessageId: string,
-): Promise<{ buf: Uint8Array; contentType: string | null; fonte: string }> {
-  // 1) /message/download — fonte confiável (bytes DECODIFICADOS via base64Data).
-  try {
-    const res = await baixarMidiaMensagem(zapiMessageId);
-    if (res.base64) {
-      const bin = atob(res.base64);
-      const buf = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-      if (buf.byteLength > 0) {
-        return { buf, contentType: res.mimetype ?? null, fonte: "message_download_base64" };
-      }
-    }
-    // 2) fileURL hospedada e decodificada pela uazapi (não é .enc).
-    if (res.url && /^https?:\/\//i.test(res.url)) {
-      const r = await fetch(res.url);
-      if (r.ok) {
-        const buf = new Uint8Array(await r.arrayBuffer());
-        if (buf.byteLength > 0) {
-          return { buf, contentType: r.headers.get("content-type") ?? res.mimetype ?? null, fonte: "message_download_url" };
-        }
-      }
-    }
-  } catch {
-    // cai para a tentativa direta abaixo
-  }
-
-  // 3) Último recurso: urlOriginal, só se for http (a .enc não serve; placeholder é ignorado).
-  if (urlOriginal && /^https?:\/\//i.test(urlOriginal)) {
-    const resp = await fetch(urlOriginal);
-    if (resp.ok) {
-      const buf = new Uint8Array(await resp.arrayBuffer());
-      if (buf.byteLength > 0) {
-        return { buf, contentType: resp.headers.get("content-type"), fonte: "url_original" };
-      }
-    }
-  }
-  throw new Error("não foi possível obter os bytes da mídia (/message/download)");
 }
 
 async function baixarESalvarMidia(p: DownloadParams): Promise<void> {

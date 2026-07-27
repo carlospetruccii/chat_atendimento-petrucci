@@ -19,6 +19,10 @@ Nenhum token vai para o frontend. As Edge Functions leem estes secrets:
 - Base URL: `https://{subdominio}.uazapi.com` (cada conta tem o seu).
 - Header `token: <instância>` nas operações normais; `admintoken` nas administrativas.
 - **Número:** apenas dígitos, sem `+`, espaços ou traços (ex.: `5511999998888`).
+- **Grupo:** o destino é o **JID inteiro** (`120363012345678901@g.us`), no mesmo campo
+  `number`. ⚠️ Ele **não** passa pela normalização de dígitos — `soDigitos()` comeria o
+  `@g.us` e a mensagem iria para um número inexistente. Quem decide isso é
+  `ehJidGrupo()` em `_shared/uazapi-client.ts`.
 
 ## Envio (o sistema → WhatsApp)
 | Ação | Endpoint | Corpo (principais) |
@@ -48,7 +52,27 @@ nome antigo, mantida por ser cosmética).
   `messageTimestamp`, `quoted`.
 - Eventos tratados: `messages` (nova), `messages_update` (status entregue/lido/falha),
   `connection` (estado). Mensagem enviada pelo celular por fora = `fromMe:true` +
-  `wasSentByApi:false` → registrada como `externo`. Grupos são ignorados.
+  `wasSentByApi:false` → registrada como `externo`.
+- **Grupo:** `isGroup:true` e/ou `chatid` terminando em `@g.us`. Quem falou vem em
+  `sender_pn` (telefone) ou `sender` (JID completo da pessoa, **não** do grupo), e o nome
+  em `senderName`/`pushName`. Desde 27/07/2026 essas mensagens vão para `grupo_mensagens`
+  em vez de serem descartadas. Participante que só tem **LID** (sem telefone) é
+  descartado: não cabe no CHECK de E.164 de `grupo_mensagens.participante_numero`.
+
+## Grupos
+| Ação | Endpoint | Observações |
+|------|----------|-------------|
+| Listar grupos | `GET /group/list` | Usado por `sincronizar-grupos`. Resposta pode ser array cru ou envelope (`{ groups: [...] }`) — o parser aceita os dois. |
+| Dados de um grupo | `POST /group/info { groupjid }` | Usado quando um grupo aparece pela primeira vez via webhook. |
+
+Campos do objeto `Group` (schema oficial, PascalCase): `JID`, `Name`, `Topic`,
+`Participants[]`, `IsAnnounce` (só admins enviam), `OwnerIsAdmin` e
+`OwnerCanSendMessage` — "Owner" aqui é a **instância conectada** (nós). Como os nomes
+variam entre versões, `_shared/uazapi-grupos.ts` lê cada campo por uma **lista de
+candidatos** (PascalCase → camelCase → `wa_*`) e descarta item sem JID de grupo válido.
+
+**Não usamos** (de propósito, o produto não pediu): `group/create`, `invite`, `remove`,
+`promote`, `demote`, `leave`, `update`, `close`. O sistema só lê a lista e conversa.
 
 ## Conexão / QR code (aba "Conexão do WhatsApp" em Configurações)
 | Ação | Endpoint | Retorno |

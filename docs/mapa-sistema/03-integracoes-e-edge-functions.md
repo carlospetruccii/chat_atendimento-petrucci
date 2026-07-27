@@ -7,7 +7,7 @@ receber mensagens do WhatsApp, enviar respostas, rodar o robô e as tarefas auto
 ## Índice
 - [Como o sistema fala com o WhatsApp (hoje: Z‑API)](#como-o-sistema-fala-com-o-whatsapp-hoje-z-api)
 - [Código compartilhado (_shared)](#código-compartilhado-_shared)
-- [As 13 funções, uma por uma](#as-13-funções-uma-por-uma)
+- [As funções, uma por uma](#as-funções-uma-por-uma)
 - [As tarefas automáticas (crons)](#as-tarefas-automáticas-crons)
 - [Segredos / variáveis de ambiente](#segredos--variáveis-de-ambiente)
 - [Todo ponto de contato com o WhatsApp](#todo-ponto-de-contato-com-o-whatsapp)
@@ -30,7 +30,7 @@ O que existe hoje, concretamente:
 
 ## Código compartilhado (`_shared`)
 
-Quatro peças reaproveitadas por todas as funções:
+As peças reaproveitadas pelas funções:
 
 | Arquivo | O que faz |
 |---------|-----------|
@@ -38,10 +38,13 @@ Quatro peças reaproveitadas por todas as funções:
 | **`kill-switch.ts`** | A **trava de emergência do robô**. Lê `system_config.bot_ativo`. Se estiver desligado, as automações não rodam. Por segurança, **qualquer dúvida = desligado**. Guarda a resposta por 60s para não sobrecarregar o banco. |
 | **`logger.ts`** | O **diário de bordo** técnico. Registra o que aconteceu em cada função, **sem nunca gravar dados sensíveis** (telefone completo, conteúdo de mensagem, tokens). |
 | **`supabase-client.ts`** | A **conexão com o banco** em modo administrador (o backend enxerga tudo, sem as travas de RLS). |
+| **`uazapi-grupos.ts`** | **Tradutor do objeto "grupo"** da uazapi para o nosso formato. Os nomes de campo que a API devolve variam (`JID`/`jid`/`chatid`, `Name`/`wa_name`…), então cada campo é lido por uma lista de candidatos. É função pura e testada — é a peça com mais chance de errar e a única testável sem uma instância real. |
+| **`midia-download.ts`** | **Baixa o arquivo de uma mídia recebida**, com três tentativas em cascata (base64 da uazapi → URL já decodificada → URL do webhook). Nasceu dentro do webhook e foi extraído para ser usado também pelas mensagens de grupo: é frágil demais para existir em duas cópias. |
+| **`empresa.ts`** | Descobre **de qual empresa é quem chamou** a função (via `company_members`, com a empresa mais antiga como reserva no cenário single‑tenant). |
 
 ---
 
-## As 13 funções, uma por uma
+## As funções, uma por uma
 
 ### Contato com o WhatsApp
 
@@ -68,10 +71,19 @@ função mais importante do backend. Cuida de três situações:
 3. **Mensagem enviada por fora** (`fromMe`) — quando alguém respondeu o cliente pelo
    **celular pessoal** usando o número da empresa, registra como "externo" para aparecer
    no Inbox (e pode reabrir um atendimento).
+4. **Mensagem de grupo** (`chatid` termina em `@g.us`) — **sai do fluxo de atendimento
+   inteiro** e vai para `grupo_mensagens` (arquivos `grupos.ts` e `grupos-logic.ts`).
+   Não cria cliente, não abre atendimento, não chama o bot. Se o grupo ainda não existe
+   no banco, é criado ali mesmo e os dados (nome, tópico, participantes) são completados
+   em segundo plano via `POST /group/info`. Mídia de grupo é baixada para
+   `mensagens-midia/grupos/<grupo_id>/`.
+   > Até 27/07/2026 essas mensagens eram **descartadas** de propósito: o JID de grupo não
+   > passa no CHECK de E.164 de `clients`. Com as tabelas de grupo separadas, o descarte
+   > virou desvio.
 
-Ela **não exige login** (a Z‑API não tem como fazer login do Supabase); em vez disso,
-valida o cabeçalho **`Client-Token`**. Também ignora mensagens de **grupo**. Tem proteção
-contra duplicatas (usa o `zapi_message_id`).
+Ela **não exige login** (a uazapi não tem como fazer login do Supabase); em vez disso,
+valida o `token` da instância que vem no corpo. Tem proteção contra duplicatas (usa o
+`zapi_message_id` para o individual e o `uazapi_message_id` para grupo).
 
 #### 2. `triagem-bot` — o robô de triagem (só **departamento**)
 Roda sozinho (a cada ~10s, se o bot estiver ligado). Desde 02/07/2026 a triagem pergunta
@@ -196,6 +208,27 @@ você — Fulano foi repassado por Beltrano…"*. Regras de segurança (tudo ser
 
 Envia pela **uazapi** (`_shared/uazapi-client.ts`, `enviarTexto`). Opcional: secret
 `APP_URL` inclui um link do painel no aviso.
+
+#### 5c. `grupo-enviar` — enviar mensagem para grupo
+**Uma função só** para texto, imagem, vídeo, documento e nota de voz de **grupo** (as três
+funções separadas do individual já divergiram entre si; aqui o fluxo é idêntico em tudo
+menos o formato do payload da uazapi). Grava a mensagem antes de falar com o WhatsApp,
+responde a tela na hora e envia em segundo plano.
+
+Regras de segurança:
+- É o **único** caminho de escrita em `grupo_mensagens` — a RLS não dá INSERT ao frontend,
+  então a autoria (`sent_by_user_id`) vem sempre do JWT, nunca do corpo da requisição.
+- Autorização: qualquer membro **ativo da empresa dona do grupo**. Grupo não tem
+  responsável, então não há checagem de `assigned_to` como no individual.
+- Recusa antes de gravar quando o grupo está inativo, é de outra empresa, ou está em modo
+  "somente admins enviam" e nosso número não é admin (a uazapi recusaria de qualquer jeito).
+- Não consulta o kill switch nem dispara automação: grupo não tem bot.
+
+#### 5d. `sincronizar-grupos` — trazer os grupos do WhatsApp
+Chamada pelo botão "Sincronizar grupos" do Inbox. Lê `GET /group/list` da uazapi e faz
+**upsert** por `(company_id, wa_jid)`. Grupo que não vem mais na lista é marcado
+`ativo = false` — **nunca apagado**, para o histórico de mensagens continuar legível.
+Idempotente: rodar duas vezes não duplica nada. Autorização: qualquer membro ativo.
 
 #### 6. `cleanup-disparo-acidental-bot` — limpeza pontual (⚠️ histórica)
 Uma função **de uso único**, criada para **desfazer um disparo acidental do robô** que
@@ -333,7 +366,18 @@ Resumo de **onde** o sistema conversa com o WhatsApp e **como está hoje**:
 | **Enviar documento** | `send-whatsapp-media` | `/send-document/{ext}` | Z‑API |
 | **Menu de opções** (triagem) | `triagem-bot` | `/send-option-list` | Z‑API |
 | **Apagar mensagem** | `cleanup-disparo-acidental-bot` | `DELETE /messages` | Z‑API (função pontual) |
+| **Enviar em grupo** (texto/mídia/áudio) | `grupo-enviar` | `/send/text`, `/send/media` | uazapi — o destino é o **JID do grupo** (`…@g.us`) no lugar do número |
+| **Listar grupos** | `sincronizar-grupos` | `GET /group/list` | uazapi |
+| **Dados de um grupo** | `webhook-zapi-receive` (grupo novo) | `POST /group/info` | uazapi |
+| **Marcar grupo como lido** | `mark-chat-read` | `POST /chat/read` | uazapi (aceita `grupo_id`) |
 
-**Nenhuma dessas funções usa `company_id`** — confirmado: não há uma única menção a
-`company_id` em toda a pasta `supabase/functions/`. Tudo funciona hoje assumindo "uma
-empresa só". As implicações disso estão em [Riscos](05-dados-de-exemplo-e-riscos.md).
+> **Atenção ao enviar para grupo.** O cliente da uazapi normaliza número para "só
+> dígitos". Isso **destruiria** um JID de grupo (`120363…@g.us` viraria `120363…`, um
+> número inexistente). Por isso `_shared/uazapi-client.ts` tem `ehJidGrupo()`: destino
+> que termina em `@g.us` passa **intacto**. Qualquer envio novo precisa usar o mesmo
+> caminho.
+
+**Fora de `grupo-enviar` e `sincronizar-grupos`, nenhuma dessas funções usa `company_id`**
+— tudo funciona hoje assumindo "uma empresa só". As implicações disso estão em
+[Riscos](05-dados-de-exemplo-e-riscos.md). As duas funções de grupo já resolvem a empresa
+do chamador (via `_shared/empresa.ts`) porque nasceram depois do schema multi‑empresa.

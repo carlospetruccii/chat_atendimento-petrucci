@@ -1,7 +1,7 @@
 import { X, Reply } from "lucide-react";
-import type { InboxMessage } from "@/lib/inbox-queries";
+import type { MensagemRenderizavel } from "@/lib/mensagem-shape";
 
-export function previewLabel(m: InboxMessage | null | undefined): string {
+export function previewLabel(m: MensagemRenderizavel | null | undefined): string {
   if (!m) return "Mensagem";
   switch (m.tipo) {
     case "texto":
@@ -28,7 +28,7 @@ export function previewLabel(m: InboxMessage | null | undefined): string {
 }
 
 interface Props {
-  quoted: InboxMessage | null;
+  quoted: MensagemRenderizavel | null;
   /** Nome resolvido do remetente original (Você / nome do atendente / nome do cliente). */
   authorLabel?: string | null;
   variant?: "inBubble" | "compact";

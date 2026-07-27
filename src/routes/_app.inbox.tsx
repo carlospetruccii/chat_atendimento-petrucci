@@ -62,10 +62,14 @@ import {
   RichMessageComposer,
   type RichMessageComposerHandle,
 } from "@/components/inbox/RichMessageComposer";
+import { InboxTabs, type InboxAba } from "@/components/inbox/InboxTabs";
+import { GruposPane } from "@/components/inbox-grupos/GruposPane";
 
 interface InboxSearch {
   conversation?: string;
   mode?: "supervision";
+  /** Aba ativa: atendimentos individuais ("chat") ou grupos ("grupos"). */
+  aba?: InboxAba;
 }
 
 export const Route = createFileRoute("/_app/inbox")({
@@ -73,6 +77,7 @@ export const Route = createFileRoute("/_app/inbox")({
   validateSearch: (search: Record<string, unknown>): InboxSearch => ({
     conversation: typeof search.conversation === "string" ? search.conversation : undefined,
     mode: search.mode === "supervision" ? "supervision" : undefined,
+    aba: search.aba === "grupos" ? "grupos" : undefined,
   }),
   component: InboxPage,
 });
@@ -113,7 +118,8 @@ function InboxPage() {
   const queryClient = useQueryClient();
   const { user } = useCurrentUser();
 
-  const canViewAll = !!user && (user.isSuperadmin || user.permissions.includes("view_all_departments"));
+  const canViewAll =
+    !!user && (user.isSuperadmin || user.permissions.includes("view_all_departments"));
 
   const [selected, setSelected] = useState<string | null>(search.conversation ?? null);
   const [hasDraft, setHasDraft] = useState(false);
@@ -130,6 +136,17 @@ function InboxPage() {
   const [filter, setFilter] = useState("");
   const [replyTo, setReplyTo] = useState<InboxMessage | null>(null);
   const [iniciarOpen, setIniciarOpen] = useState(false);
+  const [aba, setAba] = useState<InboxAba>(search.aba ?? "chat");
+
+  // A aba fica na URL: recarregar ou compartilhar o link mantém onde você estava.
+  const navigate = Route.useNavigate();
+  const trocarAba = (nova: InboxAba) => {
+    setAba(nova);
+    void navigate({
+      search: (prev) => ({ ...prev, aba: nova === "grupos" ? "grupos" : undefined }),
+      replace: true,
+    });
+  };
 
   // Limpa "responder" ao trocar de conversa.
   useEffect(() => {
@@ -148,6 +165,11 @@ function InboxPage() {
     setTimelineOpen(false);
   }, [selected]);
 
+  // Na aba Grupos nada do chat individual é renderizado, então as queries dele
+  // ficam pausadas (e o canal Realtime do individual não é assinado): evita
+  // manter dois canais e recarregar lista/mensagens que ninguém está vendo.
+  const abaChatAtiva = aba === "chat";
+
   const conversationsQuery = useQuery({
     queryKey: ["inbox", "conversations", user?.id, canViewAll],
     queryFn: () =>
@@ -156,10 +178,37 @@ function InboxPage() {
         isSuperadmin: user!.isSuperadmin,
         canViewAll,
       }),
-    enabled: !!user,
+    enabled: !!user && abaChatAtiva,
   });
 
   const conversations = conversationsQuery.data ?? [];
+
+  // Contadores das duas abas, para o badge do alternador. Ficam numa query só
+  // (chave separada da do menu lateral, que soma os dois).
+  const abasUnreadQuery = useQuery({
+    queryKey: ["inbox", "abas-unread"],
+    queryFn: async () => {
+      const [chat, grupos] = await Promise.all([
+        supabase.rpc("get_my_inbox_unread_total"),
+        supabase.rpc("get_my_grupos_unread_total"),
+      ]);
+      if (chat.error) throw chat.error;
+      if (grupos.error) throw grupos.error;
+      return { chat: chat.data ?? 0, grupos: grupos.data ?? 0 };
+    },
+    enabled: !!user,
+    refetchInterval: 30_000,
+  });
+  const abasUnread = abasUnreadQuery.data ?? { chat: 0, grupos: 0 };
+
+  const tabsEl = (
+    <InboxTabs
+      aba={aba}
+      chatUnread={abasUnread.chat}
+      gruposUnread={abasUnread.grupos}
+      onChange={trocarAba}
+    />
+  );
 
   // Debounce do filtro para busca no banco
   const [debouncedFilter, setDebouncedFilter] = useState("");
@@ -171,7 +220,7 @@ function InboxPage() {
   const messageSearchQuery = useQuery({
     queryKey: ["inbox", "search-msg", debouncedFilter],
     queryFn: () => searchClientIdsByMessageContent(debouncedFilter),
-    enabled: debouncedFilter.length >= 2,
+    enabled: abaChatAtiva && debouncedFilter.length >= 2,
     staleTime: 30_000,
   });
   const matchedClientIds = messageSearchQuery.data ?? new Set<string>();
@@ -188,8 +237,7 @@ function InboxPage() {
     : conversations;
 
   const current: InboxConversation | undefined =
-    filtered.find((c) => c.id === selected) ??
-    conversations.find((c) => c.id === selected);
+    filtered.find((c) => c.id === selected) ?? conversations.find((c) => c.id === selected);
 
   // Modo supervisão: Administrador abriu uma conversa que NÃO está atribuída a ela
   const supervisionMode = !!current && canViewAll && current.assignedTo !== user?.id;
@@ -218,6 +266,7 @@ function InboxPage() {
     void marcarAtendimentoLido(current.id).then(() => {
       queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
       queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
+      queryClient.invalidateQueries({ queryKey: ["inbox", "abas-unread"] });
     });
   }, [current?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -238,7 +287,7 @@ function InboxPage() {
         currentDepartmentId: current!.departmentId,
         canViewAll,
       }),
-    enabled: !!current,
+    enabled: abaChatAtiva && !!current,
   });
 
   const atendimentoMetas: AtendimentoMeta[] = useMemo(() => {
@@ -256,9 +305,7 @@ function InboxPage() {
   // IDs em ordem cronológica ASC (mais antigo primeiro).
   const atendimentoIds = useMemo(
     () =>
-      [...atendimentoMetas]
-        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
-        .map((a) => a.id),
+      [...atendimentoMetas].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)).map((a) => a.id),
     [atendimentoMetas],
   );
 
@@ -286,7 +333,7 @@ function InboxPage() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !abaChatAtiva) return;
     const channel = supabase
       .channel("inbox-realtime")
       .on(
@@ -296,6 +343,7 @@ function InboxPage() {
           const row = payload.new as { id?: string; atendimento_id?: string } | null;
           queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
           queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
+          queryClient.invalidateQueries({ queryKey: ["inbox", "abas-unread"] });
           if (row?.id && row.atendimento_id) {
             chatCallbacksRef.current.onRealtimeInsert(row.id, row.atendimento_id);
           }
@@ -308,6 +356,7 @@ function InboxPage() {
           const row = payload.new as { id?: string; atendimento_id?: string } | null;
           queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
           queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
+          queryClient.invalidateQueries({ queryKey: ["inbox", "abas-unread"] });
           if (row?.id && row.atendimento_id) {
             chatCallbacksRef.current.onRealtimeUpdate(row.id, row.atendimento_id);
           }
@@ -317,12 +366,13 @@ function InboxPage() {
         queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
         queryClient.invalidateQueries({ queryKey: ["inbox", "client-atendimentos"] });
         queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
+        queryClient.invalidateQueries({ queryKey: ["inbox", "abas-unread"] });
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, queryClient]);
+  }, [user, queryClient, abaChatAtiva]);
 
   // A sessão é garantida pelo layout pai (_app.tsx); aqui ainda pode faltar o
   // PERFIL (users) por um instante — seguramos a tela até ele chegar, para que
@@ -336,7 +386,6 @@ function InboxPage() {
       </div>
     );
   }
-
 
   const handleSend = async () => {
     const content = composerRef.current?.getMarkdownText().trim() ?? "";
@@ -469,7 +518,6 @@ function InboxPage() {
   };
 
   const assignToMe = async () => {
-
     if (!current) return;
     const { error } = await supabase
       .from("atendimentos")
@@ -487,6 +535,18 @@ function InboxPage() {
     queryClient.invalidateQueries({ queryKey: ["inbox"] });
   };
 
+  // Aba Grupos: mundo separado (lista + conversa próprias). Nada do fluxo de
+  // atendimento — bot, triagem, repasse, encerramento — existe lá.
+  if (aba === "grupos") {
+    return (
+      <div className="h-full">
+        <div className="flex h-full">
+          <GruposPane meuUserId={user.id} formatTime={formatTime} tabs={tabsEl} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full">
       <div className="flex h-full">
@@ -499,6 +559,7 @@ function InboxPage() {
             >
               <UserPlus className="h-4 w-4" strokeWidth={1.8} /> Iniciar atendimento
             </button>
+            {tabsEl}
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -761,7 +822,7 @@ function InboxPage() {
                     const groupGap = idx === 0 ? "" : sameSideAsPrev ? "mt-1" : "mt-3";
 
                     const quoted = m.replyToMessageId
-                      ? messagesById.get(m.replyToMessageId) ?? null
+                      ? (messagesById.get(m.replyToMessageId) ?? null)
                       : null;
 
                     return (
@@ -776,7 +837,9 @@ function InboxPage() {
                             {m.sentByNome}
                           </span>
                         )}
-                        <div className={`flex items-center gap-1 ${isMe ? "flex-row-reverse" : "flex-row"} max-w-[85%]`}>
+                        <div
+                          className={`flex items-center gap-1 ${isMe ? "flex-row-reverse" : "flex-row"} max-w-[85%]`}
+                        >
                           <div className={bubbleClass}>
                             {m.replyToMessageId && (
                               <QuotedMessagePreview
@@ -794,7 +857,8 @@ function InboxPage() {
                               />
                             )}
                             {m.tipo === "texto" ? (
-                              (m.mediaMetadata as { kind?: string } | null)?.kind === "lista_opcoes" ? (
+                              (m.mediaMetadata as { kind?: string } | null)?.kind ===
+                              "lista_opcoes" ? (
                                 <ListaOpcoesPreview message={m} />
                               ) : (
                                 <p className="whitespace-pre-wrap break-words">
@@ -804,11 +868,11 @@ function InboxPage() {
                             ) : (
                               <MessageMedia message={m} />
                             )}
-                          {isExterno && (
-                            <p className={`text-[10px] italic ${metaColor} mt-1`}>
-                              Enviado fora do sistema
-                            </p>
-                          )}
+                            {isExterno && (
+                              <p className={`text-[10px] italic ${metaColor} mt-1`}>
+                                Enviado fora do sistema
+                              </p>
+                            )}
                             <span className={`block text-[10px] ${metaColor} mt-1 text-right`}>
                               {formatTime(m.createdAt)}
                               {m.senderType === "bot" && " · bot"}
@@ -841,7 +905,8 @@ function InboxPage() {
                     }}
                     className="badge-counter absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full px-3 py-1.5 text-xs font-medium shadow-md"
                   >
-                    ↓ {chat.newBelow} nova{chat.newBelow > 1 ? "s" : ""} mensage{chat.newBelow > 1 ? "ns" : "m"}
+                    ↓ {chat.newBelow} nova{chat.newBelow > 1 ? "s" : ""} mensage
+                    {chat.newBelow > 1 ? "ns" : "m"}
                   </button>
                 )}
               </div>
@@ -851,7 +916,8 @@ function InboxPage() {
                 <div className="flex items-center gap-2 border-t border-[var(--warning-border)] bg-[var(--warning-bg)] px-6 py-3 text-sm text-[var(--warning-foreground)]">
                   <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   <span>
-                    Modo supervisão · Visualização. {current.status === "em_triagem"
+                    Modo supervisão · Visualização.{" "}
+                    {current.status === "em_triagem"
                       ? "Atendimento ainda em triagem — aguarde classificação ou atribua manualmente em Pendentes."
                       : "Para enviar mensagens, atribua o atendimento a você."}
                   </span>
@@ -881,12 +947,12 @@ function InboxPage() {
                       onSend={handleSendRecorded}
                     />
                   ) : (
-                      <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
-                        <AttachMenu
-                          disabled={sending}
-                          onPick={handleAttachPick}
-                          onError={(msg) => toast.error(msg)}
-                        />
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+                      <AttachMenu
+                        disabled={sending}
+                        onPick={handleAttachPick}
+                        onError={(msg) => toast.error(msg)}
+                      />
                       <RichMessageComposer
                         ref={composerRef}
                         placeholder="Digite uma mensagem..."
@@ -1015,8 +1081,7 @@ function RepassarModal({
         id: u.id,
         nome: u.nome,
         department_id: u.department_id,
-        departmentNome:
-          (u.departments as { nome: string } | null)?.nome ?? "Sem departamento",
+        departmentNome: (u.departments as { nome: string } | null)?.nome ?? "Sem departamento",
       }));
     },
     enabled: open,
@@ -1056,7 +1121,9 @@ function RepassarModal({
         toast.error("Colaborador destino inválido.");
       } else {
         const msg = (error as { message?: string }).message;
-        toast.error(msg ? `Não foi possível repassar: ${msg}` : "Não foi possível repassar o atendimento.");
+        toast.error(
+          msg ? `Não foi possível repassar: ${msg}` : "Não foi possível repassar o atendimento.",
+        );
       }
       return;
     }
@@ -1206,8 +1273,8 @@ function EncerrarModal({
         <DialogHeader>
           <DialogTitle>Encerrar atendimento</DialogTitle>
           <DialogDescription>
-            Tem certeza que deseja encerrar este atendimento? Novas mensagens do cliente
-            iniciarão um novo atendimento.
+            Tem certeza que deseja encerrar este atendimento? Novas mensagens do cliente iniciarão
+            um novo atendimento.
           </DialogDescription>
         </DialogHeader>
 

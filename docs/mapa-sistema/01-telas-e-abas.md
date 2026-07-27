@@ -11,7 +11,7 @@ ela mostra e o que ela grava quando você salva.
 ## Índice
 - [Barra lateral e barra de topo](#barra-lateral-e-barra-de-topo)
 - [Login e página inicial](#login-e-página-inicial)
-- [Inbox (caixa de entrada)](#inbox-caixa-de-entrada) — a tela principal
+- [Inbox (caixa de entrada)](#inbox-caixa-de-entrada) — a tela principal (abas Chat e [Grupos](#aba-grupos))
 - [Pendentes](#pendentes)
 - [Supervisão](#supervisão)
 - [Dashboard](#dashboard)
@@ -67,7 +67,10 @@ Ou seja, qualquer pessoa que abra o sistema já entra direto. Isso é o "modo ab
 `src/hooks/useChatHistory.ts`, `src/hooks/useAudioRecorder.ts`, `src/hooks/useSignedMediaUrl.ts`,
 `src/components/inbox/*`, `src/components/inbox-media/*`
 
-É a **tela principal** — onde o atendimento acontece. Tem dois painéis, como o WhatsApp Web.
+É a **tela principal** — onde o atendimento acontece. Tem dois painéis, como o WhatsApp Web,
+e **duas abas** logo abaixo do botão do topo: **Chat** e **Grupos** (ver
+[Aba Grupos](#aba-grupos) adiante). Cada aba tem badge com suas próprias não lidas, e a
+aba escolhida fica na URL (`?aba=grupos`), então recarregar mantém onde você estava.
 
 ### Painel esquerdo — lista de conversas
 - Botão **"Iniciar atendimento"** (topo) — abre o diálogo para começar uma conversa do zero.
@@ -138,6 +141,45 @@ ainda está baixando a mídia, aparece um "carregando"; se o download falhou, ap
 ### Atualização em tempo real
 A tela "escuta" o banco: quando chega uma mensagem nova ou muda um atendimento, a lista
 e o chat se atualizam sozinhos, sem recarregar a página.
+
+### Aba Grupos
+
+**Arquivos:** `src/components/inbox-grupos/*`, `src/components/inbox/InboxTabs.tsx`,
+`src/lib/grupos-queries.ts`, `src/lib/grupos-history.ts`, `src/hooks/useGrupoHistory.ts`
+
+Conversas de **grupo de WhatsApp**. A ideia é simples de propósito: o grupo só **recebe e
+envia mensagem**. Não existe bot, triagem, departamento, atribuição, repasse, encerramento
+nem entrada em Pendentes. Grupo é um canal permanente, não um ticket.
+
+**Quem vê:** todos. Grupo não é atribuído a ninguém — qualquer colaborador da empresa vê a
+lista inteira e pode escrever.
+
+**Painel esquerdo:**
+- Botão **"Sincronizar grupos"** — puxa a lista de grupos direto do WhatsApp
+  (`GET /group/list` da uazapi). É o que traz também os grupos **ainda calados**, que
+  nunca mandaram mensagem, para você poder começar a conversa. Grupo que sai da lista
+  (saímos ou fomos removidos) é **desativado**, nunca apagado: o histórico fica.
+- Campo **"Buscar grupos…"** — filtra por nome, tópico ou conteúdo das mensagens.
+- Cada linha mostra foto (ou iniciais), nome, prévia com quem falou (`Maria: …` /
+  `Você: …`), horário, badge de não lidas, nº de participantes e, quando for o caso, o
+  selo **"só admin envia"**.
+
+**Painel direito:** o chat, com **todas** as funções do individual — texto com formatação
+do WhatsApp (negrito/itálico/riscado/mono), áudio (nota de voz), imagem, vídeo, documento
+com legenda, colar imagem da área de transferência, responder citando, rolagem infinita
+para cima, separadores de data, tempo real, badge "↓ N novas" e "tique azul" ao abrir.
+
+O que é **diferente** do individual, porque grupo é grupo:
+- Cada mensagem recebida mostra **quem falou**, com **cor fixa por participante** (estilo
+  WhatsApp). O nome segue a mesma precedência do individual: contato do Google > nome
+  público do WhatsApp > número.
+- Mensagens seguidas da mesma pessoa se agrupam (só a primeira mostra o nome).
+- Mensagem que você mandou pelo **celular da empresa** aparece marcada como
+  "Enviado fora do sistema".
+- Se o grupo estiver em modo **"somente administradores enviam"** e nosso número não for
+  admin, a barra de escrever é substituída por um aviso — o envio falharia no WhatsApp
+  de qualquer forma.
+- Envio que falha fica visível na bolha como **"Não enviada"**.
 
 ---
 

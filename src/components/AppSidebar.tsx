@@ -96,12 +96,18 @@ export function AppSidebar() {
   });
   const pendentesCount = pendentesCountQ.data ?? 0;
 
+  // O badge do Inbox soma as duas abas (Chat + Grupos), que é o que o usuário vê
+  // ao entrar na tela. São dois RPCs porque grupo mora em tabelas separadas.
   const inboxUnreadQ = useQuery({
     queryKey: ["inbox-unread-total"],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_my_inbox_unread_total");
-      if (error) throw error;
-      return data ?? 0;
+      const [individual, grupos] = await Promise.all([
+        supabase.rpc("get_my_inbox_unread_total"),
+        supabase.rpc("get_my_grupos_unread_total"),
+      ]);
+      if (individual.error) throw individual.error;
+      if (grupos.error) throw grupos.error;
+      return (individual.data ?? 0) + (grupos.data ?? 0);
     },
     enabled: !!user,
     refetchInterval: 30_000,

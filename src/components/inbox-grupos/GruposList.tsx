@@ -1,0 +1,132 @@
+import { Loader2, RefreshCw, Users } from "lucide-react";
+import type { Grupo } from "@/lib/grupos-queries";
+
+interface Props {
+  grupos: Grupo[];
+  selectedId: string | null;
+  isLoading: boolean;
+  isSyncing: boolean;
+  temFiltro: boolean;
+  onSelect: (id: string) => void;
+  onSync: () => void;
+  formatTime: (iso: string | null) => string;
+}
+
+/** Iniciais do nome do grupo para o avatar (fallback quando não há foto). */
+function iniciais(nome: string): string {
+  return nome
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0])
+    .join("")
+    .toUpperCase();
+}
+
+export function GruposList({
+  grupos,
+  selectedId,
+  isLoading,
+  isSyncing,
+  temFiltro,
+  onSelect,
+  onSync,
+  formatTime,
+}: Props) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando grupos...
+      </div>
+    );
+  }
+
+  if (grupos.length === 0) {
+    return (
+      <div className="px-6 py-12 text-center">
+        <Users className="mx-auto h-10 w-10 text-muted-foreground" strokeWidth={1.2} />
+        <p className="mt-3 text-sm text-muted-foreground">
+          {temFiltro
+            ? "Nenhum grupo encontrado com esse termo."
+            : "Nenhum grupo ainda. Sincronize para trazer os grupos do WhatsApp."}
+        </p>
+        {!temFiltro && (
+          <button
+            onClick={onSync}
+            disabled={isSyncing}
+            className="mt-4 inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+          >
+            {isSyncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" strokeWidth={1.8} />
+            )}
+            Sincronizar grupos
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <ul>
+      {grupos.map((g) => (
+        <li key={g.id}>
+          <button
+            onClick={() => onSelect(g.id)}
+            className={`relative w-full text-left px-4 py-3 border-b border-border hover:bg-muted transition-colors ${
+              selectedId === g.id
+                ? "bg-[color-mix(in_oklab,var(--wa-green)_12%,transparent)] before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary"
+                : ""
+            }`}
+          >
+            <div className="flex gap-3">
+              {g.fotoUrl ? (
+                <img
+                  src={g.fotoUrl}
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 shrink-0 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-medium text-primary">
+                  {iniciais(g.nome)}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-sm font-medium text-foreground truncate">{g.nome}</span>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="text-xs text-muted-foreground">
+                      {formatTime(g.lastMessageAt)}
+                    </span>
+                    {g.unread > 0 && (
+                      <span className="badge-counter flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none">
+                        {g.unread}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground truncate">
+                  {g.lastMessagePreview || "—"}
+                </p>
+                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                    <Users className="h-3 w-3" strokeWidth={1.8} />
+                    {g.participantesTotal ?? "—"}
+                  </span>
+                  {g.somenteAdminEnvia && !g.souAdmin && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                      só admin envia
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}

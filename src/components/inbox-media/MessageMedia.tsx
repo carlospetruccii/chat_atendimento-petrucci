@@ -1,4 +1,4 @@
-import type { InboxMessage } from "@/lib/inbox-queries";
+import type { MensagemRenderizavel } from "@/lib/mensagem-shape";
 import { MediaLoading } from "./MediaLoading";
 import { MediaError } from "./MediaError";
 import { MediaImage } from "./MediaImage";
@@ -21,7 +21,8 @@ function isHttpUrl(value: string | null): value is string {
   return typeof value === "string" && /^https?:\/\//i.test(value);
 }
 
-export function MessageMedia({ message }: { message: InboxMessage }) {
+// Serve chat individual e grupo: só precisa do conteúdo, não do vínculo.
+export function MessageMedia({ message }: { message: MensagemRenderizavel }) {
   const meta = (message.mediaMetadata ?? {}) as MediaMeta;
 
   // Tipos sem download (texto não chega aqui, mas estes também)

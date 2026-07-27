@@ -807,6 +807,220 @@ export type Database = {
           },
         ]
       }
+      grupo_leituras: {
+        Row: {
+          company_id: string
+          grupo_id: string
+          last_read_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          grupo_id: string
+          last_read_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          grupo_id?: string
+          last_read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grupo_leituras_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grupo_leituras_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "grupos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grupo_leituras_grupo_same_company_fk"
+            columns: ["grupo_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "grupos"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "grupo_leituras_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grupo_mensagens: {
+        Row: {
+          company_id: string
+          content: string | null
+          created_at: string
+          direction: Database["public"]["Enums"]["direction_mensagem"]
+          grupo_id: string
+          id: string
+          media_metadata: Json | null
+          media_url: string | null
+          participante_nome: string | null
+          participante_numero: string | null
+          reply_to_message_id: string | null
+          sender_type: Database["public"]["Enums"]["grupo_sender_type"]
+          sent_by_user_id: string | null
+          status_envio: Database["public"]["Enums"]["status_envio_mensagem"]
+          status_whatsapp:
+            | Database["public"]["Enums"]["status_whatsapp_mensagem"]
+            | null
+          tipo: Database["public"]["Enums"]["tipo_mensagem"]
+          uazapi_message_id: string | null
+        }
+        Insert: {
+          company_id?: string
+          content?: string | null
+          created_at?: string
+          direction: Database["public"]["Enums"]["direction_mensagem"]
+          grupo_id: string
+          id?: string
+          media_metadata?: Json | null
+          media_url?: string | null
+          participante_nome?: string | null
+          participante_numero?: string | null
+          reply_to_message_id?: string | null
+          sender_type: Database["public"]["Enums"]["grupo_sender_type"]
+          sent_by_user_id?: string | null
+          status_envio?: Database["public"]["Enums"]["status_envio_mensagem"]
+          status_whatsapp?:
+            | Database["public"]["Enums"]["status_whatsapp_mensagem"]
+            | null
+          tipo: Database["public"]["Enums"]["tipo_mensagem"]
+          uazapi_message_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          content?: string | null
+          created_at?: string
+          direction?: Database["public"]["Enums"]["direction_mensagem"]
+          grupo_id?: string
+          id?: string
+          media_metadata?: Json | null
+          media_url?: string | null
+          participante_nome?: string | null
+          participante_numero?: string | null
+          reply_to_message_id?: string | null
+          sender_type?: Database["public"]["Enums"]["grupo_sender_type"]
+          sent_by_user_id?: string | null
+          status_envio?: Database["public"]["Enums"]["status_envio_mensagem"]
+          status_whatsapp?:
+            | Database["public"]["Enums"]["status_whatsapp_mensagem"]
+            | null
+          tipo?: Database["public"]["Enums"]["tipo_mensagem"]
+          uazapi_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grupo_mensagens_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grupo_mensagens_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "grupos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grupo_mensagens_grupo_same_company_fk"
+            columns: ["grupo_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "grupos"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "grupo_mensagens_reply_to_message_id_fkey"
+            columns: ["reply_to_message_id"]
+            isOneToOne: false
+            referencedRelation: "grupo_mensagens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grupo_mensagens_sent_by_user_id_fkey"
+            columns: ["sent_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grupos: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          created_at: string
+          foto_url: string | null
+          id: string
+          last_message_at: string | null
+          last_outbound_message_at: string | null
+          nome: string | null
+          participantes_total: number | null
+          somente_admin_envia: boolean
+          sou_admin: boolean
+          synced_at: string | null
+          topico: string | null
+          updated_at: string
+          wa_jid: string
+        }
+        Insert: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          foto_url?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_outbound_message_at?: string | null
+          nome?: string | null
+          participantes_total?: number | null
+          somente_admin_envia?: boolean
+          sou_admin?: boolean
+          synced_at?: string | null
+          topico?: string | null
+          updated_at?: string
+          wa_jid: string
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          created_at?: string
+          foto_url?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_outbound_message_at?: string | null
+          nome?: string | null
+          participantes_total?: number | null
+          somente_admin_envia?: boolean
+          sou_admin?: boolean
+          synced_at?: string | null
+          topico?: string | null
+          updated_at?: string
+          wa_jid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grupos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       holidays: {
         Row: {
           company_id: string
@@ -1650,6 +1864,14 @@ export type Database = {
           unread: number
         }[]
       }
+      get_grupos_unread_counts: {
+        Args: { p_grupo_ids: string[] }
+        Returns: {
+          grupo_id: string
+          unread: number
+        }[]
+      }
+      get_my_grupos_unread_total: { Args: never; Returns: number }
       get_my_inbox_unread_total: { Args: never; Returns: number }
       has_permission: { Args: { flag: string }; Returns: boolean }
       is_member_of: { Args: { p_company_id: string }; Returns: boolean }
@@ -1658,6 +1880,7 @@ export type Database = {
         Args: { p_atendimento_id: string }
         Returns: undefined
       }
+      marcar_grupo_lido: { Args: { p_grupo_id: string }; Returns: undefined }
       minutos_uteis_decorridos: {
         Args: { p_department_id: string; p_fim: string; p_inicio: string }
         Returns: number
@@ -1692,6 +1915,7 @@ export type Database = {
         | "triagem_expirada_dia"
       company_role: "dono" | "administrador" | "colaborador"
       direction_mensagem: "inbound" | "outbound"
+      grupo_sender_type: "participante" | "atendente" | "sistema" | "externo"
       sender_type: "cliente" | "atendente" | "bot" | "sistema" | "externo"
       status_atendimento:
         | "em_triagem"
@@ -1872,6 +2096,7 @@ export const Constants = {
       ],
       company_role: ["dono", "administrador", "colaborador"],
       direction_mensagem: ["inbound", "outbound"],
+      grupo_sender_type: ["participante", "atendente", "sistema", "externo"],
       sender_type: ["cliente", "atendente", "bot", "sistema", "externo"],
       status_atendimento: [
         "em_triagem",

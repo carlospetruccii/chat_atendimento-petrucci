@@ -39,6 +39,42 @@ o mapa completo em linguagem simples.
 | **mensagens** | **Cada mensagem.** Direção (`inbound`/`outbound`), quem enviou (`cliente`/`atendente`/`bot`/`sistema`/`externo`), tipo (texto, imagem, áudio, vídeo, documento, sticker, localização, contato), o texto, o link da mídia, resposta citada e o status de envio/entrega. Guarda o `zapi_message_id` (o ID no WhatsApp). |
 | **timeline_events** | O **histórico** append‑only de cada atendimento (criado, triado, atribuído, repassado, escalado, encerrado, reaberto). Não pode ser editado nem apagado. Tem `notificacao_repasse_enviada_at`: carimbo de quando o aviso de repasse foi disparado ao WhatsApp do colaborador — garante **1 aviso por evento** (trava anti‑spam da função `notificar-repasse`). |
 
+### Grupos de WhatsApp (estrutura separada)
+| Tabela | Para que serve |
+|--------|----------------|
+| **grupos** | Um **grupo de WhatsApp**. Identidade é o `wa_jid` (`120363...@g.us`, único por empresa). Guarda nome, tópico, foto, nº de participantes, se **nosso número é admin** (`sou_admin`), se o grupo é "somente admins enviam" (`somente_admin_envia`), `ativo` (false = saímos/fomos removidos — nunca apagamos) e `synced_at`. |
+| **grupo_mensagens** | Cada mensagem do grupo. Mesmo formato de `mensagens`, **sem** atendimento, cliente nem departamento; em troca tem `participante_numero`/`participante_nome` (quem falou dentro do grupo). `sender_type` é `participante` (inbound), `atendente` (nós pelo sistema), `externo` (nós pelo celular da empresa) ou `sistema`. |
+| **grupo_leituras** | Estado de leitura por pessoa (`grupo_id + user_id + last_read_at`) — é o que alimenta o badge de não lidas. |
+
+> **Por que grupo não mora em `atendimentos`/`mensagens`.** Dois motivos, e o segundo
+> é o importante:
+> 1. `atendimentos.client_id` e `mensagens.client_id` são `NOT NULL` apontando para
+>    `clients`, que exige número em **E.164** — o JID de grupo não passa nesse CHECK.
+> 2. Grupo **não tem bot, triagem, departamento, atribuição nem encerramento**. Se as
+>    linhas de grupo morassem em `atendimentos`, cada gatilho, cron e view do fluxo de
+>    ticket (promoção, liberação ao desligar colaborador, encerramento automático,
+>    alerta de parado, reativação de bot, `vw_pendentes`, `triagem-bot`) precisaria de
+>    um filtro "só se não for grupo" — e **um filtro esquecido significa o bot mandando
+>    mensagem num grupo de cliente**. Com tabelas separadas isso é impossível por
+>    construção: a automação simplesmente não alcança essas tabelas.
+>
+> O que **é** reaproveitado: os mesmos tipos de mensagem, o mesmo cofre de mídia
+> (`mensagens-midia`, na subpasta `grupos/`) e os mesmos componentes de tela.
+
+> **Onde está a autorização de grupo (importante).** As policies de RLS das três
+> tabelas usam `is_member_of(company_id)` — que **hoje é no‑op**, porque a trava
+> `auth_enforcement_enabled` está desligada (ver
+> [Multi‑empresa](04-multiempresa-e-autenticacao.md)). Enquanto isso, quem de fato
+> controla o acesso a grupo são as **Edge Functions**: `grupo-enviar`,
+> `sincronizar-grupos` e o ramo de grupo do `mark-chat-read` exigem, via
+> `_shared/empresa.ts`, vínculo **ativo** em `company_members` **e**
+> `users.ativo = true`. Não há fallback para "a empresa mais antiga" nesse
+> caminho — se houvesse, qualquer conta autenticada do projeto poderia enviar
+> mensagem pelo número da empresa. Escrita nas três tabelas é só do backend
+> (service_role); o frontend não tem policy de INSERT/UPDATE/DELETE.
+> Quando `auth_enforcement_enabled` for ligado, a RLS passa a somar com isso —
+> nenhuma dessas checagens deve ser removida em troca.
+
 ### Configuração e operação
 | Tabela | Para que serve |
 |--------|----------------|
@@ -108,7 +144,8 @@ Isto é o que decide o que é "multi‑empresa":
 `clients`, `atendimentos`, `mensagens`, `timeline_events`,
 `system_config`, `templates_mensagem`, `business_hours`, `holidays`,
 `notificacoes_admin`, `config_audit_log`, `cleanup_log`,
-`google_integration`, `contatos`, `sessoes_triagem`.
+`google_integration`, `contatos`, `sessoes_triagem`,
+`grupos`, `grupo_mensagens`, `grupo_leituras`.
 
 **NÃO têm `company_id`** (são globais):
 - **users** e **user_permissions** — o usuário é global; a ligação com a empresa é feita
@@ -159,6 +196,12 @@ São as "funções de banco" que as telas acionam diretamente:
 - **`encerrar_atendimento`** — encerrar.
 - **`cron_reativar_bot`** — religa o bot na data agendada (usada por uma tarefa automática).
 - **`payload_notificacao_admin`** — monta os dados do aviso para a supervisão.
+- **`get_grupos_unread_counts`** / **`get_my_grupos_unread_total`** / **`marcar_grupo_lido`** —
+  as três equivalentes de grupo para o badge de não lidas. Mesma regra do individual:
+  conta as mensagens que chegaram depois do maior entre (a) a sua última leitura e
+  (b) a última mensagem enviada por alguém do time (uma resposta zera o contador para
+  todos). `marcar_grupo_lido` fixa `user_id = auth.uid()` — ninguém marca leitura em
+  nome de outra pessoa.
 - **`admin_list_user_whatsapps`** — devolve `id`+`whatsapp` dos colaboradores para a tela
   de Colaboradores. Só retorna o número para **admin** (superadmin/`manage_users`) — que vê
   todos — e para a **própria linha** do chamador. É a porta de leitura do telefone pessoal,

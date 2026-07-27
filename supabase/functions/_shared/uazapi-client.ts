@@ -25,6 +25,14 @@
 // chamadores mudem apenas o caminho do import. O nome de coluna zapi_message_id
 // no banco continua (cosmético) e passa a guardar o `id` da uazapi.
 
+import {
+  extrairGruposDaResposta,
+  type GrupoUazapi,
+  mapearGrupoUazapi,
+} from "./uazapi-grupos.ts";
+
+export type { GrupoUazapi };
+
 const MAX_TENTATIVAS = 3;
 // Timeout por requisição — evita que uma conexão pendurada na uazapi trave a
 // Edge Function (ex.: o loop do cron de alertas) indefinidamente.
@@ -64,6 +72,19 @@ export { UazapiError as ZapiError };
 // Normaliza número para dígitos puros (uazapi rejeita '+', espaços, traços).
 function soDigitos(telefone: string): string {
   return telefone.replace(/\D/g, "");
+}
+
+/** Um destino é grupo quando termina em '@g.us' (JID de grupo do WhatsApp). */
+export function ehJidGrupo(destino: string): boolean {
+  return /@g\.us$/i.test(destino.trim());
+}
+
+// Destino de envio: número de pessoa vira dígitos puros; JID de grupo passa
+// INTACTO. Rodar soDigitos num JID comeria o sufixo '@g.us' e a mensagem iria
+// para um número inexistente em vez do grupo.
+function normalizarDestino(destino: string): string {
+  const d = destino.trim();
+  return ehJidGrupo(d) ? d : soDigitos(d);
 }
 
 type MetodoHttp = "GET" | "POST" | "DELETE";
@@ -137,7 +158,8 @@ async function chamar(
 // ————————————————————————————————————————————————————————————————
 
 export interface EnviarTextoParams {
-  // Número em dígitos (aceita com/sem '+', normaliza internamente).
+  // Número em dígitos (aceita com/sem '+', normaliza internamente) OU JID de
+  // grupo ('...@g.us'), que é enviado sem normalização.
   telefone: string;
   mensagem: string;
   // `id` (owner:messageid) da mensagem citada para responder.
@@ -146,7 +168,7 @@ export interface EnviarTextoParams {
 
 export async function enviarTexto(params: EnviarTextoParams): Promise<unknown> {
   const payload: Record<string, unknown> = {
-    number: soDigitos(params.telefone),
+    number: normalizarDestino(params.telefone),
     text: params.mensagem,
   };
   if (params.quotedZapiMessageId) payload.replyid = params.quotedZapiMessageId;
@@ -178,7 +200,7 @@ export interface EnviarMidiaParams {
 
 export async function enviarMidia(params: EnviarMidiaParams): Promise<unknown> {
   const payload: Record<string, unknown> = {
-    number: soDigitos(params.telefone),
+    number: normalizarDestino(params.telefone),
     type: MAPA_TIPO_UAZAPI[params.tipo],
     file: params.url,
   };
@@ -372,9 +394,36 @@ export async function verWebhook(): Promise<unknown> {
 // Endpoint de chat aceita número em dígitos puros (mesmo padrão de /chat/details).
 export async function marcarChatComoLido(telefone: string): Promise<unknown> {
   return await chamar("POST", "/chat/read", {
-    number: soDigitos(telefone),
+    number: normalizarDestino(telefone),
     read: true,
   });
+}
+
+// ————————————————————————————————————————————————————————————————
+// GRUPOS
+// ————————————————————————————————————————————————————————————————
+
+/**
+ * Lista os grupos da instância (GET /group/list). Um grupo é um chat comum cujo
+ * JID termina em '@g.us' — o envio usa os MESMOS /send/text e /send/media.
+ * Só de leitura: não criamos, editamos nem saímos de grupo pelo sistema.
+ */
+export async function listarGrupos(): Promise<GrupoUazapi[]> {
+  const resp = await chamar("GET", "/group/list");
+  return extrairGruposDaResposta(resp);
+}
+
+/**
+ * Detalhes de um grupo (POST /group/info) — nome, tópico e participantes
+ * atualizados. Retorna null se o grupo não existir ou não for legível.
+ */
+export async function infoGrupo(jid: string): Promise<GrupoUazapi | null> {
+  const resp = await chamar("POST", "/group/info", { groupjid: jid });
+  // A rota pode devolver o Group cru ou dentro de um envelope.
+  const direto = mapearGrupoUazapi(resp);
+  if (direto) return direto;
+  const env = (resp ?? {}) as Record<string, unknown>;
+  return mapearGrupoUazapi(env.group ?? env.Group ?? env.data ?? null);
 }
 
 // ————————————————————————————————————————————————————————————————
