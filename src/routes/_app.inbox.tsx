@@ -594,15 +594,15 @@ function InboxPage() {
                           <span className="text-sm font-medium text-foreground truncate">
                             {c.clientNome}
                           </span>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            <span className="text-xs text-muted-foreground">
-                              {formatTime(c.lastMessageAt)}
-                            </span>
+                          <div className="flex shrink-0 items-center gap-1.5">
                             {c.unread > 0 && (
                               <span className="badge-counter flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none">
                                 {c.unread}
                               </span>
                             )}
+                            <span className="text-xs text-muted-foreground">
+                              {formatTime(c.lastMessageAt)}
+                            </span>
                           </div>
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground truncate">
@@ -680,7 +680,7 @@ function InboxPage() {
                     <Button
                       size="sm"
                       onClick={assignToMe}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      className="rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90"
                     >
                       <UserPlus className="h-4 w-4" strokeWidth={1.5} />
                       Atribuir a mim
