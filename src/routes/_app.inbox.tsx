@@ -545,21 +545,41 @@ function InboxPage() {
     return current?.clientNome ?? "Cliente";
   };
 
+  // Passa pela RPC em vez de um UPDATE cru: ela resolve o departamento, reabre
+  // o atendimento se estiver encerrado e registra o evento na timeline. O
+  // UPDATE direto estourava 23514 (CHECK de departamento) em atendimento
+  // encerrado ainda sem departamento.
   const assignToMe = async () => {
     if (!current) return;
-    const { error } = await supabase
-      .from("atendimentos")
-      .update({
-        assigned_to: user.id,
-        status: "em_atendimento",
-        assigned_at: new Date().toISOString(),
-      })
-      .eq("id", current.id);
+    const eraEncerrado = current.status === "encerrado";
+    const { data, error } = await supabase.rpc("assumir_atendimento", {
+      p_atendimento_id: current.id,
+    });
+
     if (error) {
-      toast.error("Não foi possível atribuir o atendimento.");
+      const code = (error as { code?: string }).code;
+      if (code === "42501") {
+        toast.error("Você não tem permissão para assumir este atendimento.");
+      } else if (code === "P0002") {
+        toast.error("Atendimento não está disponível para atribuição.");
+      } else if (code === "23505") {
+        toast.error("Este cliente já tem uma conversa ativa — abra a conversa atual dele.");
+      } else {
+        const msg = (error as { message?: string }).message;
+        toast.error(
+          msg ? `Não foi possível atribuir: ${msg}` : "Não foi possível atribuir o atendimento.",
+        );
+      }
       return;
     }
-    toast.success("Atendimento atribuído a você");
+    if (data !== true) {
+      toast.error("Atendimento não está disponível para atribuição.");
+      return;
+    }
+
+    toast.success(
+      eraEncerrado ? "Atendimento reaberto e atribuído a você" : "Atendimento atribuído a você",
+    );
     queryClient.invalidateQueries({ queryKey: ["inbox"] });
   };
 
@@ -1130,7 +1150,11 @@ function RepassarModal({
       if (code === "42501") {
         toast.error("Você não tem permissão para repassar este atendimento.");
       } else if (code === "P0002") {
-        toast.error("Atendimento não está mais disponível para repasse.");
+        // Encerrado já não cai aqui: repassar reabre. Sobra triagem em
+        // andamento (o bot ainda está roteando) e atendimento inexistente.
+        toast.error("Atendimento ainda está em triagem — aguarde o bot terminar.");
+      } else if (code === "23505") {
+        toast.error("Este cliente já tem uma conversa ativa — repasse a conversa atual dele.");
       } else if (code === "22023") {
         toast.error("Colaborador destino inválido.");
       } else {

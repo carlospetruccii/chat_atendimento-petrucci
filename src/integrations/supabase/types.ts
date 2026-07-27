@@ -1826,6 +1826,10 @@ export type Database = {
         Args: { p_atendimento_id: string; p_user_id: string }
         Returns: boolean
       }
+      assumir_atendimento: {
+        Args: { p_atendimento_id: string }
+        Returns: boolean
+      }
       auth_enforcement_enabled: { Args: never; Returns: boolean }
       can_manage_config_in: { Args: { p_company_id: string }; Returns: boolean }
       can_view_all_in: { Args: { p_company_id: string }; Returns: boolean }
