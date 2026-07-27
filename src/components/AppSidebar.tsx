@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCurrentUser, type CurrentUserProfile } from "@/hooks/useCurrentUser";
+import { NovoAtendimentoButton } from "@/components/NovoAtendimentoButton";
 import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/integrations/supabase/client";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -47,10 +48,7 @@ const menuItems: MenuItem[] = [
   { title: "Configurações", url: "/configuracoes", icon: Settings, gate: { superadminOnly: true } },
 ];
 
-function canSee(
-  item: MenuItem,
-  user: CurrentUserProfile | null,
-): boolean {
+function canSee(item: MenuItem, user: CurrentUserProfile | null): boolean {
   if (!item.gate) return true;
   if (!user) return false;
   if ("superadminOnly" in item.gate) return user.isSuperadmin;
@@ -120,9 +118,7 @@ export function AppSidebar() {
   };
 
   const showPlaceholders = loading && !user;
-  const visible = showPlaceholders
-    ? menuItems
-    : menuItems.filter((item) => canSee(item, user));
+  const visible = showPlaceholders ? menuItems : menuItems.filter((item) => canSee(item, user));
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -162,7 +158,12 @@ export function AppSidebar() {
           })}
         </nav>
 
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-3">
+          <NovoAtendimentoButton />
+
+          {/* Separa navegação (acima) de ação + identidade (abaixo). */}
+          <div className="h-px w-6 bg-sidebar-border" aria-hidden />
+
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>

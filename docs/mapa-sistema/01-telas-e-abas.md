@@ -37,9 +37,18 @@ tiver permissão:
 | **Supervisão** | `/supervisao` | Superadmin ou `view_all_departments` |
 | **Configurações** | `/configuracoes` | Apenas superadmin |
 
-Na barra lateral também há o **avatar do usuário** (mostra as iniciais do nome). O
-sistema usa **somente o tema claro** — não há botão para alternar para o tema escuro
-(o CSS do tema escuro continua no código, só não há mais UI para ativá-lo).
+No **rodapé da barra lateral**, separado da navegação por um traço, ficam duas coisas —
+uma ação e uma identidade:
+
+| Elemento | O que faz |
+|----------|-----------|
+| **Botão verde "Iniciar atendimento"** (`NovoAtendimentoButton`) | Abre o diálogo de novo atendimento **de qualquer tela**. Ao criar, leva para o Inbox com a conversa já aberta. É a única ação de *criação* da barra, e por isso é o único elemento preenchido e com sombra — numa régua de ícones plana, a elevação sozinha já cria a hierarquia, sem precisar inventar cor nova. O raio é maior que o dos itens de navegação (16px contra 12px) de propósito: destino e ação são coisas diferentes e devem ter silhuetas diferentes. |
+| **Avatar do usuário** | Mostra as iniciais do nome; abre o menu com o e-mail e **Sair**. |
+
+O sistema usa **somente o tema claro** — não há botão para alternar para o tema escuro
+(o CSS do tema escuro continua no código, só não há mais UI para ativá-lo). O botão de
+iniciar atendimento monta o verde a partir dos tokens `--wa-green`/`--wa-green-hover`,
+então ele acompanha os dois temas sem valor fixo no código.
 
 A **barra de topo** (TopBar) mostra o título da página, um sininho de notificação (hoje
 é **apenas visual, sem função**) e o avatar. **Não há botão de logout nem troca de
@@ -73,7 +82,10 @@ e **duas abas** logo abaixo do botão do topo: **Chat** e **Grupos** (ver
 aba escolhida fica na URL (`?aba=grupos`), então recarregar mantém onde você estava.
 
 ### Painel esquerdo — lista de conversas
-- Botão **"Iniciar atendimento"** (topo) — abre o diálogo para começar uma conversa do zero.
+- O botão **"Iniciar atendimento"** não fica mais aqui: virou o botão verde da
+  **barra lateral**, logo acima do avatar (`NovoAtendimentoButton`). É ação de
+  *criação*, então vale de qualquer tela — não faz sentido precisar entrar no Inbox
+  primeiro. Ao criar, leva para o Inbox com a conversa já aberta.
 - Campo **"Buscar conversas…"** — filtra por nome do cliente, telefone ou pelo **conteúdo
   das mensagens** (espera você parar de digitar, ~300ms).
 - A lista mostra, para cada conversa: avatar com iniciais, nome, horário da última

@@ -57,7 +57,6 @@ import { AudioRecorderBar } from "@/components/inbox/AudioRecorderBar";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { AttachMenu, MAX_ATTACHMENT_BYTES, type PickedFile } from "@/components/inbox/AttachMenu";
 import { MediaPreviewDialog, type MediaTipo } from "@/components/inbox/MediaPreviewDialog";
-import { IniciarAtendimentoDialog } from "@/components/inbox/IniciarAtendimentoDialog";
 import {
   RichMessageComposer,
   type RichMessageComposerHandle,
@@ -135,7 +134,6 @@ function InboxPage() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [replyTo, setReplyTo] = useState<InboxMessage | null>(null);
-  const [iniciarOpen, setIniciarOpen] = useState(false);
   const [aba, setAba] = useState<InboxAba>(search.aba ?? "chat");
 
   // A aba fica na URL: recarregar ou compartilhar o link mantém onde você estava.
@@ -552,13 +550,9 @@ function InboxPage() {
       <div className="flex h-full">
         {/* Lista */}
         <div className="w-[360px] shrink-0 border-r border-border bg-card overflow-y-auto">
+          {/* "Iniciar atendimento" mora na barra lateral (NovoAtendimentoButton):
+              é ação de criação e vale de qualquer tela, não só do Inbox. */}
           <div className="p-4 border-b border-border space-y-2">
-            <button
-              onClick={() => setIniciarOpen(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <UserPlus className="h-4 w-4" strokeWidth={1.8} /> Iniciar atendimento
-            </button>
             {tabsEl}
             <input
               value={filter}
@@ -1029,16 +1023,6 @@ function InboxPage() {
         sending={sending}
         onCancel={() => setPendingMedia(null)}
         onSend={handleSendMedia}
-      />
-      <IniciarAtendimentoDialog
-        open={iniciarOpen}
-        onOpenChange={setIniciarOpen}
-        canChooseDept={canViewAll}
-        onCreated={(atendimentoId) => {
-          setIniciarOpen(false);
-          setSelected(atendimentoId);
-          queryClient.invalidateQueries({ queryKey: ["inbox-conversations"] });
-        }}
       />
     </div>
   );
