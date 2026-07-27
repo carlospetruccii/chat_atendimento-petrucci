@@ -225,7 +225,8 @@ Regras de segurança:
 - Não consulta o kill switch nem dispara automação: grupo não tem bot.
 
 #### 5d. `sincronizar-grupos` — trazer os grupos do WhatsApp
-Chamada pelo botão "Sincronizar grupos" do Inbox. Lê `GET /group/list` da uazapi e faz
+Chamada **automaticamente** ao abrir a aba Grupos do Inbox, no máximo uma vez a cada
+15 minutos (a trava usa `grupos.synced_at`; não há botão). Lê `GET /group/list` da uazapi e faz
 **upsert** por `(company_id, wa_jid)`. Grupo que não vem mais na lista é marcado
 `ativo = false` — **nunca apagado**, para o histórico de mensagens continuar legível.
 Idempotente: rodar duas vezes não duplica nada. Autorização: qualquer membro ativo.

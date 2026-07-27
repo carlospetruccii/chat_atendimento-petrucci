@@ -42,26 +42,33 @@ export function GruposList({
   }
 
   if (grupos.length === 0) {
+    // Enquanto a sincronização automática roda, a lista vazia é estado
+    // transitório — dizer "nenhum grupo" aqui seria mentira momentânea.
+    if (isSyncing && !temFiltro) {
+      return (
+        <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Buscando grupos no WhatsApp...
+        </div>
+      );
+    }
+
     return (
       <div className="px-6 py-12 text-center">
         <Users className="mx-auto h-10 w-10 text-muted-foreground" strokeWidth={1.2} />
         <p className="mt-3 text-sm text-muted-foreground">
           {temFiltro
             ? "Nenhum grupo encontrado com esse termo."
-            : "Nenhum grupo ainda. Sincronize para trazer os grupos do WhatsApp."}
+            : "Nenhum grupo por aqui. Grupos aparecem sozinhos quando alguém manda mensagem neles."}
         </p>
         {!temFiltro && (
+          // Escape hatch: se a busca automática falhou, sem isso a tela fica
+          // sem saída. Discreto de propósito — não é ação de rotina.
           <button
             onClick={onSync}
-            disabled={isSyncing}
-            className="mt-4 inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
-            {isSyncing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" strokeWidth={1.8} />
-            )}
-            Sincronizar grupos
+            <RefreshCw className="h-3 w-3" strokeWidth={1.8} />
+            Buscar no WhatsApp de novo
           </button>
         )}
       </div>

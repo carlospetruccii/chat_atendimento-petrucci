@@ -20,6 +20,8 @@ export interface Grupo {
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
   unread: number;
+  /** Última sincronização com a uazapi — usada pela trava da sync automática. */
+  syncedAt: string | null;
 }
 
 export interface GrupoMessage extends MensagemRenderizavel {
@@ -82,7 +84,7 @@ export async function listGrupos(): Promise<Grupo[]> {
   const { data, error } = await supabase
     .from("grupos")
     .select(
-      "id, wa_jid, nome, topico, foto_url, participantes_total, sou_admin, somente_admin_envia, ativo, last_message_at, created_at",
+      "id, wa_jid, nome, topico, foto_url, participantes_total, sou_admin, somente_admin_envia, ativo, last_message_at, synced_at, created_at",
     )
     .eq("ativo", true)
     .order("last_message_at", { ascending: false, nullsFirst: false })
@@ -151,6 +153,7 @@ export async function listGrupos(): Promise<Grupo[]> {
       lastMessageAt: r.last_message_at ?? r.created_at,
       lastMessagePreview: previewDeMensagem(p?.tipo, p?.content, p?.direction, autorPreview),
       unread: unreadPorGrupo.get(r.id) ?? 0,
+      syncedAt: r.synced_at,
     };
   });
 }

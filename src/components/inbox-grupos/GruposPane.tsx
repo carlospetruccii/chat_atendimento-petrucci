@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Users } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -8,6 +8,7 @@ import {
   searchGrupoIdsByMessageContent,
   sincronizarGrupos,
 } from "@/lib/grupos-queries";
+import { deveSincronizar } from "@/lib/grupos-auto-sync";
 import { GruposList } from "./GruposList";
 import { GrupoChatPanel } from "./GrupoChatPanel";
 
@@ -62,19 +63,48 @@ export function GruposPane({ meuUserId, formatTime, tabs }: Props) {
 
   const current = grupos.find((g) => g.id === selectedId) ?? null;
 
+  // Sincronização com o WhatsApp: roda sozinha, sem botão. Silenciosa no
+  // sucesso — é atualização de fundo, não ação do usuário; avisa só quando algo
+  // muda de fato (grupo novo ou grupo que saiu) ou quando falha com a lista
+  // vazia, caso em que a tela não tem o que mostrar e o motivo importa.
   const syncMut = useMutation({
     mutationFn: sincronizarGrupos,
     onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ["grupos", "lista"] });
-      const partes = [`${r.total} grupo${r.total === 1 ? "" : "s"}`];
-      if (r.novos > 0) partes.push(`${r.novos} novo${r.novos === 1 ? "" : "s"}`);
-      if (r.desativados > 0) partes.push(`${r.desativados} fora`);
-      toast.success(`Sincronizado: ${partes.join(" · ")}`);
+      if (r.novos > 0) {
+        toast.success(
+          `${r.novos} grupo${r.novos === 1 ? "" : "s"} novo${r.novos === 1 ? "" : "s"}`,
+        );
+      }
+      if (r.desativados > 0) {
+        toast.message(
+          `${r.desativados} grupo${r.desativados === 1 ? "" : "s"} saiu da lista (não somos mais membro)`,
+        );
+      }
     },
     onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Não foi possível sincronizar os grupos agora.");
+      if (grupos.length === 0) {
+        toast.error(e instanceof Error ? e.message : "Não foi possível buscar os grupos agora.");
+      }
     },
   });
+
+  // Dispara a sincronização automática quando a lista termina de carregar e o
+  // último carimbo já está velho (ver grupos-auto-sync.ts para a regra).
+  const jaTentouSyncRef = useRef(false);
+  useEffect(() => {
+    if (gruposQuery.isLoading) return;
+    const precisa = deveSincronizar({
+      grupos,
+      agoraMs: Date.now(),
+      sincronizando: syncMut.isPending,
+      jaTentou: jaTentouSyncRef.current,
+    });
+    if (!precisa) return;
+    jaTentouSyncRef.current = true;
+    syncMut.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gruposQuery.isLoading, gruposQuery.dataUpdatedAt]);
 
   // Realtime: um canal só para as tabelas de grupo. Os callbacks do chat aberto
   // ficam num ref para o canal não ser recriado a cada render (recriar fazia
@@ -121,18 +151,6 @@ export function GruposPane({ meuUserId, formatTime, tabs }: Props) {
       {/* Lista */}
       <div className="w-[360px] shrink-0 border-r border-border bg-card overflow-y-auto">
         <div className="p-4 border-b border-border space-y-2">
-          <button
-            onClick={() => syncMut.mutate()}
-            disabled={syncMut.isPending}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-          >
-            {syncMut.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" strokeWidth={1.8} />
-            )}
-            Sincronizar grupos
-          </button>
           {tabs}
           <input
             value={filter}
@@ -141,6 +159,14 @@ export function GruposPane({ meuUserId, formatTime, tabs }: Props) {
             placeholder="Buscar grupos..."
             className="w-full rounded-2xl border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
           />
+          {/* A sincronização não tem botão: roda sozinha. Só damos o sinal de
+              que está acontecendo, para a lista não parecer travada. */}
+          {syncMut.isPending && (
+            <div className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Atualizando grupos...
+            </div>
+          )}
         </div>
 
         <GruposList

@@ -155,10 +155,18 @@ nem entrada em Pendentes. Grupo é um canal permanente, não um ticket.
 lista inteira e pode escrever.
 
 **Painel esquerdo:**
-- Botão **"Sincronizar grupos"** — puxa a lista de grupos direto do WhatsApp
-  (`GET /group/list` da uazapi). É o que traz também os grupos **ainda calados**, que
-  nunca mandaram mensagem, para você poder começar a conversa. Grupo que sai da lista
-  (saímos ou fomos removidos) é **desativado**, nunca apagado: o histórico fica.
+- **Não há botão de sincronizar** — a sincronização com o WhatsApp
+  (`GET /group/list` da uazapi) roda **sozinha** ao abrir a aba, no máximo uma vez a
+  cada 15 minutos (trava pelo `grupos.synced_at`; a lista de grupos muda raramente e
+  cada chamada gasta cota da instância). Ela é silenciosa: só avisa quando algo mudou
+  de fato — grupo novo ou grupo que saiu.
+  - Grupo **com conversa** nem depende disso: aparece sozinho na primeira mensagem,
+    porque o webhook cria a linha (igual ao chat individual).
+  - A sincronização é o que resolve os outros dois casos: grupo **ainda calado**
+    (te adicionaram e ninguém falou — sem ela não haveria como mandar a primeira
+    mensagem) e grupo do qual **você saiu**, que ela marca como inativo.
+  - Se a lista estiver vazia porque a busca automática falhou, aparece um link
+    discreto **"Buscar no WhatsApp de novo"** — é a única saída manual, de propósito.
 - Campo **"Buscar grupos…"** — filtra por nome, tópico ou conteúdo das mensagens.
 - Cada linha mostra foto (ou iniciais), nome, prévia com quem falou (`Maria: …` /
   `Você: …`), horário, badge de não lidas, nº de participantes e, quando for o caso, o
