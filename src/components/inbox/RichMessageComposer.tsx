@@ -1,7 +1,9 @@
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   type Ref,
 } from "react";
@@ -129,11 +131,14 @@ function HasContentPlugin({
 }: {
   onHasContentChange: (hasContent: boolean) => void;
 }) {
-  function handleChange(editorState: EditorState) {
+  const onHasContentChangeRef = useRef(onHasContentChange);
+  onHasContentChangeRef.current = onHasContentChange;
+
+  const handleChange = useCallback((editorState: EditorState) => {
     editorState.read(() => {
-      onHasContentChange($getRoot().getTextContent().trim().length > 0);
+      onHasContentChangeRef.current($getRoot().getTextContent().trim().length > 0);
     });
-  }
+  }, []);
 
   return <OnChangePlugin onChange={handleChange} />;
 }
@@ -158,24 +163,35 @@ export const RichMessageComposer = forwardRef<RichMessageComposerHandle, RichMes
       onError,
     };
 
+    // Este elemento PRECISA ser memoizado. Recriá-lo a cada render faz o React
+    // trocar a identidade do ref interno do ContentEditable, e o Lexical então
+    // desconecta e reconecta a raiz no DOM (setRootElement) — perdendo a
+    // posição do cursor. O sintoma era a primeira letra digitada ir parar no
+    // fim do texto ("porque" virava "orquep"), justamente porque a primeira
+    // tecla é a única que muda `hasContent` e re-renderiza o pai.
+    const contentEditableEl = useMemo(
+      () => (
+        <ContentEditable
+          aria-placeholder={placeholder}
+          placeholder={
+            <div className="pointer-events-none absolute inset-0 text-sm text-muted-foreground">
+              {placeholder}
+            </div>
+          }
+          className={cn(
+            "max-h-40 min-h-[1.5rem] overflow-y-auto whitespace-pre-wrap break-words text-sm outline-none",
+            disabled && "opacity-50",
+          )}
+        />
+      ),
+      [placeholder, disabled],
+    );
+
     return (
       <LexicalComposer initialConfig={initialConfig}>
         <div className="relative flex-1">
           <PlainTextPlugin
-            contentEditable={
-              <ContentEditable
-                aria-placeholder={placeholder}
-                placeholder={
-                  <div className="pointer-events-none absolute inset-0 text-sm text-muted-foreground">
-                    {placeholder}
-                  </div>
-                }
-                className={cn(
-                  "max-h-40 min-h-[1.5rem] overflow-y-auto whitespace-pre-wrap break-words text-sm outline-none",
-                  disabled && "opacity-50",
-                )}
-              />
-            }
+            contentEditable={contentEditableEl}
             ErrorBoundary={LexicalErrorBoundary}
           />
         </div>

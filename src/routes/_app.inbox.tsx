@@ -318,6 +318,36 @@ function InboxPage() {
     return map;
   }, [chat.messages]);
 
+  // Anima só mensagens enviadas por mim que acabaram de chegar no fim da lista
+  // (não as carregadas no histórico inicial nem as antigas trazidas por paginação).
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(new Set());
+  const knownMessageIdsRef = useRef<Set<string>>(new Set());
+  const maxSeenCreatedAtRef = useRef<string>("");
+  useEffect(() => {
+    const known = knownMessageIdsRef.current;
+    const freshlyArrived = chat.messages.filter(
+      (m) =>
+        !known.has(m.id) &&
+        m.direction === "outbound" &&
+        (!maxSeenCreatedAtRef.current || m.createdAt > maxSeenCreatedAtRef.current),
+    );
+    for (const m of chat.messages) known.add(m.id);
+    if (chat.messages.length > 0) {
+      maxSeenCreatedAtRef.current = chat.messages[chat.messages.length - 1].createdAt;
+    }
+    if (freshlyArrived.length === 0) return;
+    const ids = freshlyArrived.map((m) => m.id);
+    setEnteringIds((prev) => new Set([...prev, ...ids]));
+    const timer = setTimeout(() => {
+      setEnteringIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [chat.messages]);
+
   // Realtime: atualiza lista + injeta mensagens novas no chat ativo.
   // Mantém os callbacks num ref para não recriar o canal a cada render
   // (recriação rápida fazia o subscribe perder INSERTs durante a janela de re-inscrição).
@@ -824,7 +854,7 @@ function InboxPage() {
                         key={item.key}
                         data-atendimento-anchor={anchor}
                         data-message-id={m.id}
-                        className={`group flex flex-col ${isMe ? "items-end" : "items-start"} ${groupGap}`}
+                        className={`group flex flex-col ${isMe ? "items-end" : "items-start"} ${groupGap} ${enteringIds.has(m.id) ? "message-enter" : ""}`}
                       >
                         {showSenderName && (
                           <span className="text-[11px] text-muted-foreground mb-0.5 px-1">
