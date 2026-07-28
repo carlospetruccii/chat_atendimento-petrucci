@@ -3,6 +3,7 @@ import {
   agruparMensagensInternas,
   dedupeAndSortInternas,
   iniciaisDoNome,
+  previewDaConversa,
 } from "./internas-history";
 import type { MensagemInterna } from "./internas-queries";
 
@@ -14,7 +15,10 @@ function msg(over: Partial<MensagemInterna> & { id: string; createdAt: string })
     conversaId: "c1",
     senderUserId: SILMARA,
     senderNome: "Silmara",
+    tipo: "texto",
     content: "oi",
+    mediaUrl: null,
+    mediaMetadata: null,
     ...over,
   };
 }
@@ -137,6 +141,81 @@ describe("dedupeAndSortInternas", () => {
       [msg({ id: "aaa", createdAt: mesmoInstante })],
     );
     expect(ordenadas.map((m) => m.id)).toEqual(["aaa", "bbb"]);
+  });
+});
+
+describe("previewDaConversa", () => {
+  test("usa o texto quando existe", () => {
+    expect(previewDaConversa("bom dia", "texto", false)).toBe("bom dia");
+  });
+
+  test("prefixa 'Você:' quando a última mensagem é minha", () => {
+    expect(previewDaConversa("bom dia", "texto", true)).toBe("Você: bom dia");
+  });
+
+  test("mídia SEM legenda cai no rótulo do tipo", () => {
+    expect(previewDaConversa(null, "imagem", false)).toBe("📷 Imagem");
+    expect(previewDaConversa(null, "audio", false)).toBe("🎤 Áudio");
+    expect(previewDaConversa(null, "video", false)).toBe("🎥 Vídeo");
+    expect(previewDaConversa(null, "documento", false)).toBe("📎 Documento");
+  });
+
+  test("mídia COM legenda mostra a legenda, não o rótulo", () => {
+    expect(previewDaConversa("olha o balanço", "imagem", false)).toBe("olha o balanço");
+  });
+
+  test("rótulo de mídia também recebe o prefixo 'Você:'", () => {
+    expect(previewDaConversa(null, "audio", true)).toBe("Você: 🎤 Áudio");
+  });
+
+  test("conversa sem nenhuma mensagem fica vazia", () => {
+    expect(previewDaConversa(null, null, null)).toBe("");
+  });
+
+  test("tipo desconhecido não inventa rótulo", () => {
+    expect(previewDaConversa(null, "sticker", false)).toBe("");
+  });
+});
+
+describe("agruparMensagensInternas com mídia", () => {
+  test("mídia entra na conversa como mensagem normal, do lado certo", () => {
+    const items = agruparMensagensInternas(
+      [
+        msg({
+          id: "m1",
+          createdAt: "2026-07-28T12:00:00Z",
+          tipo: "imagem",
+          content: null,
+          mediaMetadata: { storage_path: "internas/c1/foto.jpg" },
+        }),
+      ],
+      SILMARA,
+    );
+
+    const mensagem = items.find((i) => i.kind === "message");
+    expect(mensagem?.kind === "message" && mensagem.minha).toBe(true);
+    expect(mensagem?.kind === "message" && mensagem.message.tipo).toBe("imagem");
+  });
+
+  test("texto e mídia do mesmo autor seguem colados", () => {
+    const items = agruparMensagensInternas(
+      [
+        msg({ id: "m1", createdAt: "2026-07-28T12:00:00Z" }),
+        msg({
+          id: "m2",
+          createdAt: "2026-07-28T12:01:00Z",
+          tipo: "documento",
+          content: null,
+          mediaMetadata: { storage_path: "internas/c1/doc.pdf" },
+        }),
+      ],
+      SILMARA,
+    );
+
+    const coladas = items
+      .filter((i) => i.kind === "message")
+      .map((m) => m.kind === "message" && m.colada);
+    expect(coladas).toEqual([false, true]);
   });
 });
 

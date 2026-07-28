@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Send } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, Mic, Send } from "lucide-react";
 import { toast } from "sonner";
 import {
   enviarMensagemInterna,
+  enviarMidiaInterna,
   marcarConversaInternaLida,
   type ConversaInterna,
+  type TipoMidiaInterna,
 } from "@/lib/internas-queries";
 import { agruparMensagensInternas, iniciaisDoNome } from "@/lib/internas-history";
 import { useConversaInternaHistory } from "@/hooks/useConversaInternaHistory";
+import { useAudioRecorder, type RecordedAudio } from "@/hooks/useAudioRecorder";
 import { formatWhatsAppText } from "@/lib/whatsapp-format";
+import { MessageMedia } from "@/components/inbox-media/MessageMedia";
+import { AudioRecorderBar } from "@/components/inbox/AudioRecorderBar";
+import { AttachMenu, MAX_ATTACHMENT_BYTES, type PickedFile } from "@/components/inbox/AttachMenu";
+import { MediaPreviewDialog, type MediaTipo } from "@/components/inbox/MediaPreviewDialog";
 import {
   RichMessageComposer,
   type RichMessageComposerHandle,
@@ -24,22 +31,41 @@ interface Props {
 }
 
 /**
- * A conversa interna aberta. Texto puro: não há anexo, áudio, citação nem
- * status de entrega — nada disso existe em conversa que não passa pelo
- * WhatsApp. O que existe é o mesmo composer do resto do Inbox (negrito/itálico
- * por atalho de markdown), para não haver dois jeitos de escrever no produto.
+ * A conversa interna aberta. Tem as mesmas funções do chat individual e do de
+ * grupo — texto com formatação do WhatsApp, áudio gravado, imagem, vídeo,
+ * documento, colar imagem, scroll infinito, tempo real, não lidas — e nada do
+ * fluxo de atendimento (sem bot, triagem, departamento, repasse, encerramento).
+ *
+ * Não tem "responder mensagem": citação existe para conversa com muita gente
+ * falando (grupo) ou histórico de ticket. Numa conversa entre duas pessoas o
+ * contexto é a própria conversa.
  */
 export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarRealtime }: Props) {
   const queryClient = useQueryClient();
   const composerRef = useRef<RichMessageComposerHandle>(null);
   const [hasDraft, setHasDraft] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState<{ file: File; tipo: MediaTipo } | null>(null);
+  const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
+  const recorder = useAudioRecorder();
 
   const chat = useConversaInternaHistory({ conversaId: conversa.id, enabled: true });
 
-  // O canal Realtime é do pai (um canal por aba, não um por conversa aberta).
+  // Limpa estado de composição ao trocar de conversa.
   useEffect(() => {
-    registrarRealtime({ onInsert: chat.onRealtimeInsert });
-  }, [registrarRealtime, chat.onRealtimeInsert]);
+    setPendingMedia(null);
+    setRecordedAudio(null);
+  }, [conversa.id]);
+
+  // O canal Realtime é do pai (um canal por aba, não um por conversa aberta).
+  // Desregistra ao desmontar: sem isso, ao trocar de conversa o canal continuaria
+  // chamando o callback da conversa ANTERIOR, num hook já desmontado.
+  const registrarRef = useRef(registrarRealtime);
+  registrarRef.current = registrarRealtime;
+  useEffect(() => {
+    registrarRef.current({ onInsert: chat.onRealtimeInsert });
+    return () => registrarRef.current({ onInsert: () => {} });
+  }, [chat.onRealtimeInsert]);
 
   // Zera o badge ao abrir e a cada mensagem nova enquanto a conversa está aberta.
   useEffect(() => {
@@ -51,27 +77,121 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversa.id, chat.messages.length]);
 
-  const enviarMut = useMutation({
-    mutationFn: (content: string) => enviarMensagemInterna({ conversaId: conversa.id, content }),
-    onSuccess: () => {
+  const invalidarLista = () => {
+    queryClient.invalidateQueries({ queryKey: ["internas", "conversas"] });
+  };
+
+  const handleSend = async () => {
+    const content = composerRef.current?.getMarkdownText().trim() ?? "";
+    if (!content || sending) return;
+    setSending(true);
+    try {
+      await enviarMensagemInterna({ conversaId: conversa.id, content });
       composerRef.current?.clear();
       setHasDraft(false);
-      composerRef.current?.focus();
-      queryClient.invalidateQueries({ queryKey: ["internas", "conversas"] });
-    },
-    onError: (e) => {
+      invalidarLista();
+      requestAnimationFrame(() => {
+        chat.scrollToBottom(true);
+        composerRef.current?.focus();
+      });
+    } catch (e) {
       // O rascunho fica no composer de propósito: perder o texto digitado por
       // causa de uma falha de rede é pior do que ter que reenviar.
       toast.error(e instanceof Error ? e.message : "Não foi possível enviar a mensagem.");
-    },
-  });
+    } finally {
+      setSending(false);
+    }
+  };
 
-  function handleSend() {
-    const texto = composerRef.current?.getMarkdownText().trim() ?? "";
-    if (!texto || enviarMut.isPending) return;
-    enviarMut.mutate(texto);
-  }
+  // O diálogo de prévia fala em inglês ("image"), o banco em português
+  // ("imagem"). A tradução mora aqui, no ponto de contato entre os dois.
+  const tipoParaBanco = (tipo: MediaTipo): TipoMidiaInterna =>
+    tipo === "image" ? "imagem" : tipo === "video" ? "video" : "documento";
 
+  const handleSendMedia = async (caption: string) => {
+    if (!pendingMedia) return;
+    setSending(true);
+    try {
+      await enviarMidiaInterna({
+        conversaId: conversa.id,
+        tipo: tipoParaBanco(pendingMedia.tipo),
+        arquivo: pendingMedia.file,
+        nomeArquivo: pendingMedia.file.name,
+        caption,
+      });
+      setPendingMedia(null);
+      invalidarLista();
+      requestAnimationFrame(() => chat.scrollToBottom(true));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o anexo.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSendRecorded = async () => {
+    if (!recordedAudio) return;
+    setSending(true);
+    try {
+      await enviarMidiaInterna({
+        conversaId: conversa.id,
+        tipo: "audio",
+        arquivo: recordedAudio.blob,
+        nomeArquivo: "audio.ogg",
+        duracaoSegundos: recordedAudio.durationSeconds,
+      });
+      setRecordedAudio(null);
+      invalidarLista();
+      requestAnimationFrame(() => chat.scrollToBottom(true));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o áudio.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleAttachPick = (picked: PickedFile) => {
+    const tipo: MediaTipo = picked.file.type.startsWith("video/")
+      ? "video"
+      : picked.file.type.startsWith("image/")
+        ? "image"
+        : "document";
+    setPendingMedia({ file: picked.file, tipo });
+  };
+
+  const handlePasteImage = (event: ClipboardEvent) => {
+    if (sending) return;
+    const item = Array.from(event.clipboardData?.items ?? []).find((it) =>
+      it.type.startsWith("image/"),
+    );
+    if (!item) return;
+    const file = item.getAsFile();
+    if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error("Arquivo muito grande (máx 16 MB).");
+      return;
+    }
+    handleAttachPick({ file, kind: "media" });
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      await recorder.start();
+    } catch {
+      toast.error(recorder.error ?? "Não foi possível iniciar a gravação.");
+    }
+  };
+
+  const handleStopRecording = async () => {
+    const result = await recorder.finish();
+    if (!result) {
+      toast.error("Gravação vazia.");
+      return;
+    }
+    setRecordedAudio(result);
+  };
+
+  const primeiroNome = conversa.outroNome.split(" ")[0];
   const itens = agruparMensagensInternas(chat.messages, meuUserId);
 
   return (
@@ -83,7 +203,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
             {iniciaisDoNome(conversa.outroNome)}
           </span>
           <span
-            className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card ${
+            className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card transition-colors ${
               conversa.outroDisponivel ? "bg-primary" : "bg-muted-foreground/40"
             }`}
             aria-hidden
@@ -121,7 +241,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
           </div>
         ) : itens.length === 0 ? (
           <div className="py-12 text-center text-sm text-muted-foreground">
-            Nenhuma mensagem ainda. Diga oi para {conversa.outroNome.split(" ")[0]}.
+            Nenhuma mensagem ainda. Diga oi para {primeiroNome}.
           </div>
         ) : (
           itens.map((item) => {
@@ -151,7 +271,13 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
                       : "bg-[var(--chat-received)] text-[var(--chat-received-foreground)]"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words">{formatWhatsAppText(m.content)}</p>
+                  {m.tipo === "texto" ? (
+                    <p className="whitespace-pre-wrap break-words">
+                      {formatWhatsAppText(m.content)}
+                    </p>
+                  ) : (
+                    <MessageMedia message={m} />
+                  )}
                   <span
                     className={`mt-1 block text-right text-[10px] ${
                       item.minha ? "text-[var(--chat-sent-foreground)]/70" : "text-muted-foreground"
@@ -182,31 +308,71 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
 
       {/* Composer */}
       <div className="border-t border-border bg-card p-4">
-        <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
-          <RichMessageComposer
-            ref={composerRef}
-            placeholder={`Mensagem para ${conversa.outroNome.split(" ")[0]}...`}
-            disabled={enviarMut.isPending}
-            onHasContentChange={setHasDraft}
-            // Conversa interna não aceita mídia: colar imagem não faz nada em
-            // vez de falhar no meio do envio.
-            onPasteImage={() => {}}
-            onEnterSend={handleSend}
+        {recorder.state !== "idle" || recordedAudio ? (
+          <AudioRecorderBar
+            state={recorder.state}
+            durationSeconds={recorder.durationSeconds}
+            maxSeconds={recorder.maxSeconds}
+            recorded={recordedAudio}
+            sending={sending}
+            onPause={recorder.pause}
+            onResume={recorder.resume}
+            onStop={handleStopRecording}
+            onCancel={() => {
+              recorder.cancel();
+              setRecordedAudio(null);
+            }}
+            onDelete={() => setRecordedAudio(null)}
+            onSend={handleSendRecorded}
           />
-          <button
-            onClick={handleSend}
-            disabled={enviarMut.isPending || !hasDraft}
-            className="rounded-md bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-            aria-label="Enviar mensagem"
-          >
-            {enviarMut.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" strokeWidth={1.8} />
-            )}
-          </button>
-        </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+            <AttachMenu
+              disabled={sending}
+              onPick={handleAttachPick}
+              onError={(msg) => toast.error(msg)}
+            />
+            <RichMessageComposer
+              ref={composerRef}
+              placeholder={`Mensagem para ${primeiroNome}...`}
+              disabled={sending}
+              onHasContentChange={setHasDraft}
+              onPasteImage={handlePasteImage}
+              onEnterSend={handleSend}
+            />
+            <button
+              type="button"
+              onClick={handleStartRecording}
+              disabled={sending}
+              className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              aria-label="Gravar áudio"
+            >
+              <Mic className="h-5 w-5" strokeWidth={1.5} />
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={sending || !hasDraft}
+              className="rounded-md bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              aria-label="Enviar mensagem"
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" strokeWidth={1.8} />
+              )}
+            </button>
+          </div>
+        )}
       </div>
+
+      <MediaPreviewDialog
+        open={!!pendingMedia}
+        file={pendingMedia?.file ?? null}
+        tipo={pendingMedia?.tipo ?? "document"}
+        sending={sending}
+        onCancel={() => setPendingMedia(null)}
+        onSend={handleSendMedia}
+      />
     </>
   );
 }

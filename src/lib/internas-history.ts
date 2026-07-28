@@ -57,6 +57,37 @@ export function agruparMensagensInternas(
   return items;
 }
 
+/**
+ * Texto da última mensagem na lista de conversas.
+ *
+ * Mídia sem legenda não tem texto nenhum, então o rótulo vem do tipo — mesma
+ * convenção da lista de grupos. O prefixo "Você:" diz de que lado veio.
+ */
+export function previewDaConversa(
+  content: string | null,
+  tipo: string | null,
+  deMim: boolean | null,
+): string {
+  const corpo = content || rotuloDoTipo(tipo);
+  if (!corpo) return "";
+  return deMim ? `Você: ${corpo}` : corpo;
+}
+
+function rotuloDoTipo(tipo: string | null): string {
+  switch (tipo) {
+    case "imagem":
+      return "📷 Imagem";
+    case "audio":
+      return "🎤 Áudio";
+    case "video":
+      return "🎥 Vídeo";
+    case "documento":
+      return "📎 Documento";
+    default:
+      return "";
+  }
+}
+
 /** Iniciais para o avatar (no máximo duas letras). */
 export function iniciaisDoNome(nome: string): string {
   return nome

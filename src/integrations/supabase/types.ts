@@ -1329,27 +1329,33 @@ export type Database = {
       mensagens_internas: {
         Row: {
           company_id: string
-          content: string
+          content: string | null
           conversa_id: string
           created_at: string
           id: string
+          media_metadata: Json | null
           sender_user_id: string
+          tipo: Database["public"]["Enums"]["tipo_mensagem"]
         }
         Insert: {
           company_id?: string
-          content: string
+          content?: string | null
           conversa_id: string
           created_at?: string
           id?: string
+          media_metadata?: Json | null
           sender_user_id: string
+          tipo?: Database["public"]["Enums"]["tipo_mensagem"]
         }
         Update: {
           company_id?: string
-          content?: string
+          content?: string | null
           conversa_id?: string
           created_at?: string
           id?: string
+          media_metadata?: Json | null
           sender_user_id?: string
+          tipo?: Database["public"]["Enums"]["tipo_mensagem"]
         }
         Relationships: [
           {
@@ -2044,6 +2050,18 @@ export type Database = {
         Args: { p_content: string; p_conversa_id: string }
         Returns: string
       }
+      enviar_midia_interna: {
+        Args: {
+          p_content?: string
+          p_conversa_id: string
+          p_duracao_seg?: number
+          p_file_name?: string
+          p_storage_path: string
+          p_tamanho_bytes?: number
+          p_tipo: string
+        }
+        Returns: string
+      }
       esta_em_horario_comercial: { Args: { ts: string }; Returns: boolean }
       get_atendimentos_parados: {
         Args: { p_tempo_min: number }
@@ -2096,6 +2114,7 @@ export type Database = {
           last_message_at: string
           last_message_content: string
           last_message_de_mim: boolean
+          last_message_tipo: string
           outro_department_cor: string
           outro_department_nome: string
           outro_disponivel: boolean
@@ -2126,6 +2145,10 @@ export type Database = {
         | { Args: { p_company_id: string }; Returns: boolean }
       pode_conversar_internamente: {
         Args: { p_company_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      pode_escrever_midia_interna: {
+        Args: { p_object_name: string }
         Returns: boolean
       }
       proximo_horario_abertura: { Args: { ts: string }; Returns: string }
