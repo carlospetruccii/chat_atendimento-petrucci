@@ -389,6 +389,61 @@ function mensagemDeErroSync(codigo: string | undefined): string {
   }
 }
 
+export interface GrupoParticipante {
+  numero: string;
+  nome: string | null;
+  /** É o número da própria instância (nosso número) conversando no grupo. */
+  souNos: boolean;
+}
+
+function mensagemDeErroParticipantes(codigo: string | undefined): string {
+  switch (codigo) {
+    case "uazapi_indisponivel":
+      return "Não foi possível falar com o WhatsApp agora. Tente de novo em instantes.";
+    case "grupo_nao_encontrado":
+      return "Grupo não encontrado.";
+    case "forbidden":
+      return "Você não tem permissão para ver os participantes deste grupo.";
+    default:
+      return "Não foi possível carregar os participantes agora.";
+  }
+}
+
+/**
+ * Lista os participantes do grupo direto na uazapi (sem cache no banco) e
+ * completa o nome com a agenda de contatos quando a uazapi não souber.
+ */
+export async function fetchGrupoParticipantes(grupoId: string): Promise<GrupoParticipante[]> {
+  const { data, error } = await supabase.functions.invoke("grupo-participantes", {
+    body: { grupo_id: grupoId },
+  });
+  if (error) throw new Error(mensagemDeErroParticipantes(await codigoDoErro(error)));
+  const r = (data ?? {}) as { ok?: boolean; erro?: string; participantes?: GrupoParticipante[] };
+  if (r.ok === false) throw new Error(mensagemDeErroParticipantes(r.erro));
+
+  const participantes = r.participantes ?? [];
+  // `numero` vem em dígitos crus da uazapi; a tabela `contatos` guarda em E.164
+  // (com "+"), então o cruzamento precisa normalizar antes de buscar.
+  const numerosE164 = participantes.map((p) => `+${p.numero}`);
+  const nomesDeContato = await fetchContatoNamesByNumbers(numerosE164);
+
+  return (
+    participantes
+      .map((p) => ({
+        numero: p.numero,
+        // Nosso próprio número no grupo: "Você", igual ao resto do chat de grupo
+        // (ver autorDaMensagem em grupos-history.ts), nunca o nome de contato.
+        nome: p.souNos ? "Você" : (p.nome ?? nomesDeContato.get(`+${p.numero}`) ?? null),
+        souNos: p.souNos,
+      }))
+      // "Você" primeiro, depois o resto em ordem alfabética.
+      .sort((a, b) => {
+        if (a.souNos !== b.souNos) return a.souNos ? -1 : 1;
+        return (a.nome ?? a.numero).localeCompare(b.nome ?? b.numero);
+      })
+  );
+}
+
 /** Puxa a lista de grupos da uazapi (traz também os grupos ainda calados). */
 export async function sincronizarGrupos(): Promise<ResultadoSincronizacao> {
   const { data, error } = await supabase.functions.invoke("sincronizar-grupos", { body: {} });

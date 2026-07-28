@@ -4,6 +4,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   extrairGruposDaResposta,
+  extrairParticipantesDaResposta,
   mapearGrupoUazapi,
   normalizarJidGrupo,
 } from "./uazapi-grupos.ts";
@@ -130,4 +131,43 @@ Deno.test("extrairGruposDaResposta: resposta inesperada devolve lista vazia", ()
   assertEquals(extrairGruposDaResposta(null), []);
   assertEquals(extrairGruposDaResposta("erro"), []);
   assertEquals(extrairGruposDaResposta({ groups: "nope" }), []);
+});
+
+Deno.test("extrairParticipantesDaResposta: schema oficial em PascalCase", () => {
+  const lista = extrairParticipantesDaResposta({
+    JID: "120363012345678901@g.us",
+    Participants: [
+      { PhoneNumber: "5511999998888@s.whatsapp.net", IsAdmin: true },
+      { JID: "5521988887777@s.whatsapp.net", DisplayName: "Anônimo" },
+    ],
+  });
+  assertEquals(lista, [
+    { numero: "5511999998888", nome: null },
+    { numero: "5521988887777", nome: "Anônimo" },
+  ]);
+});
+
+Deno.test("extrairParticipantesDaResposta: aceita envelope { group: {...} }", () => {
+  const lista = extrairParticipantesDaResposta({
+    group: { Participants: [{ JID: "5511999998888@s.whatsapp.net" }] },
+  });
+  assertEquals(lista, [{ numero: "5511999998888", nome: null }]);
+});
+
+Deno.test("extrairParticipantesDaResposta: descarta sem número e dedupe por número", () => {
+  const lista = extrairParticipantesDaResposta({
+    Participants: [
+      { JID: "5511999998888@s.whatsapp.net" },
+      { JID: "5511999998888@s.whatsapp.net", DisplayName: "Repetido" },
+      { DisplayName: "sem numero" },
+    ],
+  });
+  assertEquals(lista.length, 1);
+  assertEquals(lista[0].numero, "5511999998888");
+});
+
+Deno.test("extrairParticipantesDaResposta: resposta sem Participants devolve lista vazia", () => {
+  assertEquals(extrairParticipantesDaResposta(null), []);
+  assertEquals(extrairParticipantesDaResposta({}), []);
+  assertEquals(extrairParticipantesDaResposta({ Participants: "nope" }), []);
 });

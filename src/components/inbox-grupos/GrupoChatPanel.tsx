@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Loader2, Mic, Reply, Send, Users } from "lucide-react";
+import { GrupoParticipantesSheet } from "@/components/inbox-grupos/GrupoParticipantesSheet";
 import { toast } from "sonner";
 import { formatWhatsAppText } from "@/lib/whatsapp-format";
 import { fetchContatoNamesByNumbers } from "@/lib/contatos-queries";
@@ -52,6 +53,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
   const [replyTo, setReplyTo] = useState<GrupoMessage | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{ file: File; tipo: MediaTipo } | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
+  const [participantesOpen, setParticipantesOpen] = useState(false);
   const recorder = useAudioRecorder();
 
   const chat = useGrupoHistory({ grupoId: grupo.id, enabled: true });
@@ -258,7 +260,23 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setParticipantesOpen(true)}
+          title="Ver participantes"
+          aria-label="Ver participantes"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+        >
+          <Users className="h-4 w-4" strokeWidth={1.8} />
+        </button>
       </div>
+
+      <GrupoParticipantesSheet
+        grupoId={grupo.id}
+        grupoNome={grupo.nome}
+        open={participantesOpen}
+        onOpenChange={setParticipantesOpen}
+      />
 
       {/* Mensagens */}
       <div

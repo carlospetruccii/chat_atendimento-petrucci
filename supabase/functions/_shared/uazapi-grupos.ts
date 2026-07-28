@@ -106,6 +106,60 @@ export function mapearGrupoUazapi(bruto: unknown): GrupoUazapi | null {
   return { jid, nome, topico, fotoUrl, participantesTotal, souAdmin, somenteAdminEnvia };
 }
 
+export interface ParticipanteGrupoUazapi {
+  /** Número em dígitos (sem @s.whatsapp.net), ex: '5511999998888'. */
+  numero: string;
+  /**
+   * Nome via DisplayName — só a uazapi preenche isso para usuário anônimo;
+   * na maioria dos casos vem null e o nome real é resolvido cruzando com a
+   * agenda de contatos no frontend.
+   */
+  nome: string | null;
+}
+
+/** Converte um item de `Participants[]` (schema GroupParticipant) no nosso shape. */
+function mapearParticipante(bruto: unknown): ParticipanteGrupoUazapi | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const p = bruto as Record<string, unknown>;
+  const numero = primeiroTexto(p, ["PhoneNumber", "phoneNumber", "JID", "jid", "LID", "lid"])
+    ?.split("@")[0]
+    .replace(/\D/g, "");
+  if (!numero) return null;
+  const nome = primeiroTexto(p, [
+    "DisplayName",
+    "displayName",
+    "Name",
+    "name",
+    "PushName",
+    "pushName",
+  ]);
+  return { numero, nome };
+}
+
+/**
+ * Extrai os participantes de uma resposta do POST /group/info. A rota pode
+ * devolver o Group cru ou dentro de um envelope ({ group: {...} } / { data: {...} }).
+ * Itens sem número utilizável e números repetidos são descartados.
+ */
+export function extrairParticipantesDaResposta(resposta: unknown): ParticipanteGrupoUazapi[] {
+  if (!resposta || typeof resposta !== "object") return [];
+  const raiz = resposta as Record<string, unknown>;
+  const grupo =
+    raiz.Participants || raiz.participants || raiz.members
+      ? raiz
+      : ((raiz.group ?? raiz.Group ?? raiz.data ?? {}) as Record<string, unknown>);
+
+  const participantes = grupo.Participants ?? grupo.participants ?? grupo.members;
+  if (!Array.isArray(participantes)) return [];
+
+  const porNumero = new Map<string, ParticipanteGrupoUazapi>();
+  for (const item of participantes) {
+    const p = mapearParticipante(item);
+    if (p && !porNumero.has(p.numero)) porNumero.set(p.numero, p);
+  }
+  return Array.from(porNumero.values());
+}
+
 /**
  * Extrai a lista de grupos de uma resposta do GET /group/list. A rota pode
  * devolver um array cru ou um envelope ({ groups: [...] } / { data: [...] }).

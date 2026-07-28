@@ -27,11 +27,13 @@
 
 import {
   extrairGruposDaResposta,
+  extrairParticipantesDaResposta,
   type GrupoUazapi,
   mapearGrupoUazapi,
+  type ParticipanteGrupoUazapi,
 } from "./uazapi-grupos.ts";
 
-export type { GrupoUazapi };
+export type { GrupoUazapi, ParticipanteGrupoUazapi };
 
 const MAX_TENTATIVAS = 3;
 // Timeout por requisição — evita que uma conexão pendurada na uazapi trave a
@@ -337,17 +339,34 @@ export interface StatusResult {
   raw: unknown;
 }
 
+/**
+ * Extrai o número (só dígitos) do JID da instância. A rota devolve `status.jid`
+ * como STRING no formato "5519991351061:7@s.whatsapp.net" — o ":7" é o id do
+ * dispositivo e tem que sair. Aceita também o formato objeto ({ user }), que é
+ * o que a doc sugere, e `instance.owner`, que já vem em dígitos puros.
+ */
+export function numeroDoJidInstancia(bruto: unknown): string | undefined {
+  if (typeof bruto === "string") {
+    const digitos = bruto.split("@")[0].split(":")[0].replace(/\D/g, "");
+    return digitos || undefined;
+  }
+  if (bruto && typeof bruto === "object") {
+    const user = (bruto as Record<string, unknown>).user;
+    if (typeof user === "string") return user.replace(/\D/g, "") || undefined;
+  }
+  return undefined;
+}
+
 export async function statusInstancia(): Promise<StatusResult> {
   const resp = (await chamar("GET", "/instance/status")) as Record<string, unknown>;
   const st = (resp.status ?? {}) as Record<string, unknown>;
   const inst = (resp.instance ?? {}) as Record<string, unknown>;
-  const jid = (st.jid ?? {}) as Record<string, unknown>;
   return {
     connected: Boolean(st.connected),
     loggedIn: Boolean(st.loggedIn),
     status: (inst.status ?? st.status) as string | undefined,
     profileName: inst.profileName as string | undefined,
-    numero: jid.user as string | undefined,
+    numero: numeroDoJidInstancia(st.jid) ?? numeroDoJidInstancia(inst.owner),
     raw: resp,
   };
 }
@@ -424,6 +443,12 @@ export async function infoGrupo(jid: string): Promise<GrupoUazapi | null> {
   if (direto) return direto;
   const env = (resp ?? {}) as Record<string, unknown>;
   return mapearGrupoUazapi(env.group ?? env.Group ?? env.data ?? null);
+}
+
+/** Lista os participantes (número + nome, quando disponível) de um grupo. */
+export async function participantesGrupo(jid: string): Promise<ParticipanteGrupoUazapi[]> {
+  const resp = await chamar("POST", "/group/info", { groupjid: jid });
+  return extrairParticipantesDaResposta(resp);
 }
 
 // ————————————————————————————————————————————————————————————————
