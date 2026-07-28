@@ -5,6 +5,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { exigirMembroAtivo } from "../_shared/empresa.ts";
 
 const FUNCAO = "cadastrar-cliente";
 
@@ -99,6 +100,16 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, erro: "forbidden" }, 403);
   }
 
+  // Empresa do chamador: `clients` é único por (company_id, numero_whatsapp),
+  // então o UPSERT precisa do company_id — sem ele o ON CONFLICT não casa com
+  // nenhum índice e o Postgres devolve 42P10.
+  const membro = await exigirMembroAtivo(supabase, userId);
+  if (!membro) {
+    log({ funcao: FUNCAO, evento: "sem_vinculo_empresa", status: "erro", duracao_ms: cron() });
+    return json({ ok: false, erro: "forbidden" }, 403);
+  }
+  const companyId = membro.companyId;
+
   let payload: Payload;
   try {
     payload = (await req.json()) as Payload;
@@ -122,14 +133,20 @@ Deno.serve(async (req: Request) => {
     const { data: existente } = await supabase
       .from("clients")
       .select("id, nome")
+      .eq("company_id", companyId)
       .eq("numero_whatsapp", telefone)
       .maybeSingle();
 
     const { data: up, error: errUp } = await supabase
       .from("clients")
       .upsert(
-        { nome, numero_whatsapp: telefone, updated_at: new Date().toISOString() },
-        { onConflict: "numero_whatsapp" },
+        {
+          company_id: companyId,
+          nome,
+          numero_whatsapp: telefone,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "company_id,numero_whatsapp" },
       )
       .select("id, nome, numero_whatsapp")
       .single();
@@ -189,6 +206,7 @@ Deno.serve(async (req: Request) => {
       const { data: jaTem, error: errSel } = await supabase
         .from("clients")
         .select("numero_whatsapp")
+        .eq("company_id", companyId)
         .in("numero_whatsapp", tels);
       if (errSel) {
         log({ funcao: FUNCAO, evento: "select_existentes_erro", status: "erro", duracao_ms: cron(), erro_msg: errSel.message });
@@ -203,13 +221,14 @@ Deno.serve(async (req: Request) => {
     if (validos.length > 0) {
       const now = new Date().toISOString();
       const rows = validos.map((v) => ({
+        company_id: companyId,
         nome: v.nome,
         numero_whatsapp: v.telefone,
         updated_at: now,
       }));
       const { error: errUp } = await supabase
         .from("clients")
-        .upsert(rows, { onConflict: "numero_whatsapp" });
+        .upsert(rows, { onConflict: "company_id,numero_whatsapp" });
       if (errUp) {
         log({ funcao: FUNCAO, evento: "upsert_batch_erro", status: "erro", duracao_ms: cron(), erro_msg: errUp.message });
         return json({ ok: false, erro: "erro_interno", detalhe: errUp.message }, 500);
