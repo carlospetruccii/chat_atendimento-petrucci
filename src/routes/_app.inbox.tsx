@@ -61,6 +61,7 @@ import {
   RichMessageComposer,
   type RichMessageComposerHandle,
 } from "@/components/inbox/RichMessageComposer";
+import { EmojiPicker } from "@/components/inbox/EmojiPicker";
 import { InboxTabs, type InboxAba } from "@/components/inbox/InboxTabs";
 import { GruposPane } from "@/components/inbox-grupos/GruposPane";
 import { EquipePane } from "@/components/inbox-equipe/EquipePane";
@@ -1028,6 +1029,10 @@ function InboxPage() {
                         onHasContentChange={setHasDraft}
                         onPasteImage={handlePasteImage}
                         onEnterSend={handleSend}
+                      />
+                      <EmojiPicker
+                        disabled={sending}
+                        onPick={(char) => composerRef.current?.insertText(char)}
                       />
                       <button
                         type="button"

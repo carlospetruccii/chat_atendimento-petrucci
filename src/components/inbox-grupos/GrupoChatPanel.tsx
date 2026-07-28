@@ -20,6 +20,7 @@ import { MessageMedia } from "@/components/inbox-media/MessageMedia";
 import { QuotedMessagePreview } from "@/components/inbox/QuotedMessagePreview";
 import { AudioRecorderBar } from "@/components/inbox/AudioRecorderBar";
 import { AttachMenu, MAX_ATTACHMENT_BYTES, type PickedFile } from "@/components/inbox/AttachMenu";
+import { EmojiPicker } from "@/components/inbox/EmojiPicker";
 import { MediaPreviewDialog, type MediaTipo } from "@/components/inbox/MediaPreviewDialog";
 import {
   RichMessageComposer,
@@ -468,6 +469,10 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
                 onHasContentChange={setHasDraft}
                 onPasteImage={handlePasteImage}
                 onEnterSend={handleSend}
+              />
+              <EmojiPicker
+                disabled={sending}
+                onPick={(char) => composerRef.current?.insertText(char)}
               />
               <button
                 type="button"

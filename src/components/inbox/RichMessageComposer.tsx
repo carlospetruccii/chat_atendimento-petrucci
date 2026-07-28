@@ -18,18 +18,25 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { $convertToMarkdownString } from "@lexical/markdown";
 import {
   $getRoot,
+  $getSelection,
+  $isRangeSelection,
   COMMAND_PRIORITY_HIGH,
   KEY_ENTER_COMMAND,
   PASTE_COMMAND,
   type EditorState,
 } from "lexical";
 import { cn } from "@/lib/utils";
-import { unescapeWhatsappMarkdown, WHATSAPP_TRANSFORMERS } from "@/lib/whatsapp-markdown-transformers";
+import {
+  unescapeWhatsappMarkdown,
+  WHATSAPP_TRANSFORMERS,
+} from "@/lib/whatsapp-markdown-transformers";
 
 export interface RichMessageComposerHandle {
   getMarkdownText: () => string;
   clear: () => void;
   focus: () => void;
+  /** Insere texto na posição do cursor (usado pelo seletor de emoji). */
+  insertText: (text: string) => void;
 }
 
 export interface RichMessageComposerProps {
@@ -67,6 +74,21 @@ function ImperativeHandlePlugin({
         });
       },
       focus: () => {
+        editor.focus();
+      },
+      insertText: (text: string) => {
+        editor.update(() => {
+          let selection = $getSelection();
+          // Sem seleção de intervalo (o editor nunca recebeu foco, ou o foco
+          // está no botão do seletor): posiciona no fim antes de inserir, senão
+          // o emoji seria descartado silenciosamente.
+          if (!$isRangeSelection(selection)) {
+            $getRoot().selectEnd();
+            selection = $getSelection();
+          }
+          if ($isRangeSelection(selection)) selection.insertText(text);
+        });
+        // Devolve o cursor ao texto para a pessoa continuar escrevendo.
         editor.focus();
       },
     }),
