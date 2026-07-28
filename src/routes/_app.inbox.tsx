@@ -739,7 +739,8 @@ function InboxPage() {
                         className="text-[10px] px-1.5 py-0.5 rounded"
                         style={deptStyle(current.departmentCor)}
                       >
-                        {current.departmentNome ?? "Triagem"}
+                        {current.departmentNome ??
+                          (current.status === "em_triagem" ? "Triagem" : "Sem departamento")}
                       </span>
                       {current.status === "encerrado" && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">

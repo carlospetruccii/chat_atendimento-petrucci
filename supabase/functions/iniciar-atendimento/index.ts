@@ -20,6 +20,13 @@ interface Payload {
   client_id?: string;
   department_id?: string | null;
   assigned_to?: string | null;
+  /**
+   * Atalho do botão "Conversar" (tela Contatos): abre o atendimento já atribuído
+   * a quem clicou, sem escolher departamento/atendente. Vale para qualquer papel
+   * — inclusive dono/administrador sem departamento, caso em que o atendimento
+   * nasce sem departamento (o CHECK permite, porque tem responsável).
+   */
+  assign_to_me?: boolean;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -78,7 +85,14 @@ Deno.serve(async (req: Request) => {
   let departmentId: string | null;
   let assignedTo: string;
 
-  if (canChooseDept) {
+  if (payload.assign_to_me) {
+    // "Conversar" a partir dos Contatos: responsável é o próprio chamador.
+    assignedTo = callerId;
+    departmentId = caller.department_id ?? null;
+    if (!departmentId && !caller.is_superadmin) {
+      return json({ ok: false, erro: "caller_sem_departamento" }, 400);
+    }
+  } else if (canChooseDept) {
     if (!payload.department_id || !payload.assigned_to) {
       return json(
         { ok: false, erro: "campos_obrigatorios", detalhe: "department_id e assigned_to são obrigatórios" },
@@ -149,6 +163,9 @@ Deno.serve(async (req: Request) => {
         error: "cliente_com_atendimento_ativo",
         atendimento_id: ativo.id,
         status: ativo.status,
+        // O front usa isto para decidir se pode simplesmente abrir a conversa
+        // existente (quando já é do próprio chamador) em vez de barrar.
+        assigned_to: ativo.assigned_to,
         assigned_to_nome: aUser?.nome ?? "Não atribuído",
         department_nome: aDept?.nome ?? "—",
       },
@@ -157,11 +174,9 @@ Deno.serve(async (req: Request) => {
   }
 
   // Resolve nomes para payload da timeline
-  const { data: deptRow } = await supabase
-    .from("departments")
-    .select("nome")
-    .eq("id", departmentId)
-    .maybeSingle();
+  const { data: deptRow } = departmentId
+    ? await supabase.from("departments").select("nome").eq("id", departmentId).maybeSingle()
+    : { data: null };
   const { data: assignedRow } =
     assignedTo === callerId
       ? { data: { nome: caller.nome } }

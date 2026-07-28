@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -16,12 +16,8 @@ import {
   listContatos,
   type Contato,
 } from "@/lib/contatos-queries";
-import {
-  cadastrarClienteSingle,
-  formatTelefoneBR,
-  type ClienteAutocompleteRow,
-} from "@/lib/clientes-queries";
-import { IniciarAtendimentoDialog } from "@/components/inbox/IniciarAtendimentoDialog";
+import { cadastrarClienteSingle, formatTelefoneBR } from "@/lib/clientes-queries";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_app/contatos")({
   staticData: { title: "Contatos" },
@@ -42,16 +38,13 @@ function initials(nome: string): string {
 
 function ContatosPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { user } = useCurrentUser();
   const canViewAll = !!user && (user.isSuperadmin || user.permissions.includes("view_all_departments"));
 
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
-
-  // Dialog "Iniciar atendimento" reaproveitado, com cliente pré-selecionado.
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [initialClient, setInitialClient] = useState<ClienteAutocompleteRow | null>(null);
   const [preparandoId, setPreparandoId] = useState<string | null>(null);
 
   // Debounce da busca
@@ -84,6 +77,20 @@ function ContatosPage() {
     onError: () => toast.error("Falha ao atualizar os contatos."),
   });
 
+  function abrirNoInbox(atendimentoId: string) {
+    void navigate({ to: "/inbox", search: { conversation: atendimentoId } });
+  }
+
+  /**
+   * "Conversar" abre o atendimento na hora, atribuído a quem clicou — sem
+   * diálogo de departamento/atendente. Antes isto só abria o diálogo "Iniciar
+   * atendimento", que exigia escolher um atendente do departamento; quem não
+   * tem departamento (dono/administrador) não conseguia se atribuir e o chat
+   * nunca abria.
+   *
+   * Se o cliente já está em atendimento, não cria outro: abre o existente
+   * quando dá para enxergá-lo, senão avisa quem está responsável.
+   */
   async function iniciarConversa(contato: Contato) {
     if (!contato.numero_whatsapp) {
       toast.error("Este contato não tem um número de WhatsApp válido.");
@@ -91,18 +98,42 @@ function ContatosPage() {
     }
     setPreparandoId(contato.id);
     try {
-      // Garante que existe um cliente com esse número (cria/atualiza) e usa o
-      // nome do contato. Depois abre o diálogo já com o cliente escolhido.
+      // Garante que existe um cliente com esse número (cria/atualiza) usando o
+      // nome do contato do Google.
       const nome = contato.nome?.trim() || contato.numero_raw || contato.numero_whatsapp;
-      const resp = await cadastrarClienteSingle(nome, contato.numero_whatsapp);
-      setInitialClient({
-        id: resp.cliente.id,
-        nome: resp.cliente.nome,
-        numero_whatsapp: resp.cliente.numero_whatsapp,
+      const cliente = await cadastrarClienteSingle(nome, contato.numero_whatsapp);
+
+      const { data, error } = await supabase.functions.invoke("iniciar-atendimento", {
+        body: { client_id: cliente.cliente.id, assign_to_me: true },
       });
-      setDialogOpen(true);
+
+      if (error) {
+        const ctx = (error as { context?: Response }).context;
+        const corpo = ctx ? await ctx.json().catch(() => null) : null;
+        if (corpo?.error === "cliente_com_atendimento_ativo") {
+          const meu = corpo.assigned_to && corpo.assigned_to === user?.id;
+          if (meu || canViewAll) {
+            toast.info("Este cliente já tem um atendimento aberto. Abrindo a conversa.");
+            abrirNoInbox(corpo.atendimento_id as string);
+            return;
+          }
+          toast.error(
+            `Já está em atendimento com ${corpo.assigned_to_nome} (${corpo.department_nome}).`,
+          );
+          return;
+        }
+        toast.error(corpo?.detalhe || corpo?.erro || error.message);
+        return;
+      }
+
+      const resp = data as { ok: boolean; atendimento_id: string };
+      if (resp?.ok) {
+        toast.success("Atendimento iniciado");
+        qc.invalidateQueries({ queryKey: ["inbox", "conversations"] });
+        abrirNoInbox(resp.atendimento_id);
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao preparar a conversa.");
+      toast.error(e instanceof Error ? e.message : "Falha ao iniciar a conversa.");
     } finally {
       setPreparandoId(null);
     }
@@ -258,14 +289,6 @@ function ContatosPage() {
           </div>
         </div>
       )}
-
-      <IniciarAtendimentoDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        canChooseDept={canViewAll}
-        initialClient={initialClient}
-        onCreated={() => setDialogOpen(false)}
-      />
     </div>
   );
 }

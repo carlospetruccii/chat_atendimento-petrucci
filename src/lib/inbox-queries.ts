@@ -79,7 +79,9 @@ export async function listInboxConversations(
       assigned:users!atendimentos_assigned_to_fkey ( id, nome )
     `,
     )
-    .order("last_message_at", { ascending: false, nullsFirst: false });
+    // nullsFirst: atendimentos recém-abertos (sem mensagem ainda) não podem cair
+    // fora do limit — a ordem de verdade é resolvida abaixo, por atividade.
+    .order("last_message_at", { ascending: false, nullsFirst: true });
 
   if (params.canViewAll) {
     // Administrador / superadmin: vê todos os status, inclusive encerrados,
@@ -91,10 +93,16 @@ export async function listInboxConversations(
   const { data, error } = await query.limit(500);
   if (error) throw error;
 
-  // Dedup por cliente: já vem ordenado por last_message_at desc, então
-  // o primeiro registro de cada client.id é o atendimento mais recente.
+  // Ordena por atividade: última mensagem ou, quando ainda não houve nenhuma
+  // (atendimento aberto pela tela Contatos), a criação. Sem isso um atendimento
+  // novo ficava atrás de um antigo do mesmo cliente e era descartado no dedup —
+  // e o chat não abria ao vir de "Conversar".
+  const atividade = (r: { last_message_at: string | null; created_at: string }): number =>
+    new Date(r.last_message_at ?? r.created_at).getTime();
+
+  // Dedup por cliente: o primeiro registro de cada client.id é o mais recente.
   const seenClients = new Set<string>();
-  const rowsRaw = data ?? [];
+  const rowsRaw = [...(data ?? [])].sort((a, b) => atividade(b) - atividade(a));
   const rows = [] as typeof rowsRaw;
   for (const r of rowsRaw) {
     const c = r.client as { id: string } | null;
