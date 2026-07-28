@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       alertas_atendimento_parado: {
@@ -662,6 +687,105 @@ export type Database = {
           },
         ]
       }
+      conversa_interna_leituras: {
+        Row: {
+          company_id: string
+          conversa_id: string
+          last_read_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          conversa_id: string
+          last_read_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          conversa_id?: string
+          last_read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversa_interna_leituras_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversa_interna_leituras_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas_internas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversa_interna_leituras_conversa_same_company_fk"
+            columns: ["conversa_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "conversas_internas"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "conversa_interna_leituras_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversas_internas: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          last_message_at: string | null
+          user_a_id: string
+          user_b_id: string
+        }
+        Insert: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          last_message_at?: string | null
+          user_a_id: string
+          user_b_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          last_message_at?: string | null
+          user_a_id?: string
+          user_b_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversas_internas_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversas_internas_user_a_id_fkey"
+            columns: ["user_a_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversas_internas_user_b_id_fkey"
+            columns: ["user_b_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       department_business_hours: {
         Row: {
           created_at: string
@@ -944,11 +1068,11 @@ export type Database = {
             referencedColumns: ["id", "company_id"]
           },
           {
-            foreignKeyName: "grupo_mensagens_reply_to_message_id_fkey"
-            columns: ["reply_to_message_id"]
+            foreignKeyName: "grupo_mensagens_reply_same_grupo_fk"
+            columns: ["reply_to_message_id", "grupo_id"]
             isOneToOne: false
             referencedRelation: "grupo_mensagens"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "grupo_id"]
           },
           {
             foreignKeyName: "grupo_mensagens_sent_by_user_id_fkey"
@@ -1196,6 +1320,62 @@ export type Database = {
           {
             foreignKeyName: "mensagens_sent_by_user_id_fkey"
             columns: ["sent_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mensagens_internas: {
+        Row: {
+          company_id: string
+          content: string
+          conversa_id: string
+          created_at: string
+          id: string
+          sender_user_id: string
+        }
+        Insert: {
+          company_id?: string
+          content: string
+          conversa_id: string
+          created_at?: string
+          id?: string
+          sender_user_id: string
+        }
+        Update: {
+          company_id?: string
+          content?: string
+          conversa_id?: string
+          created_at?: string
+          id?: string
+          sender_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mensagens_internas_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mensagens_internas_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas_internas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mensagens_internas_conversa_same_company_fk"
+            columns: ["conversa_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "conversas_internas"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "mensagens_internas_sender_user_id_fkey"
+            columns: ["sender_user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -1806,6 +1986,10 @@ export type Database = {
       }
     }
     Functions: {
+      abrir_conversa_interna: {
+        Args: { p_outro_user_id: string }
+        Returns: string
+      }
       admin_list_user_whatsapps: {
         Args: never
         Returns: {
@@ -1839,6 +2023,15 @@ export type Database = {
       current_user_can_view_all: { Args: never; Returns: boolean }
       current_user_department: { Args: never; Returns: string }
       current_user_is_superadmin: { Args: never; Returns: boolean }
+      dashboard_company_do_chamador: { Args: never; Returns: string }
+      dashboard_engajamento: {
+        Args: { p_company_id: string; p_janela_dias: number; p_to: string }
+        Returns: Json
+      }
+      dashboard_relacionamento: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
       dentro_da_janela_continuidade: {
         Args: { p_client_id: string }
         Returns: string
@@ -1846,6 +2039,10 @@ export type Database = {
       encerrar_atendimento: {
         Args: { p_atendimento_id: string; p_motivo?: string }
         Returns: boolean
+      }
+      enviar_mensagem_interna: {
+        Args: { p_content: string; p_conversa_id: string }
+        Returns: string
       }
       esta_em_horario_comercial: { Args: { ts: string }; Returns: boolean }
       get_atendimentos_parados: {
@@ -1877,11 +2074,42 @@ export type Database = {
       }
       get_my_grupos_unread_total: { Args: never; Returns: number }
       get_my_inbox_unread_total: { Args: never; Returns: number }
+      get_my_internas_unread_total: { Args: never; Returns: number }
       has_permission: { Args: { flag: string }; Returns: boolean }
       is_member_of: { Args: { p_company_id: string }; Returns: boolean }
       is_owner_of: { Args: { p_company_id: string }; Returns: boolean }
+      listar_colegas_internos: {
+        Args: never
+        Returns: {
+          conversa_id: string
+          department_cor: string
+          department_nome: string
+          disponivel: boolean
+          nome: string
+          user_id: string
+        }[]
+      }
+      listar_conversas_internas: {
+        Args: never
+        Returns: {
+          conversa_id: string
+          last_message_at: string
+          last_message_content: string
+          last_message_de_mim: boolean
+          outro_department_cor: string
+          outro_department_nome: string
+          outro_disponivel: boolean
+          outro_nome: string
+          outro_user_id: string
+          unread: number
+        }[]
+      }
       marcar_atendimento_lido: {
         Args: { p_atendimento_id: string }
+        Returns: undefined
+      }
+      marcar_conversa_interna_lida: {
+        Args: { p_conversa_id: string }
         Returns: undefined
       }
       marcar_grupo_lido: { Args: { p_grupo_id: string }; Returns: undefined }
@@ -1896,6 +2124,10 @@ export type Database = {
       pendentes_abertos_a_todos:
         | { Args: never; Returns: boolean }
         | { Args: { p_company_id: string }; Returns: boolean }
+      pode_conversar_internamente: {
+        Args: { p_company_id: string; p_user_id: string }
+        Returns: boolean
+      }
       proximo_horario_abertura: { Args: { ts: string }; Returns: string }
       repassar_atendimento: {
         Args: {
@@ -2089,6 +2321,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       close_reason: [

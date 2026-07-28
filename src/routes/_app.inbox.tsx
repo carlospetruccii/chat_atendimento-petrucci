@@ -63,12 +63,23 @@ import {
 } from "@/components/inbox/RichMessageComposer";
 import { InboxTabs, type InboxAba } from "@/components/inbox/InboxTabs";
 import { GruposPane } from "@/components/inbox-grupos/GruposPane";
+import { EquipePane } from "@/components/inbox-equipe/EquipePane";
 
 interface InboxSearch {
   conversation?: string;
   mode?: "supervision";
-  /** Aba ativa: atendimentos individuais ("chat") ou grupos ("grupos"). */
+  /**
+   * Aba ativa: atendimentos individuais ("chat", o padrão), grupos de WhatsApp
+   * ("grupos") ou chat interno da equipe ("equipe").
+   */
   aba?: InboxAba;
+}
+
+/** Abas que aparecem na URL. "chat" é o padrão e fica implícito (sem ?aba=). */
+const ABAS_NA_URL = ["grupos", "equipe"] as const;
+
+function parseAba(valor: unknown): InboxAba | undefined {
+  return ABAS_NA_URL.find((a) => a === valor);
 }
 
 export const Route = createFileRoute("/_app/inbox")({
@@ -76,7 +87,7 @@ export const Route = createFileRoute("/_app/inbox")({
   validateSearch: (search: Record<string, unknown>): InboxSearch => ({
     conversation: typeof search.conversation === "string" ? search.conversation : undefined,
     mode: search.mode === "supervision" ? "supervision" : undefined,
-    aba: search.aba === "grupos" ? "grupos" : undefined,
+    aba: parseAba(search.aba),
   }),
   component: InboxPage,
 });
@@ -141,7 +152,7 @@ function InboxPage() {
   const trocarAba = (nova: InboxAba) => {
     setAba(nova);
     void navigate({
-      search: (prev) => ({ ...prev, aba: nova === "grupos" ? "grupos" : undefined }),
+      search: (prev) => ({ ...prev, aba: parseAba(nova) }),
       replace: true,
     });
   };
@@ -181,29 +192,32 @@ function InboxPage() {
 
   const conversations = conversationsQuery.data ?? [];
 
-  // Contadores das duas abas, para o badge do alternador. Ficam numa query só
-  // (chave separada da do menu lateral, que soma os dois).
+  // Contadores das três abas, para o badge do alternador. Ficam numa query só
+  // (chave separada da do menu lateral, que soma os três).
   const abasUnreadQuery = useQuery({
     queryKey: ["inbox", "abas-unread"],
     queryFn: async () => {
-      const [chat, grupos] = await Promise.all([
+      const [chat, grupos, equipe] = await Promise.all([
         supabase.rpc("get_my_inbox_unread_total"),
         supabase.rpc("get_my_grupos_unread_total"),
+        supabase.rpc("get_my_internas_unread_total"),
       ]);
       if (chat.error) throw chat.error;
       if (grupos.error) throw grupos.error;
-      return { chat: chat.data ?? 0, grupos: grupos.data ?? 0 };
+      if (equipe.error) throw equipe.error;
+      return { chat: chat.data ?? 0, grupos: grupos.data ?? 0, equipe: equipe.data ?? 0 };
     },
     enabled: !!user,
     refetchInterval: 30_000,
   });
-  const abasUnread = abasUnreadQuery.data ?? { chat: 0, grupos: 0 };
+  const abasUnread = abasUnreadQuery.data ?? { chat: 0, grupos: 0, equipe: 0 };
 
   const tabsEl = (
     <InboxTabs
       aba={aba}
       chatUnread={abasUnread.chat}
       gruposUnread={abasUnread.grupos}
+      equipeUnread={abasUnread.equipe}
       onChange={trocarAba}
     />
   );
@@ -583,13 +597,23 @@ function InboxPage() {
     queryClient.invalidateQueries({ queryKey: ["inbox"] });
   };
 
-  // Aba Grupos: mundo separado (lista + conversa próprias). Nada do fluxo de
-  // atendimento — bot, triagem, repasse, encerramento — existe lá.
+  // Abas Grupos e Equipe: mundos separados (lista + conversa próprias). Nada do
+  // fluxo de atendimento — bot, triagem, repasse, encerramento — existe neles.
   if (aba === "grupos") {
     return (
       <div className="h-full">
         <div className="flex h-full">
           <GruposPane meuUserId={user.id} formatTime={formatTime} tabs={tabsEl} />
+        </div>
+      </div>
+    );
+  }
+
+  if (aba === "equipe") {
+    return (
+      <div className="h-full">
+        <div className="flex h-full">
+          <EquipePane meuUserId={user.id} formatTime={formatTime} tabs={tabsEl} />
         </div>
       </div>
     );

@@ -94,18 +94,21 @@ export function AppSidebar() {
   });
   const pendentesCount = pendentesCountQ.data ?? 0;
 
-  // O badge do Inbox soma as duas abas (Chat + Grupos), que é o que o usuário vê
-  // ao entrar na tela. São dois RPCs porque grupo mora em tabelas separadas.
+  // O badge do Inbox soma as três abas (Chat + Grupos + Equipe), que é o que o
+  // usuário vê ao entrar na tela. São três RPCs porque grupo e conversa interna
+  // moram em tabelas separadas.
   const inboxUnreadQ = useQuery({
     queryKey: ["inbox-unread-total"],
     queryFn: async () => {
-      const [individual, grupos] = await Promise.all([
+      const [individual, grupos, equipe] = await Promise.all([
         supabase.rpc("get_my_inbox_unread_total"),
         supabase.rpc("get_my_grupos_unread_total"),
+        supabase.rpc("get_my_internas_unread_total"),
       ]);
       if (individual.error) throw individual.error;
       if (grupos.error) throw grupos.error;
-      return (individual.data ?? 0) + (grupos.data ?? 0);
+      if (equipe.error) throw equipe.error;
+      return (individual.data ?? 0) + (grupos.data ?? 0) + (equipe.data ?? 0);
     },
     enabled: !!user,
     refetchInterval: 30_000,

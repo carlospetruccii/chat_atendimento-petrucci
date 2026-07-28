@@ -1,23 +1,26 @@
-import { MessageCircle, Users } from "lucide-react";
+import { MessageCircle, MessagesSquare, Users } from "lucide-react";
 
-export type InboxAba = "chat" | "grupos";
+export type InboxAba = "chat" | "grupos" | "equipe";
 
 interface Props {
   aba: InboxAba;
   chatUnread: number;
   gruposUnread: number;
+  equipeUnread: number;
   onChange: (aba: InboxAba) => void;
 }
 
 /**
- * Alternador Chat | Grupos da Inbox. São dois mundos separados: "Chat" são os
- * atendimentos individuais (com triagem, bot, departamento); "Grupos" são
- * conversas de grupo, sem nenhuma automação.
+ * Alternador Chat | Grupos | Equipe da Inbox. São três mundos separados:
+ * "Chat" são os atendimentos individuais (com triagem, bot, departamento);
+ * "Grupos" são conversas de grupo do WhatsApp, sem nenhuma automação;
+ * "Equipe" é o chat interno entre colaboradores, que não passa pelo WhatsApp.
  */
-export function InboxTabs({ aba, chatUnread, gruposUnread, onChange }: Props) {
+export function InboxTabs({ aba, chatUnread, gruposUnread, equipeUnread, onChange }: Props) {
   const abas: { id: InboxAba; label: string; unread: number; Icon: typeof MessageCircle }[] = [
     { id: "chat", label: "Chat", unread: chatUnread, Icon: MessageCircle },
     { id: "grupos", label: "Grupos", unread: gruposUnread, Icon: Users },
+    { id: "equipe", label: "Equipe", unread: equipeUnread, Icon: MessagesSquare },
   ];
 
   return (
