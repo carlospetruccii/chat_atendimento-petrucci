@@ -20,9 +20,15 @@ interface Props {
  * Seletor de emoji do composer. Serve as três abas do Inbox (Chat, Grupos,
  * Equipe), porque as três usam o mesmo `RichMessageComposer`.
  *
- * Não fecha ao escolher: mandar "🎉🎉🎉" ou montar uma sequência é comum, e
- * reabrir o popover a cada caractere seria uma briga com o usuário. Fecha no
- * Esc, no clique fora ou no próprio botão.
+ * Fica ABERTO ao escolher: mandar "🎉🎉🎉" ou montar uma sequência é comum, e
+ * reabrir o popover a cada caractere seria uma briga com o usuário. Fecha só no
+ * clique fora, no Esc ou no próprio botão.
+ *
+ * Para isso o `onFocusOutside` é neutralizado: escolher um emoji chama
+ * `insertText`, que devolve o foco ao campo de texto — e o campo está FORA do
+ * popover, então o Radix interpretava como "o foco saiu" e fechava sozinho. O
+ * clique fora continua fechando, porque quem cuida disso é
+ * `onPointerDownOutside`, que segue intacto.
  */
 export function EmojiPicker({ disabled, onPick }: Props) {
   const [open, setOpen] = useState(false);
@@ -75,7 +81,14 @@ export function EmojiPicker({ disabled, onPick }: Props) {
           <Smile className="h-5 w-5" strokeWidth={1.5} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-[320px] p-2">
+      <PopoverContent
+        align="start"
+        side="top"
+        className="w-[320px] p-2"
+        // Sem isto o popover se fecha sozinho no primeiro emoji: `insertText`
+        // devolve o foco ao composer, que está fora deste conteúdo.
+        onFocusOutside={(event) => event.preventDefault()}
+      >
         <div className="relative mb-2">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
