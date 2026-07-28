@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { fetchDashboard, resolveRange } from "@/lib/dashboard-queries";
+import { RelacionamentoSection } from "@/components/dashboard/RelacionamentoSection";
 
 export const Route = createFileRoute("/_app/dashboard")({
   staticData: { title: "Dashboard" },
@@ -267,6 +268,9 @@ function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Relacionamento — métricas de experiência, só metadados */}
+        <RelacionamentoSection range={range} />
 
         {/* Footer */}
         <div className="text-right text-xs text-muted-foreground">

@@ -129,6 +129,28 @@
   --sidebar-accent-foreground: var(--text-primary);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--wa-green);
+
+  /* -----------------------------------------------------------------
+   * Data viz — seção de Relacionamento da dashboard
+   *
+   * Passos validados com o validador de paleta (checagens de banda de
+   * luminosidade, piso de croma, separação para daltonismo e contraste).
+   * NÃO troque por olhômetro: rode o validador de novo.
+   *
+   * viz-rapido / viz-cauda: par categórico do histograma de 1ª resposta.
+   *   ΔE 12.2 (deutan) / 26.8 (visão normal) — passa.
+   *   viz-rapido fica em 2,82:1 contra a superfície do card, abaixo de 3:1,
+   *   então as barras são OBRIGADAS a carregar rótulo de valor visível.
+   * viz-queda-1..3: rampa ordinal (um matiz, L monotônica) da severidade da
+   *   queda de engajamento. Sempre acompanhada do percentual em texto.
+   * ----------------------------------------------------------------- */
+  --viz-rapido: oklch(0.65 0.13 168);
+  --viz-cauda: oklch(0.65 0.18 50);
+  --viz-neutro: oklch(0.58 0.01 240);
+  --viz-grid: oklch(0.9 0.005 230);
+  --viz-queda-1: oklch(0.72 0.1 27);
+  --viz-queda-2: oklch(0.64 0.16 27);
+  --viz-queda-3: oklch(0.55 0.21 27);
 }
 
 /* =================================================================
@@ -199,6 +221,19 @@
   --sidebar-accent-foreground: var(--text-primary);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--wa-green);
+
+  /* Data viz — passos próprios para a superfície escura.
+   * Não é o tema claro invertido: os tokens --chart-* do escuro ficam em
+   * L 0.72–0.75, fora da banda de escuro do validador (0.48–0.67), então a
+   * seção usa passos próprios. Ambos os conjuntos passam o validador contra
+   * a superfície --layer-2 do respectivo tema. */
+  --viz-rapido: oklch(0.66 0.14 168);
+  --viz-cauda: oklch(0.66 0.18 45);
+  --viz-neutro: oklch(0.58 0.01 220);
+  --viz-grid: oklch(0.36 0.012 220);
+  --viz-queda-1: oklch(0.52 0.1 27);
+  --viz-queda-2: oklch(0.62 0.16 27);
+  --viz-queda-3: oklch(0.72 0.2 27);
 }
 
 @layer base {
