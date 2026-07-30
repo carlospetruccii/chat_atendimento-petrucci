@@ -132,6 +132,33 @@ function mascararLid(lid: string | null | undefined): string | null {
   return `${s.slice(0, 4)}***${s.slice(-2)}`;
 }
 
+/**
+ * O número é de um COLABORADOR nosso?
+ *
+ * Cinco pessoas da equipe também existem como `clients` (têm conversa de
+ * cliente com a empresa). Para esses números, o que sai pela API não é conversa
+ * com cliente: é notificação interna ("Novo atendimento pra você", convite de
+ * acesso) disparada pelas nossas próprias funções. Registrar isso na conversa
+ * poluiria o histórico com aviso de sistema — e mensagem não pode ser apagada.
+ *
+ * Só vale para o eco NÃO reconhecido como nosso: o que o colaborador manda pelo
+ * chat é adotado antes de chegar aqui.
+ */
+async function ehNumeroDeColaborador(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  numero: string | null,
+): Promise<boolean> {
+  const alvo = (numero ?? "").replace(/\D/g, "");
+  if (!alvo) return false;
+  const { data } = await supabase
+    .from("users")
+    .select("whatsapp")
+    .not("whatsapp", "is", null);
+  return ((data ?? []) as { whatsapp: string | null }[]).some(
+    (u) => String(u.whatsapp ?? "").replace(/\D/g, "") === alvo,
+  );
+}
+
 interface ClienteResolvido {
   id: string;
   nome: string | null;
@@ -799,6 +826,20 @@ Deno.serve(async (req: Request) => {
         await aguardarAssentarEco();
         const proprioTardio = await reconhecerProprio();
         if (proprioTardio) return proprioTardio;
+
+        // Não é eco de mensagem do chat. Se o destino é um colaborador, isto é
+        // notificação interna do próprio sistema — não entra na conversa dele
+        // como cliente.
+        if (await ehNumeroDeColaborador(supabase, (payload.chatid as string | undefined) ?? null)) {
+          log({
+            funcao: FUNCAO,
+            evento: "evento_ignorado",
+            status: "ok",
+            client_id: clienteExt.id,
+            extra: { motivo: "notificacao_interna_para_colaborador" },
+          });
+          return jsonResponse({ ok: true, ignorado: "notificacao_interna" });
+        }
       }
 
       // Procura atendimento ativo desse cliente (para anexar a mensagem nele).

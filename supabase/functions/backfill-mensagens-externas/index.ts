@@ -62,6 +62,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+// Compara segredos em tempo constante (não sai no primeiro byte diferente).
+function comparaConstante(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 interface Payload {
   dias?: number;
   limite_clientes?: number;
@@ -80,6 +88,8 @@ interface ResultadoCliente {
   inseridas: number;
   puladas: number;
   erro?: string;
+  /** Só em dry_run: o que entraria. Mensagem não pode ser apagada depois. */
+  amostra?: { quando: string; tipo: string; arquivo: string | null; previa: string | null }[];
 }
 
 /** Clientes com atendimento na janela — só eles têm conversa onde encaixar. */
@@ -96,6 +106,16 @@ async function clientesComAtendimento(
 
   if (error) throw new Error(`select_atendimentos: ${error.message}`);
 
+  // Números de colaborador ficam de fora: o histórico deles está cheio de
+  // notificação interna do próprio sistema ("Novo atendimento pra você",
+  // convite de acesso), que não é conversa com cliente. Mesma regra do webhook.
+  const { data: users } = await supabase.from("users").select("whatsapp").not("whatsapp", "is", null);
+  const numerosInternos = new Set(
+    ((users ?? []) as { whatsapp: string | null }[])
+      .map((u) => String(u.whatsapp ?? "").replace(/\D/g, ""))
+      .filter((v) => v !== ""),
+  );
+
   const vistos = new Set<string>();
   const alvos: ClienteAlvo[] = [];
   for (const linha of (data ?? []) as unknown as {
@@ -106,6 +126,10 @@ async function clientesComAtendimento(
     if (!id || vistos.has(id)) continue;
     const numero = (linha.clients?.numero_whatsapp ?? "").replace(/\D/g, "");
     if (!numero) continue;
+    if (numerosInternos.has(numero)) {
+      vistos.add(id);
+      continue;
+    }
     vistos.add(id);
     alvos.push({ id, numero });
   }
@@ -240,6 +264,14 @@ async function processarCliente(
 
     if (dryRun) {
       r.inseridas++;
+      // Sem a amostra, aplicar seria às cegas — e o trigger de `mensagens`
+      // impede DELETE, então não há como desfazer um backfill errado.
+      (r.amostra ??= []).push({
+        quando,
+        tipo: parsed.tipo,
+        arquivo: (parsed.media_metadata?.file_name as string | undefined) ?? null,
+        previa: parsed.content ? parsed.content.slice(0, 60) : null,
+      });
       continue;
     }
 
@@ -307,20 +339,31 @@ Deno.serve(async (req: Request) => {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
 
-  // Autorização: só superadmin. A função lê o histórico inteiro de conversas na
-  // uazapi e escreve em `mensagens` — não é operação de atendente.
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const jwt = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
-  if (!jwt) return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
-  const { data: userRes, error: errUser } = await supabase.auth.getUser(jwt);
-  if (errUser || !userRes?.user) return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
-  const { data: quem } = await supabase
-    .from("users")
-    .select("is_superadmin, ativo")
-    .eq("id", userRes.user.id)
-    .maybeSingle();
-  if (quem?.is_superadmin !== true || quem?.ativo !== true) {
-    return jsonResponse({ ok: false, erro: "forbidden" }, 403);
+  // Autorização: dois caminhos, os dois administrativos.
+  //   a) header `x-backfill-secret` = secret BACKFILL_SECRET — operação de
+  //      manutenção, rodada por scripts/backfill-mensagens-externas.sh.
+  //   b) JWT de superadmin — pela aplicação.
+  // Atendente comum não passa: isto lê o histórico inteiro de conversas na
+  // uazapi e escreve em `mensagens`.
+  const segredoEsperado = Deno.env.get("BACKFILL_SECRET") ?? "";
+  const segredoRecebido = req.headers.get("x-backfill-secret") ?? "";
+  const ehOperador = segredoEsperado !== "" &&
+    comparaConstante(segredoRecebido, segredoEsperado);
+
+  if (!ehOperador) {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+    if (!jwt) return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+    const { data: userRes, error: errUser } = await supabase.auth.getUser(jwt);
+    if (errUser || !userRes?.user) return jsonResponse({ ok: false, erro: "unauthorized" }, 401);
+    const { data: quem } = await supabase
+      .from("users")
+      .select("is_superadmin, ativo")
+      .eq("id", userRes.user.id)
+      .maybeSingle();
+    if (quem?.is_superadmin !== true || quem?.ativo !== true) {
+      return jsonResponse({ ok: false, erro: "forbidden" }, 403);
+    }
   }
 
   let payload: Payload = {};
@@ -374,6 +417,7 @@ Deno.serve(async (req: Request) => {
       puladas: soma("puladas"),
       erros: erros.length,
       detalhes: resultados.filter((r) => r.erro || r.inseridas > 0),
+      amostra: resultados.flatMap((r) => r.amostra ?? []).slice(0, 40),
     };
 
     log({
