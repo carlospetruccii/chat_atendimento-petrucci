@@ -14,6 +14,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { buscarNomeContato } from "../_shared/uazapi-client.ts";
+import { ehEnvioInterno } from "../_shared/envio-interno.ts";
 import { baixarESalvarMidia } from "../_shared/midia-mensagem.ts";
 import {
   dataDaMensagem,
@@ -130,33 +131,6 @@ function mascararLid(lid: string | null | undefined): string | null {
   const s = String(lid);
   if (s.length < 8) return "***";
   return `${s.slice(0, 4)}***${s.slice(-2)}`;
-}
-
-/**
- * O número é de um COLABORADOR nosso?
- *
- * Cinco pessoas da equipe também existem como `clients` (têm conversa de
- * cliente com a empresa). Para esses números, o que sai pela API não é conversa
- * com cliente: é notificação interna ("Novo atendimento pra você", convite de
- * acesso) disparada pelas nossas próprias funções. Registrar isso na conversa
- * poluiria o histórico com aviso de sistema — e mensagem não pode ser apagada.
- *
- * Só vale para o eco NÃO reconhecido como nosso: o que o colaborador manda pelo
- * chat é adotado antes de chegar aqui.
- */
-async function ehNumeroDeColaborador(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  numero: string | null,
-): Promise<boolean> {
-  const alvo = (numero ?? "").replace(/\D/g, "");
-  if (!alvo) return false;
-  const { data } = await supabase
-    .from("users")
-    .select("whatsapp")
-    .not("whatsapp", "is", null);
-  return ((data ?? []) as { whatsapp: string | null }[]).some(
-    (u) => String(u.whatsapp ?? "").replace(/\D/g, "") === alvo,
-  );
 }
 
 interface ClienteResolvido {
@@ -827,18 +801,20 @@ Deno.serve(async (req: Request) => {
         const proprioTardio = await reconhecerProprio();
         if (proprioTardio) return proprioTardio;
 
-        // Não é eco de mensagem do chat. Se o destino é um colaborador, isto é
-        // notificação interna do próprio sistema — não entra na conversa dele
-        // como cliente.
-        if (await ehNumeroDeColaborador(supabase, (payload.chatid as string | undefined) ?? null)) {
+        // Não é eco de mensagem do chat. Ainda pode ser um aviso INTERNO nosso
+        // ("Novo atendimento pra você") — esses vão para o WhatsApp de
+        // colaboradores, e cinco deles também são `clients`. O corte é por
+        // mensagem, não por número: documento que a contabilidade mandar para o
+        // mesmo colaborador continua entrando na conversa.
+        if (await ehEnvioInterno(supabase, zapiMessageId)) {
           log({
             funcao: FUNCAO,
             evento: "evento_ignorado",
             status: "ok",
             client_id: clienteExt.id,
-            extra: { motivo: "notificacao_interna_para_colaborador" },
+            extra: { motivo: "aviso_interno_do_sistema" },
           });
-          return jsonResponse({ ok: true, ignorado: "notificacao_interna" });
+          return jsonResponse({ ok: true, ignorado: "aviso_interno" });
         }
       }
 

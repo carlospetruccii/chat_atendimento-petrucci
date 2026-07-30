@@ -9,6 +9,9 @@
 #   scripts/backfill-mensagens-externas.sh                 # simulação (não grava)
 #   scripts/backfill-mensagens-externas.sh --aplicar       # grava de verdade
 #   scripts/backfill-mensagens-externas.sh --dias 30       # janela maior (máx 90)
+#   scripts/backfill-mensagens-externas.sh --incluir-colaboradores
+#       Inclui números que também são de colaborador. O histórico deles tem
+#       aviso interno do sistema misturado — sempre simule e leia a amostra.
 #
 # Pagina sozinho até acabar. Ao final imprime o total.
 
@@ -19,13 +22,15 @@ FUNCAO="backfill-mensagens-externas"
 DIAS=7
 LOTE=25
 DRY_RUN=true
+INCLUIR_COLAB=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --aplicar) DRY_RUN=false; shift ;;
     --dias)    DIAS="${2:?--dias precisa de um número}"; shift 2 ;;
     --lote)    LOTE="${2:?--lote precisa de um número}"; shift 2 ;;
-    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --incluir-colaboradores) INCLUIR_COLAB=true; shift ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "opção desconhecida: $1" >&2; exit 2 ;;
   esac
 done
@@ -54,7 +59,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
 else
   echo "MODO REAL — vai gravar em mensagens."
 fi
-echo "Janela: últimos ${DIAS} dias | lote: ${LOTE} clientes"
+echo "Janela: últimos ${DIAS} dias | lote: ${LOTE} clientes | inclui colaboradores: ${INCLUIR_COLAB}"
 echo
 
 offset=0
@@ -69,7 +74,7 @@ while :; do
     -H "Authorization: Bearer ${KEY}" \
     -H "x-backfill-secret: ${BACKFILL_SECRET}" \
     -H "content-type: application/json" \
-    -d "{\"dias\":${DIAS},\"limite_clientes\":${LOTE},\"offset\":${offset},\"dry_run\":${DRY_RUN}}")"
+    -d "{\"dias\":${DIAS},\"limite_clientes\":${LOTE},\"offset\":${offset},\"dry_run\":${DRY_RUN},\"incluir_colaboradores\":${INCLUIR_COLAB}}")"
 
   if [[ "$(jq -r '.ok // false' <<<"$resp")" != "true" ]]; then
     echo "FALHOU na página ${pagina}:" >&2

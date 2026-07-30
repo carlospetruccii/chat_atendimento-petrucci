@@ -10,6 +10,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { registrarEnvioInterno } from "../_shared/envio-interno.ts";
 import { enviarTexto, ZapiError } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "cron-notificacao-admin";
@@ -235,6 +236,8 @@ Deno.serve(async (_req: Request) => {
 
       try {
         const resp = await enviarTexto({ telefone: telefoneZapi, mensagem: texto });
+        // Aviso interno: marca para o webhook não gravar o eco na conversa.
+        await registrarEnvioInterno(FUNCAO, resp);
         const respObj = (resp ?? {}) as Record<string, unknown>;
         const zapiId = (respObj.messageId ?? respObj.id ?? respObj.zaapId ?? null) as string | number | null;
         enviadas++;

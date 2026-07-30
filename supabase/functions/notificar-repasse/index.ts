@@ -21,6 +21,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { registrarEnvioInterno } from "../_shared/envio-interno.ts";
 import { enviarTexto } from "../_shared/uazapi-client.ts";
 import { montarMensagem } from "../_shared/formato.ts";
 
@@ -251,7 +252,9 @@ Deno.serve(async (req: Request) => {
   const tarefa = (async () => {
     const t = iniciarCronometro();
     try {
-      await enviarTexto({ telefone: numeroDestino, mensagem });
+      const resp = await enviarTexto({ telefone: numeroDestino, mensagem });
+      // Aviso interno: marca para o webhook não gravar o eco na conversa.
+      await registrarEnvioInterno(FUNCAO, resp);
       log({ funcao: FUNCAO, evento: "aviso_enviado", status: "ok", atendimento_id: atendimentoId, duracao_ms: t() });
     } catch (err) {
       // Solta o claim para permitir nova tentativa (ex.: caminho redundante do front).

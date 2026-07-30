@@ -16,6 +16,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { registrarEnvioInterno } from "../_shared/envio-interno.ts";
 import { enviarTexto, ZapiError } from "../_shared/uazapi-client.ts";
 import { formatarEspera, interpolar } from "../_shared/formato.ts";
 
@@ -195,7 +196,9 @@ Deno.serve(async (_req: Request) => {
       });
 
       try {
-        await enviarTexto({ telefone: numeroResp, mensagem: texto });
+        const resp = await enviarTexto({ telefone: numeroResp, mensagem: texto });
+        // Aviso interno: marca para o webhook não gravar o eco na conversa.
+        await registrarEnvioInterno(FUNCAO, resp);
         enviadas++;
         log({ funcao: FUNCAO, evento: "alerta_enviado", status: "ok", atendimento_id: atId });
       } catch (e) {

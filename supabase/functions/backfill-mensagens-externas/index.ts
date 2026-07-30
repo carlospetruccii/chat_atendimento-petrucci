@@ -75,6 +75,8 @@ interface Payload {
   limite_clientes?: number;
   offset?: number;
   dry_run?: boolean;
+  /** Inclui números que também são de colaborador (traz aviso interno junto). */
+  incluir_colaboradores?: boolean;
 }
 
 interface ClienteAlvo {
@@ -96,6 +98,7 @@ interface ResultadoCliente {
 async function clientesComAtendimento(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   desde: string,
+  incluirColaboradores: boolean,
 ): Promise<ClienteAlvo[]> {
   const { data, error } = await supabase
     .from("atendimentos")
@@ -106,15 +109,25 @@ async function clientesComAtendimento(
 
   if (error) throw new Error(`select_atendimentos: ${error.message}`);
 
-  // Números de colaborador ficam de fora: o histórico deles está cheio de
-  // notificação interna do próprio sistema ("Novo atendimento pra você",
-  // convite de acesso), que não é conversa com cliente. Mesma regra do webhook.
-  const { data: users } = await supabase.from("users").select("whatsapp").not("whatsapp", "is", null);
-  const numerosInternos = new Set(
-    ((users ?? []) as { whatsapp: string | null }[])
-      .map((u) => String(u.whatsapp ?? "").replace(/\D/g, ""))
-      .filter((v) => v !== ""),
-  );
+  // Números de colaborador ficam de fora por padrão: o histórico deles está
+  // cheio de notificação interna do sistema ("Novo atendimento pra você"), que
+  // não é conversa com cliente. O webhook resolve isso por MENSAGEM
+  // (envios_internos_whatsapp), mas essa tabela só existe a partir de
+  // 30/07/2026 — para o passado não há como separar aviso de documento, então
+  // aqui o corte continua sendo por número. Use `incluir_colaboradores: true`
+  // para revisar esses casos manualmente (sempre com dry_run antes).
+  const numerosInternos = new Set<string>();
+  if (!incluirColaboradores) {
+    const { data: users } = await supabase.from("users").select("whatsapp").not(
+      "whatsapp",
+      "is",
+      null,
+    );
+    for (const u of (users ?? []) as { whatsapp: string | null }[]) {
+      const d = String(u.whatsapp ?? "").replace(/\D/g, "");
+      if (d) numerosInternos.add(d);
+    }
+  }
 
   const vistos = new Set<string>();
   const alvos: ClienteAlvo[] = [];
@@ -383,12 +396,13 @@ Deno.serve(async (req: Request) => {
   const offset = inteiroNoIntervalo(payload.offset, 0, 0, 100000);
   // dry_run é o PADRÃO: rodar sem querer não escreve nada.
   const dryRun = payload.dry_run !== false;
+  const incluirColaboradores = payload.incluir_colaboradores === true;
 
   const desdeMs = Date.now() - dias * 24 * 60 * 60 * 1000;
   const desde = new Date(desdeMs).toISOString();
 
   try {
-    const todos = await clientesComAtendimento(supabase, desde);
+    const todos = await clientesComAtendimento(supabase, desde, incluirColaboradores);
     const lote = todos.slice(offset, offset + limiteClientes);
 
     const resultados: ResultadoCliente[] = [];
@@ -408,6 +422,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       dry_run: dryRun,
       dias,
+      incluir_colaboradores: incluirColaboradores,
       clientes_analisados: lote.length,
       clientes_no_periodo: todos.length,
       proximo_offset: offset + lote.length,
