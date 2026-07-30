@@ -374,6 +374,36 @@ async function encerrarPorLoopSuspeito(at: Atendimento): Promise<void> {
     extra: { tentativas: at.triagem_tentativas } });
 }
 
+// O bot envia primeiro e grava depois. Desde que o webhook passou a receber o
+// eco dos envios feitos pela API, existe uma corrida: se o eco chegar antes
+// deste INSERT, a linha já existe (gravada como 'externo') e o UNIQUE de
+// zapi_message_id estoura. Isso NÃO é falha de envio — a mensagem saiu. Então
+// corrigimos a linha que o eco criou e seguimos o fluxo da triagem.
+function ehConflitoDeEco(error: { code?: string; message?: string }): boolean {
+  return error.code === "23505" ||
+    /duplicate key|uniq_mensagens_zapi_message_id/i.test(error.message ?? "");
+}
+
+async function corrigirLinhaDoEco(
+  at: Atendimento,
+  zapiMsgId: string | null,
+  campos: Record<string, unknown>,
+): Promise<void> {
+  if (!zapiMsgId) return;
+  const supabase = getSupabaseAdmin();
+  await supabase
+    .from("mensagens")
+    .update({ sender_type: "bot", sent_by_user_id: BOT_USER_ID, ...campos })
+    .eq("zapi_message_id", zapiMsgId);
+  log({
+    funcao: FUNCAO,
+    evento: "persistencia_eco_corrigida",
+    status: "ok",
+    atendimento_id: at.id,
+    extra: { zapi_message_id: zapiMsgId },
+  });
+}
+
 async function enviarEPersistir(at: Atendimento, telefone: string, texto: string): Promise<boolean> {
   const supabase = getSupabaseAdmin();
   let zapiMsgId: string | null = null;
@@ -391,6 +421,10 @@ async function enviarEPersistir(at: Atendimento, telefone: string, texto: string
     tipo: "texto", content: texto, status_envio: "enviado", zapi_message_id: zapiMsgId,
   });
   if (error) {
+    if (ehConflitoDeEco(error)) {
+      await corrigirLinhaDoEco(at, zapiMsgId, { content: texto });
+      return true;
+    }
     log({ funcao: FUNCAO, evento: "persistencia_falhou", status: "erro", atendimento_id: at.id, erro_msg: error.message });
     return false;
   }
@@ -455,6 +489,17 @@ async function enviarListaEPersistir(
     return await enviarEPersistir(at, telefone, textoFallback);
   }
 
+  const metaLista = {
+    kind: "lista_opcoes",
+    titulo: LIST_TITULO,
+    button_label: buttonLabel,
+    opcoes: opcoes.map((o) => ({
+      id: o.id,
+      title: o.title,
+      ...(o.description ? { description: o.description } : {}),
+    })),
+  };
+
   // Persiste como tipo='texto' com o corpo (sem a lista numerada). A inbox
   // continua exibindo a pergunta normalmente; as opções ficam só no WhatsApp.
   const { error } = await supabase.from("mensagens").insert({
@@ -468,18 +513,13 @@ async function enviarListaEPersistir(
     content: corpo,
     status_envio: "enviado",
     zapi_message_id: zapiMsgId,
-    media_metadata: {
-      kind: "lista_opcoes",
-      titulo: LIST_TITULO,
-      button_label: buttonLabel,
-      opcoes: opcoes.map((o) => ({
-        id: o.id,
-        title: o.title,
-        ...(o.description ? { description: o.description } : {}),
-      })),
-    },
+    media_metadata: metaLista,
   });
   if (error) {
+    if (ehConflitoDeEco(error)) {
+      await corrigirLinhaDoEco(at, zapiMsgId, { content: corpo, media_metadata: metaLista });
+      return true;
+    }
     log({
       funcao: FUNCAO,
       evento: "persistencia_lista_falhou",

@@ -21,6 +21,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { gravarIdPosEnvio } from "../_shared/pos-envio.ts";
 import {
   enviarMidia,
   enviarTexto,
@@ -306,21 +307,32 @@ Deno.serve(async (req: Request) => {
         });
 
       const uazapiMessageId = extrairMessageId(resposta);
-      const { error: errUpd } = await supabase
-        .from("grupo_mensagens")
-        .update({ status_envio: "enviado", uazapi_message_id: uazapiMessageId })
-        .eq("id", mensagemId);
+      const posEnvio = await gravarIdPosEnvio({
+        supabase,
+        tabela: "grupo_mensagens",
+        colunaMessageId: "uazapi_message_id",
+        mensagemId,
+        messageId: uazapiMessageId,
+      });
 
-      if (errUpd) {
+      if (!posEnvio.ok) {
         log({
           funcao: FUNCAO,
           evento: "update_pos_envio",
           status: "erro",
           mensagem_id: mensagemId,
           duracao_ms: t(),
-          erro_msg: errUpd.message,
+          erro_msg: posEnvio.erro ?? "erro_desconhecido",
         });
         return;
+      }
+      if (posEnvio.conflito) {
+        log({
+          funcao: FUNCAO,
+          evento: "update_pos_envio_conflito_eco",
+          status: "ok",
+          mensagem_id: mensagemId,
+        });
       }
 
       log({

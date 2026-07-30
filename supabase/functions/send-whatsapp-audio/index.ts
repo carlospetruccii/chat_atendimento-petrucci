@@ -13,6 +13,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { gravarIdPosEnvio } from "../_shared/pos-envio.ts";
 import { enviarMidia, extrairMessageId, ZapiError } from "../_shared/uazapi-client.ts";
 
 const FUNCAO = "send-whatsapp-audio";
@@ -243,12 +244,24 @@ Deno.serve(async (req: Request) => {
       });
       const zapiMessageId = extrairMessageId(respostaUazapi);
 
-      const { error: errUpd } = await supabase
-        .from("mensagens")
-        .update({ status_envio: "enviado", zapi_message_id: zapiMessageId })
-        .eq("id", mensagemId);
+      const posEnvio = await gravarIdPosEnvio({
+        supabase,
+        tabela: "mensagens",
+        colunaMessageId: "zapi_message_id",
+        mensagemId,
+        messageId: zapiMessageId,
+      });
+      if (posEnvio.conflito && posEnvio.ok) {
+        log({
+          funcao: FUNCAO,
+          evento: "update_pos_envio_conflito_eco",
+          status: "ok",
+          atendimento_id: atendimentoId,
+          mensagem_id: mensagemId,
+        });
+      }
 
-      if (errUpd) {
+      if (!posEnvio.ok) {
         log({
           funcao: FUNCAO,
           evento: "update_pos_envio",
@@ -256,7 +269,7 @@ Deno.serve(async (req: Request) => {
           atendimento_id: atendimentoId,
           mensagem_id: mensagemId,
           duracao_ms: t(),
-          erro_msg: errUpd.message,
+          erro_msg: posEnvio.erro ?? "erro_desconhecido",
         });
         return;
       }

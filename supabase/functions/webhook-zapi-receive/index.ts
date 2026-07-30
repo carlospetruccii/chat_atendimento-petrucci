@@ -14,13 +14,18 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { buscarNomeContato } from "../_shared/uazapi-client.ts";
-import { deduzirExtensao, obterBytesMidia } from "../_shared/midia-download.ts";
+import { baixarESalvarMidia } from "../_shared/midia-mensagem.ts";
+import {
+  dataDaMensagem,
+  parseMensagem,
+  TIPOS_COM_DOWNLOAD,
+} from "../_shared/mensagem-uazapi.ts";
+import { adotarEcoProprio, aguardarAssentarEco } from "./eco.ts";
 import { devePularReabertura, montarNovoAtendimento, resolverModo } from "./logic.ts";
 import { normalizarJidGrupo } from "./grupos-logic.ts";
 import { registrarMensagemGrupo } from "./grupos.ts";
 
 const FUNCAO = "webhook-zapi-receive";
-const BUCKET = "mensagens-midia";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -28,16 +33,6 @@ const CORS_HEADERS = {
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-type TipoMensagem =
-  | "texto"
-  | "imagem"
-  | "audio"
-  | "documento"
-  | "video"
-  | "sticker"
-  | "localizacao"
-  | "contato";
 
 type StatusWhatsapp = "enviado" | "entregue" | "lido" | "falha_whatsapp";
 
@@ -53,134 +48,7 @@ function mapStatusWhatsapp(s: string | undefined | null): StatusWhatsapp | null 
   return null;
 }
 
-// Mapeia messageType (cru da uazapi) para o tipo interno do sistema, por
-// substring case-insensitive (os valores exatos da uazapi são incertos).
-function mapMessageType(mt: string | null | undefined): TipoMensagem {
-  const t = String(mt ?? "").toLowerCase();
-  if (t.includes("image")) return "imagem";
-  if (t.includes("video")) return "video";
-  if (t.includes("audio") || t.includes("ptt")) return "audio";
-  if (t.includes("document")) return "documento";
-  if (t.includes("sticker")) return "sticker";
-  if (t.includes("location")) return "localizacao";
-  if (t.includes("contact") || t.includes("vcard")) return "contato";
-  // "conversation" / "text" / "extendedText" e fallback desconhecido → texto.
-  return "texto";
-}
-
-interface ParsedMensagem {
-  tipo: TipoMensagem;
-  content: string | null;
-  media_url: string | null;
-  media_metadata: Record<string, unknown> | null;
-}
-
-// Detecta o tipo de mensagem e extrai conteúdo/metadados do objeto Message
-// da uazapi (o `data` do evento). Campos: messageType, text, fileURL,
-// buttonOrListid, content (objeto rico). Mantém o MESMO shape interno de saída.
-function parseMensagem(p: Record<string, unknown>): ParsedMensagem | null {
-  // Tipo pela combinação messageType + type + mediaType (uazapi manda
-  // "Conversation"/"text" para texto e algo com image/video/audio/… para mídia).
-  const rawTipo = [p.messageType, p.type, p.mediaType]
-    .filter((x) => typeof x === "string" && x)
-    .join(" ");
-  const texto = typeof p.text === "string" && p.text
-    ? (p.text as string)
-    : (typeof p.content === "string" ? (p.content as string) : null);
-  const fileURL = ([p.fileURL, p.mediaUrl, p.url]
-    .find((x) => typeof x === "string" && /^https?:\/\//i.test(x as string)) as string | undefined) ?? null;
-  const buttonOrListid =
-    typeof p.buttonOrListid === "string" && p.buttonOrListid.trim() !== ""
-      ? (p.buttonOrListid as string)
-      : null;
-
-  // Resposta interativa (lista/botão da triagem): tratar como TEXTO, usando o
-  // título da opção (text) para o matching da triagem funcionar, e guardar o
-  // id selecionado em media_metadata (replicando o tratamento antigo).
-  if (buttonOrListid) {
-    return {
-      tipo: "texto",
-      content: texto ?? "",
-      media_url: null,
-      media_metadata: {
-        kind: "list_reply",
-        selected_id: buttonOrListid,
-        source: "uazapi_interactive",
-      },
-    };
-  }
-
-  const tipo = mapMessageType(rawTipo);
-
-  // Conteúdo rico da uazapi para mídia (URL .enc, mimetype, fileName, seconds…).
-  const c = (p.content && typeof p.content === "object")
-    ? (p.content as Record<string, unknown>)
-    : {};
-  const mime = typeof c.mimetype === "string" ? (c.mimetype as string) : null;
-  const fileName = typeof c.fileName === "string"
-    ? (c.fileName as string)
-    : (typeof c.title === "string" ? (c.title as string) : null);
-  // media_url precisa ser NÃO-NULO (constraint mensagens_media_url_chk). A URL real
-  // do WhatsApp é criptografada (.enc) e é baixada via /message/download em background;
-  // usamos um placeholder que NÃO é http (o download vai direto pela API) — depois
-  // substituído pelo caminho no bucket.
-  const mediaUrlInicial = fileURL ?? "pending:uazapi";
-
-  switch (tipo) {
-    case "imagem":
-    case "video":
-      return { tipo, content: texto ?? null, media_url: mediaUrlInicial, media_metadata: { mime_type: mime } };
-    case "audio":
-      return {
-        tipo,
-        content: null,
-        media_url: mediaUrlInicial,
-        media_metadata: { mime_type: mime, duracao_seg: typeof c.seconds === "number" ? (c.seconds as number) : null },
-      };
-    case "sticker":
-      return { tipo, content: null, media_url: mediaUrlInicial, media_metadata: { mime_type: mime } };
-    case "documento":
-      return { tipo, content: texto ?? null, media_url: mediaUrlInicial, media_metadata: { mime_type: mime, file_name: fileName } };
-    case "localizacao": {
-      const content = (p.content ?? null) as Record<string, unknown> | null;
-      const latitude = (content?.latitude ?? content?.degreesLatitude ?? null) as number | null;
-      const longitude = (content?.longitude ?? content?.degreesLongitude ?? null) as number | null;
-      const address =
-        (typeof content?.address === "string" ? content.address : null) ?? texto ?? null;
-      return {
-        tipo,
-        content: address,
-        media_url: null,
-        media_metadata: { latitude, longitude },
-      };
-    }
-    case "contato": {
-      const content = (p.content ?? null) as Record<string, unknown> | null;
-      const displayName =
-        (typeof content?.displayName === "string" ? content.displayName : null) ?? texto ?? null;
-      const vcard = (typeof content?.vcard === "string" ? content.vcard : null) ??
-        (typeof content?.vCard === "string" ? content.vCard : null) ?? null;
-      return {
-        tipo,
-        content: displayName,
-        media_url: null,
-        media_metadata: { vcard },
-      };
-    }
-    case "texto":
-    default:
-      // Mensagem de texto (conversation/text/extendedText) ou fallback.
-      // Só descarta se não há absolutamente nenhum texto (evita persistir vazio
-      // de eventos que não são mensagem de fato).
-      if (texto == null) return null;
-      return { tipo: "texto", content: texto, media_url: null, media_metadata: null };
-  }
-}
-
 const STATUS_INSTAVEL_ATENDIMENTO = ["em_triagem", "reservado", "pendente", "em_atendimento"];
-
-// Tipos cuja mídia precisa ser persistida no Storage.
-const TIPOS_COM_DOWNLOAD = new Set<TipoMensagem>(["imagem", "audio", "video", "documento", "sticker"]);
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -618,14 +486,20 @@ Deno.serve(async (req: Request) => {
     },
   });
 
-  // Segurança: mensagens enviadas pela própria API voltam com wasSentByApi=true.
-  // A config do webhook já as exclui, mas ignoramos aqui também (evita loop).
-  if (wasSentByApi) {
+  // Mensagens enviadas pela API voltam com wasSentByApi=true. Elas NÃO são
+  // ignoradas: a mesma instância uazapi é usada por outro sistema (envio de
+  // documentos), e sem esses eventos o chat mostra a resposta do cliente sem a
+  // mensagem que a motivou. Seguem pelo caminho `fromMe` normal, que só grava —
+  // não responde, não chama bot, não reenvia nada — então não existe loop.
+  // O eco do NOSSO próprio envio é reconhecido e adotado (ver ./eco.ts).
+  if (wasSentByApi && !fromMe) {
+    // Combinação inesperada (enviada pela API mas não é nossa saída): sem
+    // semântica definida, ignora em vez de adivinhar.
     log({
       funcao: FUNCAO,
       evento: "evento_ignorado",
       status: "ok",
-      extra: { motivo: "was_sent_by_api", event: eventStr },
+      extra: { motivo: "was_sent_by_api_sem_from_me", event: eventStr },
     });
     return jsonResponse({ ok: true });
   }
@@ -655,6 +529,7 @@ Deno.serve(async (req: Request) => {
         parsed: parsedGrupo,
         uazapiMessageId: zapiMessageId,
         quotedUazapiId: quotedId,
+        wasSentByApi,
       });
       if (!res.ok) {
         log({
@@ -884,6 +759,48 @@ Deno.serve(async (req: Request) => {
       }
       const clienteExt = { id: resolved.id };
 
+      // Eco do NOSSO envio: ou a linha já existe com o id (dedup normal), ou
+      // existe sem o id porque o UPDATE pós-envio ainda não rodou (adoção).
+      // Duas tentativas, com uma folga entre elas, porque quem envia pode ainda
+      // não ter gravado nada. Tudo isso ANTES de procurar/abrir atendimento —
+      // não há nada a criar quando a mensagem já é nossa.
+      if (wasSentByApi) {
+        const reconhecerProprio = async (): Promise<Response | null> => {
+          const { data: jaGravada } = await supabase
+            .from("mensagens")
+            .select("id")
+            .eq("zapi_message_id", zapiMessageId)
+            .maybeSingle();
+          if (jaGravada?.id) {
+            log({
+              funcao: FUNCAO,
+              evento: "mensagem_duplicada",
+              status: "ok",
+              mensagem_id: jaGravada.id as string,
+              extra: { zapi_message_id: zapiMessageId, origem: "eco_api" },
+            });
+            return jsonResponse({ ok: true, duplicada: true });
+          }
+          const adotadaId = await adotarEcoProprio({
+            supabase,
+            tabela: "mensagens",
+            colunaMessageId: "zapi_message_id",
+            escopo: { coluna: "client_id", valor: clienteExt.id },
+            eco: parsedExt,
+            messageId: zapiMessageId,
+          });
+          return adotadaId
+            ? jsonResponse({ ok: true, mensagem_id: adotadaId, eco_proprio: true })
+            : null;
+        };
+
+        const proprio = await reconhecerProprio();
+        if (proprio) return proprio;
+        await aguardarAssentarEco();
+        const proprioTardio = await reconhecerProprio();
+        if (proprioTardio) return proprioTardio;
+      }
+
       // Procura atendimento ativo desse cliente (para anexar a mensagem nele).
       let atendExt = (await supabase
         .from("atendimentos")
@@ -1040,6 +957,19 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      // `origem` distingue as duas fontes de mensagem externa: celular da
+      // empresa x outro sistema usando a mesma instância uazapi.
+      const metaExt = {
+        ...(parsedExt.media_metadata ?? {}),
+        origem: wasSentByApi ? "api_externa" : "celular",
+      };
+
+      // Hora real da mensagem no WhatsApp, não a do INSERT: o eco pode demorar
+      // alguns segundos (inclusive a folga que damos para reconhecê-lo) e a
+      // conversa é ordenada por created_at. Sem timestamp confiável, cai no
+      // DEFAULT now() da coluna.
+      const criadoEmExt = dataDaMensagem(payload);
+
       const { data: msgExt, error: errExt } = await supabase
         .from("mensagens")
         .insert({
@@ -1052,11 +982,12 @@ Deno.serve(async (req: Request) => {
           tipo: parsedExt.tipo,
           content: parsedExt.content,
           media_url: parsedExt.media_url,
-          media_metadata: parsedExt.media_metadata,
+          media_metadata: metaExt,
           zapi_message_id: zapiMessageId,
           status_envio: "enviado",
           status_whatsapp: "enviado",
           reply_to_message_id: replyToMessageId,
+          ...(criadoEmExt ? { created_at: criadoEmExt } : {}),
         })
         .select("id")
         .maybeSingle();
@@ -1099,13 +1030,14 @@ Deno.serve(async (req: Request) => {
       // Mídia: mesmo fluxo do inbound.
       if (TIPOS_COM_DOWNLOAD.has(parsedExt.tipo)) {
         const tarefa = baixarESalvarMidia({
+          funcao: FUNCAO,
           mensagemId: mensagemExtId,
           atendimentoId: atendExt.id,
           clientId: clienteExt.id,
           zapiMessageId,
           urlOriginal: parsedExt.media_url,
           tipo: parsedExt.tipo,
-          metaInicial: parsedExt.media_metadata ?? {},
+          metaInicial: metaExt,
         });
         const edge = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
           .EdgeRuntime;
@@ -1574,6 +1506,7 @@ Deno.serve(async (req: Request) => {
     // 3c.5) Background: download da mídia para o Storage.
     if (TIPOS_COM_DOWNLOAD.has(parsed.tipo)) {
       const tarefa = baixarESalvarMidia({
+        funcao: FUNCAO,
         mensagemId,
         atendimentoId: atend.id,
         clientId: cliente.id,
@@ -1596,103 +1529,3 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: true, erro_interno: true });
   }
 });
-
-// --- Helpers ---
-
-interface DownloadParams {
-  mensagemId: string;
-  atendimentoId: string;
-  clientId: string;
-  // `id` (owner:messageid) da mensagem uazapi — usado no POST /message/download.
-  zapiMessageId: string;
-  // URL direta da mídia (data.fileURL), quando presente — tentada primeiro.
-  urlOriginal: string | null;
-  tipo: TipoMensagem;
-  metaInicial: Record<string, unknown>;
-}
-
-async function baixarESalvarMidia(p: DownloadParams): Promise<void> {
-  const supabase = getSupabaseAdmin();
-  const t = iniciarCronometro();
-  log({
-    funcao: FUNCAO,
-    evento: "download_iniciado",
-    status: "ok",
-    mensagem_id: p.mensagemId,
-    atendimento_id: p.atendimentoId,
-    extra: { tipo: p.tipo },
-  });
-  try {
-    const { buf, contentType: ctDetectado, fonte } = await obterBytesMidia(
-      p.urlOriginal,
-      p.zapiMessageId,
-    );
-    const contentType = ctDetectado ??
-      (p.metaInicial.mime_type as string | null) ?? "application/octet-stream";
-
-    const fallbackExtPorTipo: Record<TipoMensagem, string> = {
-      imagem: "bin",
-      audio: "ogg",
-      video: "mp4",
-      documento: "bin",
-      texto: "txt",
-      sticker: "webp",
-      localizacao: "txt",
-      contato: "vcf",
-    };
-    const ext = deduzirExtensao(contentType, fallbackExtPorTipo[p.tipo]);
-    const path = `${p.atendimentoId}/${p.mensagemId}.${ext}`;
-
-    const { error: errUp } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, buf, { contentType, upsert: true });
-    if (errUp) throw new Error(`storage_upload: ${errUp.message}`);
-
-    const novaMeta = {
-      ...p.metaInicial,
-      mime_type: contentType,
-      tamanho_bytes: buf.byteLength,
-      bucket: BUCKET,
-      storage_path: path,
-      url_original_zapi: p.urlOriginal,
-    };
-
-    const { error: errUpd } = await supabase
-      .from("mensagens")
-      .update({ media_url: path, media_metadata: novaMeta })
-      .eq("id", p.mensagemId);
-    if (errUpd) throw new Error(`update_mensagem: ${errUpd.message}`);
-
-    log({
-      funcao: FUNCAO,
-      evento: "download_sucesso",
-      status: "ok",
-      mensagem_id: p.mensagemId,
-      atendimento_id: p.atendimentoId,
-      duracao_ms: t(),
-      extra: { tamanho_bytes: buf.byteLength, mime: contentType, fonte },
-    });
-  } catch (err) {
-    const motivo = err instanceof Error ? err.message.slice(0, 140) : "falha desconhecida";
-    log({
-      funcao: FUNCAO,
-      evento: "download_falha",
-      status: "erro",
-      mensagem_id: p.mensagemId,
-      atendimento_id: p.atendimentoId,
-      duracao_ms: t(),
-      erro_msg: motivo,
-    });
-    // Marca para o cron de retry futuro.
-    const novaMeta = {
-      ...p.metaInicial,
-      download_falhou: true,
-      download_erro_motivo: motivo,
-      url_original_zapi: p.urlOriginal,
-    };
-    await supabase
-      .from("mensagens")
-      .update({ media_metadata: novaMeta })
-      .eq("id", p.mensagemId);
-  }
-}

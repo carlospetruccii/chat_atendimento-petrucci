@@ -940,7 +940,10 @@ function InboxPage() {
                             )}
                             {isExterno && (
                               <p className={`text-[10px] italic ${metaColor} mt-1`}>
-                                Enviado fora do sistema
+                                {(m.mediaMetadata as { origem?: string } | null)?.origem ===
+                                "api_externa"
+                                  ? "Enviado por outro sistema"
+                                  : "Enviado fora do sistema"}
                               </p>
                             )}
                             <span className={`block text-[10px] ${metaColor} mt-1 text-right`}>

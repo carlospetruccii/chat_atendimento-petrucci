@@ -39,8 +39,10 @@ Nenhum token vai para o frontend. As Edge Functions leem estes secrets:
 nome antigo, mantida por ser cosmética).
 
 ## Recebimento (WhatsApp → o sistema, via webhook)
-- Configuração: `POST /webhook { url, events:["messages","messages_update","connection"], excludeMessages:["wasSentByApi"] }`.
-  O `excludeMessages:["wasSentByApi"]` evita loop (não recebemos de volta o que a própria API enviou).
+- Configuração: `POST /webhook { url, events:["messages","messages_update","connection"], excludeMessages:[] }`.
+  `excludeMessages` fica **vazio**: a instância é compartilhada com outro sistema e
+  filtrar `wasSentByApi` escondia as mensagens dele. O eco do nosso próprio envio é
+  deduplicado/adotado no receiver (`eco.ts`), e o caminho `fromMe` só grava — sem loop.
 - A uazapi chama nossa função `webhook-zapi-receive` com envelope:
   ```
   { event: string, instance: string, data: {...} }
@@ -51,8 +53,9 @@ nome antigo, mantida por ser cosmética).
   `messageType`, `text`, `fileURL`, `buttonOrListid` (opção escolhida na lista),
   `messageTimestamp`, `quoted`.
 - Eventos tratados: `messages` (nova), `messages_update` (status entregue/lido/falha),
-  `connection` (estado). Mensagem enviada pelo celular por fora = `fromMe:true` +
-  `wasSentByApi:false` → registrada como `externo`.
+  `connection` (estado). Mensagem enviada por fora = `fromMe:true` → registrada como
+  `externo`, com `media_metadata.origem` = `celular` (`wasSentByApi:false`) ou
+  `api_externa` (`wasSentByApi:true`, outro sistema na mesma instância).
 - **Grupo:** `isGroup:true` e/ou `chatid` terminando em `@g.us`. Quem falou vem em
   `sender_pn` (telefone) ou `sender` (JID completo da pessoa, **não** do grupo), e o nome
   em `senderName`/`pushName`. Desde 27/07/2026 essas mensagens vão para `grupo_mensagens`

@@ -35,6 +35,12 @@ verify_jwt = false
 [functions.whatsapp-register]
 verify_jwt = false
 
+# Backfill do histórico de mensagens externas: exige JWT (verify_jwt padrão) E
+# checa is_superadmin no corpo da função. Escreve em `mensagens`, então não é
+# endpoint aberto — e o padrão do corpo é dry_run.
+[functions.backfill-mensagens-externas]
+verify_jwt = true
+
 # TEMPORÁRIO, diagnóstico pontual: 4 GETs fixos na Graph API (nenhum input
 # aceito, endpoints hardcoded) pra debugar o erro 133010 na migração de
 # coexistência. Deletar depois de resolvido.

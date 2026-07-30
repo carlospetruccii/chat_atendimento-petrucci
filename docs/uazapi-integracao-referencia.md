@@ -182,7 +182,7 @@ lista. `POST /webhook` — header `token`. [`_shared/uazapi-client.ts:339`](supa
 const payload = {
   url: params.url,
   events: params.events ?? ["messages", "messages_update", "connection"],
-  excludeMessages: params.excludeMessages ?? ["wasSentByApi"],
+  excludeMessages: params.excludeMessages ?? [],
   enabled: params.enabled ?? true,
 };
 return await chamar("POST", "/webhook", payload);
@@ -190,8 +190,10 @@ return await chamar("POST", "/webhook", payload);
 
 - `events`: nomes usados aqui → **`messages`** (mensagem nova), **`messages_update`**
   (status de entrega/leitura) e **`connection`** (conexão).
-- `excludeMessages: ["wasSentByApi"]`: pede pra uazapi **não reenviar** o eco do que a
-  própria API mandou (anti-loop). Mesmo assim há defesa em profundidade no receiver.
+- `excludeMessages: []` (vazio, de propósito): a mesma instância é usada por **outro
+  sistema**, e excluir `wasSentByApi` apagava do nosso chat as mensagens que ele envia.
+  O eco do nosso próprio envio é tratado no receiver (dedup + adoção da linha pendente);
+  o caminho `fromMe` só grava, nunca responde, então não há loop.
 - Ler config viva: `GET /webhook` ([`_shared/uazapi-client.ts:349`](supabase/functions/_shared/uazapi-client.ts:349)).
 
 O webhook é (re)configurado de forma **idempotente ao conectar** — a função
@@ -256,7 +258,7 @@ tratados por substring porque variam):
 | `sender_lid` | LID do remetente (identificador anônimo do WhatsApp) |
 | `senderName` | pushname do remetente |
 | `fromMe` | `true` = mensagem saiu do nosso número (eco / envio pelo celular) |
-| `wasSentByApi` | `true` = foi enviada pela própria API (anti-loop) |
+| `wasSentByApi` | `true` = saiu pela API (nosso envio **ou** o do outro sistema na mesma instância) |
 | `isGroup` | `true` = mensagem de grupo |
 | `quoted` | `id` (owner:messageid) da mensagem citada/respondida |
 | `buttonOrListid` | id da opção escolhida numa lista/botão interativo |
@@ -528,7 +530,7 @@ ignorado — criaria cliente violando o CHECK E.164. Ver `ehGrupo()` em
 | **Webhook: identificar instância** | instance id na URL / no corpo | campo **`token`** no corpo (comparado ao secret) | — |
 | **Webhook: msg recebida** | `{ phone, text.message, messageId, fromMe, ... }` (achatado) | `{ EventType, token, chat, message:{ id, messageType, text, content, chatid, sender_pn, sender_lid, fromMe, ... } }` | uazapi **aninha** em `message`; JID em `chatid`; tipos por substring |
 | **id da mensagem** | `messageId` (string) | `id` = **`owner:messageid`** | formato composto |
-| **Anti-eco** | filtrar `fromMe` | `excludeMessages:["wasSentByApi"]` + `fromMe`/`wasSentByApi` no payload | uazapi ecoa o próprio envio como `fromMe:true` |
+| **Anti-eco** | filtrar `fromMe` | eco recebido de propósito; dedup por `zapi_message_id` + adoção (`webhook-zapi-receive/eco.ts`) | uazapi ecoa o próprio envio como `fromMe:true` |
 
 ---
 
@@ -572,10 +574,12 @@ fetch direto).
   **sempre retorna 200** (até em payload inválido ou erro interno), exceto o 401 de token
   inválido ([`webhook-zapi-receive/index.ts:510`](supabase/functions/webhook-zapi-receive/index.ts:510)).
 - **A uazapi ecoa as próprias mensagens** como `fromMe:true`. Envios feitos **pela API**
-  vêm com `wasSentByApi:true` — filtrados por `excludeMessages` **e** ignorados no receiver
-  ([`webhook-zapi-receive/index.ts:605`](supabase/functions/webhook-zapi-receive/index.ts:605)). Já mensagens digitadas **no
-  celular** (fora do sistema) vêm `fromMe:true` **sem** `wasSentByApi` → registradas como
-  `sender_type='externo'` pra dar visibilidade na Inbox.
+  vêm com `wasSentByApi:true` e **são processados** (é assim que enxergamos o que o outro
+  sistema manda pela mesma instância). O eco do NOSSO envio é reconhecido em duas
+  tentativas — dedup por `zapi_message_id` e, se a linha ainda estiver sem id, adoção pelo
+  conteúdo ([`eco.ts`](supabase/functions/webhook-zapi-receive/eco.ts)). Não reconhecido →
+  vira `sender_type='externo'` com `media_metadata.origem='api_externa'`. Mensagem digitada
+  **no celular** vem `fromMe:true` **sem** `wasSentByApi` → `externo` com `origem='celular'`.
 - **Dedup forte**: UNIQUE parcial `uniq_mensagens_zapi_message_id` em
   `mensagens(zapi_message_id)`. O receiver checa antes (SELECT) e trata `23505` como
   duplicada silenciosa. Isso cobre tanto reentrega de webhook quanto o eco do próprio envio.

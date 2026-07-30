@@ -9,6 +9,13 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0
 import { log } from "../_shared/logger.ts";
 import { deduzirExtensao, obterBytesMidia } from "../_shared/midia-download.ts";
 import { infoGrupo } from "../_shared/uazapi-client.ts";
+import {
+  EXT_FALLBACK,
+  type MensagemParseada,
+  TIPOS_COM_DOWNLOAD,
+  type TipoMensagem,
+} from "../_shared/mensagem-uazapi.ts";
+import { adotarEcoProprio, aguardarAssentarEco } from "./eco.ts";
 import { extrairIdentidadeGrupo, extrairNomeGrupo } from "./grupos-logic.ts";
 
 const FUNCAO = "webhook-zapi-receive";
@@ -43,42 +50,6 @@ const MIMES_PERMITIDOS = new Set([
 function contentTypeSeguro(bruto: string | null | undefined): string {
   const base = (bruto ?? "").split(";")[0].trim().toLowerCase();
   return MIMES_PERMITIDOS.has(base) ? base : "application/octet-stream";
-}
-
-type TipoMensagem =
-  | "texto"
-  | "imagem"
-  | "audio"
-  | "documento"
-  | "video"
-  | "sticker"
-  | "localizacao"
-  | "contato";
-
-const TIPOS_COM_DOWNLOAD = new Set<TipoMensagem>([
-  "imagem",
-  "audio",
-  "video",
-  "documento",
-  "sticker",
-]);
-
-const EXT_FALLBACK: Record<TipoMensagem, string> = {
-  imagem: "bin",
-  audio: "ogg",
-  video: "mp4",
-  documento: "bin",
-  texto: "txt",
-  sticker: "webp",
-  localizacao: "txt",
-  contato: "vcf",
-};
-
-export interface MensagemParseada {
-  tipo: TipoMensagem;
-  content: string | null;
-  media_url: string | null;
-  media_metadata: Record<string, unknown> | null;
 }
 
 export interface ResultadoRegistroGrupo {
@@ -288,8 +259,11 @@ export async function registrarMensagemGrupo(params: {
   uazapiMessageId: string | null;
   /** Id da mensagem citada NA UAZAPI (campo `quoted`), se houver. */
   quotedUazapiId: string | null;
+  /** Eco de envio feito pela API (nosso `grupo-enviar` ou outro sistema). */
+  wasSentByApi?: boolean;
 }): Promise<ResultadoRegistroGrupo> {
   const { supabase, payload, envelope, parsed, uazapiMessageId, quotedUazapiId } = params;
+  const wasSentByApi = params.wasSentByApi === true;
 
   const ident = extrairIdentidadeGrupo(payload, envelope);
   if (!ident) return { ok: false, motivo: "grupo_sem_jid" };
@@ -314,6 +288,44 @@ export async function registrarMensagemGrupo(params: {
       .EdgeRuntime;
     if (edge?.waitUntil) edge.waitUntil(tarefaInfo);
     else tarefaInfo.catch(() => {});
+  }
+
+  // Eco do nosso próprio `grupo-enviar` que ainda não gravou o id da uazapi:
+  // adota a linha existente em vez de duplicar a mensagem no grupo. Duas
+  // tentativas com folga entre elas — mesma corrida do chat individual.
+  if (wasSentByApi && ident.fromMe && uazapiMessageId) {
+    const reconhecerProprio = async (): Promise<string | null> => {
+      const { data: jaGravada } = await supabase
+        .from("grupo_mensagens")
+        .select("id")
+        .eq("uazapi_message_id", uazapiMessageId)
+        .maybeSingle();
+      if (jaGravada?.id) return jaGravada.id as string;
+      return await adotarEcoProprio({
+        supabase,
+        tabela: "grupo_mensagens",
+        colunaMessageId: "uazapi_message_id",
+        escopo: { coluna: "grupo_id", valor: grupo.id },
+        eco: parsed,
+        messageId: uazapiMessageId,
+      });
+    };
+
+    let propriaId = await reconhecerProprio();
+    if (!propriaId) {
+      await aguardarAssentarEco();
+      propriaId = await reconhecerProprio();
+    }
+    if (propriaId) {
+      log({
+        funcao: FUNCAO,
+        evento: "grupo_eco_proprio",
+        status: "ok",
+        mensagem_id: propriaId,
+        extra: { grupo_id: grupo.id, uazapi_message_id: uazapiMessageId },
+      });
+      return { ok: true, duplicada: true, grupoId: grupo.id, mensagemId: propriaId };
+    }
   }
 
   // Citação: resolve o id da uazapi para a NOSSA linha de grupo_mensagens.

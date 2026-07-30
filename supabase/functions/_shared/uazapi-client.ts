@@ -383,7 +383,12 @@ export interface ConfigurarWebhookParams {
   url: string;
   // Padrão: novas mensagens, status de mensagem e conexão.
   events?: string[];
-  // Evita loop: não recebe de volta o que a própria API enviou.
+  // Filtro na origem. Fica VAZIO de propósito: a mesma instância uazapi é
+  // usada por outro sistema, e excluir `wasSentByApi` apagava do nosso chat as
+  // mensagens que ele envia (o cliente respondia e o atendente não via o
+  // contexto). O eco do nosso próprio envio é tratado no receiver — dedup por
+  // `zapi_message_id` + adoção da linha pendente — e o caminho `fromMe` só
+  // grava, nunca responde, então não há loop.
   excludeMessages?: string[];
   enabled?: boolean;
 }
@@ -392,7 +397,7 @@ export async function configurarWebhook(params: ConfigurarWebhookParams): Promis
   const payload = {
     url: params.url,
     events: params.events ?? ["messages", "messages_update", "connection"],
-    excludeMessages: params.excludeMessages ?? ["wasSentByApi"],
+    excludeMessages: params.excludeMessages ?? [],
     enabled: params.enabled ?? true,
   };
   return await chamar("POST", "/webhook", payload);
@@ -449,6 +454,37 @@ export async function infoGrupo(jid: string): Promise<GrupoUazapi | null> {
 export async function participantesGrupo(jid: string): Promise<ParticipanteGrupoUazapi[]> {
   const resp = await chamar("POST", "/group/info", { groupjid: jid });
   return extrairParticipantesDaResposta(resp);
+}
+
+// ————————————————————————————————————————————————————————————————
+// HISTÓRICO (buscar mensagens já entregues)
+// ————————————————————————————————————————————————————————————————
+
+/**
+ * Mensagens de um chat, das mais recentes para as mais antigas.
+ * `POST /message/find { chatid, limit, offset }`.
+ *
+ * Serve ao backfill: mensagens que a instância entregou enquanto o webhook
+ * ainda descartava os eventos `wasSentByApi` não existem no nosso banco, e este
+ * é o único jeito de recuperá-las.
+ */
+export async function buscarMensagensDoChat(params: {
+  chatid: string;
+  limit?: number;
+  offset?: number;
+}): Promise<Record<string, unknown>[]> {
+  const r = (await chamar("POST", "/message/find", {
+    chatid: params.chatid,
+    limit: params.limit ?? 100,
+    offset: params.offset ?? 0,
+  })) as Record<string, unknown>;
+
+  const lista = Array.isArray(r?.messages)
+    ? r.messages
+    : (Array.isArray(r) ? r : []);
+  return (lista as unknown[]).filter(
+    (m): m is Record<string, unknown> => !!m && typeof m === "object",
+  );
 }
 
 // ————————————————————————————————————————————————————————————————
