@@ -518,7 +518,7 @@ export async function deleteHoliday(id: string) {
 
 // ============ Tempos (system_config) ============
 
-export type TempoUnit = "segundos" | "minutos" | "minutos úteis" | ""; /* sem unidade */
+export type TempoUnit = "segundos" | "minutos" | "minutos úteis" | "horas" | ""; /* sem unidade */
 
 /** Seções da aba Tempos. A ordem aqui é a ordem exibida na tela. */
 export const TEMPO_GRUPOS = [
@@ -575,6 +575,14 @@ export const TEMPOS: TempoMeta[] = [
     unit: "minutos",
     min: 1,
     max: 1440,
+    grupo: "triagem",
+  },
+  {
+    chave: "janela_continuidade_apos_encerramento",
+    label: "Continuar no mesmo setor quando o cliente responde depois de encerrado",
+    unit: "horas",
+    min: 0,
+    max: 720,
     grupo: "triagem",
   },
   {
@@ -644,10 +652,12 @@ export async function fetchTempos(): Promise<TempoRow[]> {
   return TEMPOS.map((meta) => {
     const row = map.get(meta.chave);
     const n = Number.parseInt((row?.valor ?? "").trim(), 10);
-    const inativo =
-      meta.chave === "tempo_encerramento_automatico" && !encerramentoAtivo
-        ? "Sem efeito: o encerramento automático está desligado em Operação, então nenhum atendimento é encerrado por inatividade."
-        : meta.inativo;
+    const inativo = meta.chave === "tempo_encerramento_automatico" && !encerramentoAtivo
+      ? "Sem efeito: o encerramento automático está desligado em Operação, então nenhum atendimento é encerrado por inatividade."
+      // 0 hora é o desligado desta regra: todo cliente volta para a triagem.
+      : meta.chave === "janela_continuidade_apos_encerramento" && n === 0
+      ? "Desligado: todo cliente que responder depois de um atendimento encerrado passa pelo menu de setores de novo."
+      : meta.inativo;
     return {
       ...meta,
       inativo,

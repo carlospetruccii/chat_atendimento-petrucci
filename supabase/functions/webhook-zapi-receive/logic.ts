@@ -93,3 +93,103 @@ export function devePularReabertura(modo: ModoSessao): boolean {
       return modoNuncaTratado(modo);
   }
 }
+
+// =====================================================================
+// Continuidade pós-encerramento
+//
+// Problema: atendimento encerrado (hoje sempre na mão, o encerramento por
+// inatividade está desligado) + cliente responde depois = triagem nova, e o
+// cliente leva de novo o menu "escolha o setor" mesmo tendo acabado de falar
+// com a gente. A reabertura automática não cobre isso: ela só reabre
+// encerramento por inatividade.
+//
+// Solução: dentro de uma janela configurável, o atendimento novo já nasce com
+// o setor da conversa anterior e triagem concluída — o bot nunca é acionado.
+// Não reabrimos o atendimento encerrado para não desfazer o encerramento do
+// atendente nem sujar as métricas de resolvidos.
+// =====================================================================
+
+const MS_POR_HORA = 60 * 60 * 1000;
+
+/** Último atendimento encerrado do cliente, do jeito que sai do banco. */
+export interface AtendimentoEncerradoAnterior {
+  id: string;
+  current_department_id: string | null;
+  closed_at: string | null;
+}
+
+export interface Continuidade {
+  anteriorId: string;
+  departmentId: string;
+  horasDesdeFechamento: number;
+}
+
+/**
+ * Decide se a resposta do cliente deve continuar no setor da conversa anterior
+ * em vez de passar pelo menu de departamentos.
+ *
+ * Só vale no modo "normal": "sessao" reinicia sempre (o interno pode querer
+ * falar com outra pessoa) e "sem_triagem" já não vê menu nenhum.
+ * `janelaHoras <= 0` desliga a continuidade.
+ */
+export function resolverContinuidade(params: {
+  modo: ModoSessao;
+  anterior: AtendimentoEncerradoAnterior | null;
+  janelaHoras: number;
+  agoraIso: string;
+}): Continuidade | null {
+  const { modo, anterior, janelaHoras, agoraIso } = params;
+  if (modo !== "normal") return null;
+  if (!anterior?.closed_at || !anterior.current_department_id) return null;
+  if (!Number.isFinite(janelaHoras) || janelaHoras <= 0) return null;
+
+  const decorridoMs = new Date(agoraIso).getTime() - new Date(anterior.closed_at).getTime();
+  // Negativo = fechamento "no futuro" (relógio torto): não arrisca herdar.
+  if (!Number.isFinite(decorridoMs) || decorridoMs < 0) return null;
+  const horas = decorridoMs / MS_POR_HORA;
+  if (horas > janelaHoras) return null;
+
+  return {
+    anteriorId: anterior.id,
+    departmentId: anterior.current_department_id,
+    horasDesdeFechamento: Math.round(horas * 10) / 10,
+  };
+}
+
+export interface AtendimentoContinuidadeFields {
+  client_id: string;
+  status: "pendente" | "reservado";
+  current_department_id: string;
+  assigned_to: string | null;
+  assigned_at?: string;
+  is_sessao: false;
+  triagem_estagio: "concluida";
+  triagem_started_at: string;
+  triagem_finished_at: string;
+}
+
+/**
+ * Monta o INSERT do atendimento que continua a conversa anterior. Espelha o
+ * roteamento que a triagem-bot já faz ao concluir (finalizarTriagem): último
+ * atendente do cliente naquele setor → reservado para ele; senão → Pendentes
+ * do setor.
+ */
+export function montarAtendimentoContinuidade(
+  clientId: string,
+  departmentId: string,
+  ultimoAtendenteId: string | null,
+  agoraIso: string,
+): AtendimentoContinuidadeFields {
+  const base = {
+    client_id: clientId,
+    current_department_id: departmentId,
+    is_sessao: false as const,
+    triagem_estagio: "concluida" as const,
+    triagem_started_at: agoraIso,
+    triagem_finished_at: agoraIso,
+  };
+  if (!ultimoAtendenteId) {
+    return { ...base, status: "pendente", assigned_to: null };
+  }
+  return { ...base, status: "reservado", assigned_to: ultimoAtendenteId, assigned_at: agoraIso };
+}

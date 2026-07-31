@@ -5,10 +5,17 @@
 // Rodar: deno test supabase/functions/webhook-zapi-receive/logic.test.ts
 
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { devePularReabertura, montarNovoAtendimento, resolverModo } from "./logic.ts";
+import {
+  devePularReabertura,
+  montarAtendimentoContinuidade,
+  montarNovoAtendimento,
+  resolverContinuidade,
+  resolverModo,
+} from "./logic.ts";
 
 const AGORA = "2026-07-21T12:00:00.000Z";
 const CLIENT_ID = "cliente-1";
+const DEPT_ID = "dept-1";
 
 Deno.test("resolverModo: fora das duas listas é normal", () => {
   assertEquals(resolverModo(false, false), "normal");
@@ -74,4 +81,133 @@ Deno.test("devePularReabertura: modo normal não pula", () => {
 
 Deno.test("devePularReabertura: modo sem_triagem não pula (mantém continuidade da conversa)", () => {
   assertEquals(devePularReabertura("sem_triagem"), false);
+});
+
+// =============== Continuidade pós-encerramento ===============
+// Cliente que responde depois de um atendimento encerrado volta para o setor
+// da conversa anterior, sem passar de novo pelo menu de departamentos do bot.
+
+const anterior = (over: Record<string, unknown> = {}) => ({
+  id: "atend-anterior",
+  current_department_id: DEPT_ID,
+  closed_at: "2026-07-21T00:00:00.000Z", // 12h antes de AGORA
+  ...over,
+});
+
+Deno.test("resolverContinuidade: dentro da janela herda o setor anterior", () => {
+  assertEquals(
+    resolverContinuidade({ modo: "normal", anterior: anterior(), janelaHoras: 72, agoraIso: AGORA }),
+    { anteriorId: "atend-anterior", departmentId: DEPT_ID, horasDesdeFechamento: 12 },
+  );
+});
+
+Deno.test("resolverContinuidade: fora da janela cai na triagem normal", () => {
+  assertEquals(
+    resolverContinuidade({ modo: "normal", anterior: anterior(), janelaHoras: 6, agoraIso: AGORA }),
+    null,
+  );
+});
+
+Deno.test("resolverContinuidade: janela zero desliga a continuidade", () => {
+  assertEquals(
+    resolverContinuidade({ modo: "normal", anterior: anterior(), janelaHoras: 0, agoraIso: AGORA }),
+    null,
+  );
+});
+
+Deno.test("resolverContinuidade: na borda exata da janela ainda continua", () => {
+  assertEquals(
+    resolverContinuidade({ modo: "normal", anterior: anterior(), janelaHoras: 12, agoraIso: AGORA })
+      ?.departmentId,
+    DEPT_ID,
+  );
+});
+
+Deno.test("resolverContinuidade: sem atendimento anterior não há setor para herdar", () => {
+  assertEquals(
+    resolverContinuidade({ modo: "normal", anterior: null, janelaHoras: 72, agoraIso: AGORA }),
+    null,
+  );
+});
+
+Deno.test("resolverContinuidade: anterior sem departamento cai na triagem", () => {
+  assertEquals(
+    resolverContinuidade({
+      modo: "normal",
+      anterior: anterior({ current_department_id: null }),
+      janelaHoras: 72,
+      agoraIso: AGORA,
+    }),
+    null,
+  );
+});
+
+Deno.test("resolverContinuidade: anterior sem closed_at cai na triagem", () => {
+  assertEquals(
+    resolverContinuidade({
+      modo: "normal",
+      anterior: anterior({ closed_at: null }),
+      janelaHoras: 72,
+      agoraIso: AGORA,
+    }),
+    null,
+  );
+});
+
+Deno.test("resolverContinuidade: modo sessão sempre reinicia o fluxo interno", () => {
+  assertEquals(
+    resolverContinuidade({ modo: "sessao", anterior: anterior(), janelaHoras: 72, agoraIso: AGORA }),
+    null,
+  );
+});
+
+Deno.test("resolverContinuidade: modo sem_triagem já não tem menu, não precisa herdar", () => {
+  assertEquals(
+    resolverContinuidade({
+      modo: "sem_triagem",
+      anterior: anterior(),
+      janelaHoras: 72,
+      agoraIso: AGORA,
+    }),
+    null,
+  );
+});
+
+Deno.test("resolverContinuidade: fechamento no futuro (relógio torto) não continua", () => {
+  assertEquals(
+    resolverContinuidade({
+      modo: "normal",
+      anterior: anterior({ closed_at: "2026-07-22T00:00:00.000Z" }),
+      janelaHoras: 72,
+      agoraIso: AGORA,
+    }),
+    null,
+  );
+});
+
+Deno.test("montarAtendimentoContinuidade: sem último atendente vai para Pendentes do setor", () => {
+  assertEquals(montarAtendimentoContinuidade(CLIENT_ID, DEPT_ID, null, AGORA), {
+    client_id: CLIENT_ID,
+    status: "pendente",
+    current_department_id: DEPT_ID,
+    assigned_to: null,
+    is_sessao: false,
+    triagem_estagio: "concluida",
+    triagem_started_at: AGORA,
+    triagem_finished_at: AGORA,
+  });
+});
+
+Deno.test("montarAtendimentoContinuidade: com último atendente reserva para ele", () => {
+  assertEquals(montarAtendimentoContinuidade(CLIENT_ID, DEPT_ID, "user-9", AGORA), {
+    client_id: CLIENT_ID,
+    status: "reservado",
+    current_department_id: DEPT_ID,
+    assigned_to: "user-9",
+    assigned_at: AGORA,
+    is_sessao: false,
+    triagem_estagio: "concluida",
+    triagem_started_at: AGORA,
+    triagem_finished_at: AGORA,
+  });
 });

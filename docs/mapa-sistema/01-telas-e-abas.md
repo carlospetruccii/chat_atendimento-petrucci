@@ -328,6 +328,14 @@ automático, tentativas máximas da triagem e tempo de abandono.
 > **"Encerrar atendimentos parados por inatividade"** da aba **Operação** estiver ligado
 > (nasce desligado). Com ele desligado, a tela avisa "Sem efeito" ao lado do campo.
 
+O campo **"Continuar no mesmo setor quando o cliente responde depois de encerrado"**
+(chave `janela_continuidade_apos_encerramento`, **72 horas** por padrão) define por quanto
+tempo depois de um atendimento encerrado a resposta do cliente **não** passa mais pelo menu
+de setores do bot: o atendimento novo já nasce no setor da conversa anterior, reservado para
+o atendente que cuidou dele (se ainda estiver ativo e disponível) ou em Pendentes do setor.
+Passada a janela, o cliente entra em triagem normal. **0 desliga** a regra, e a tela avisa
+isso ao lado do campo.
+
 ### Aba 3 — Horário
 Define o **horário comercial** e os **feriados**. Tabelas: `business_hours` e `holidays`.
 - **Adicionar/remover faixa de horário** por dia da semana (valida que não se sobreponham).

@@ -22,7 +22,17 @@ import {
   TIPOS_COM_DOWNLOAD,
 } from "../_shared/mensagem-uazapi.ts";
 import { adotarEcoProprio, aguardarAssentarEco } from "./eco.ts";
-import { devePularReabertura, montarNovoAtendimento, resolverModo } from "./logic.ts";
+import {
+  type AtendimentoContinuidadeFields,
+  type AtendimentoEncerradoAnterior,
+  type Continuidade,
+  devePularReabertura,
+  type NovoAtendimentoFields,
+  montarAtendimentoContinuidade,
+  montarNovoAtendimento,
+  resolverContinuidade,
+  resolverModo,
+} from "./logic.ts";
 import { normalizarJidGrupo } from "./grupos-logic.ts";
 import { registrarMensagemGrupo } from "./grupos.ts";
 
@@ -285,6 +295,45 @@ async function buscarEncerradoReabrivel(
     if (await temAtividadeExterna(supabase, c.id)) return c;
   }
   return null;
+}
+
+// Janela (em horas) em que a resposta do cliente continua no setor da conversa
+// anterior em vez de voltar para o menu de departamentos. 0 = desligado.
+const JANELA_CONTINUIDADE_DEFAULT_H = 72;
+
+async function lerJanelaContinuidadeHoras(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+): Promise<number> {
+  const { data } = await supabase
+    .from("system_config")
+    .select("valor")
+    .eq("chave", "janela_continuidade_apos_encerramento")
+    .maybeSingle();
+  const bruto = ((data?.valor ?? "") as string).trim();
+  if (bruto === "") return JANELA_CONTINUIDADE_DEFAULT_H;
+  const n = Number.parseInt(bruto, 10);
+  // Chave presente com lixo dentro: cai no default em vez de desligar sem aviso.
+  return Number.isFinite(n) && n >= 0 ? n : JANELA_CONTINUIDADE_DEFAULT_H;
+}
+
+// Último atendimento encerrado do cliente que tem setor definido — é dele que a
+// continuidade herda o departamento. Ignora encerrados sem setor (triagem
+// abandonada, por exemplo), que não têm nada a herdar.
+async function buscarUltimoEncerradoComSetor(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  clientId: string,
+): Promise<AtendimentoEncerradoAnterior | null> {
+  const { data } = await supabase
+    .from("atendimentos")
+    .select("id, current_department_id, closed_at")
+    .eq("client_id", clientId)
+    .eq("status", "encerrado")
+    .not("current_department_id", "is", null)
+    .not("closed_at", "is", null)
+    .order("closed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as AtendimentoEncerradoAnterior | null) ?? null;
 }
 
 // Reabre o atendimento encerrado escolhido. Retorna o id se sucesso.
@@ -1389,11 +1438,52 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // 3c.3.d) Continuidade pós-encerramento: se o cliente está respondendo
+    // pouco depois de um atendimento encerrado, o novo atendimento já nasce no
+    // setor de antes, com triagem concluída — o bot nunca pergunta o setor de
+    // novo. Vale tanto para a conversa que a empresa iniciou quanto para a que
+    // o cliente iniciou; o encerramento (hoje sempre manual) não é desfeito.
+    const agora = new Date().toISOString();
+    let continuidade: Continuidade | null = null;
     if (!atend) {
-      const agora = new Date().toISOString();
+      const [janelaHoras, anterior] = await Promise.all([
+        lerJanelaContinuidadeHoras(supabase),
+        buscarUltimoEncerradoComSetor(supabase, cliente.id),
+      ]);
+      continuidade = resolverContinuidade({
+        modo: modoSessao,
+        anterior,
+        janelaHoras,
+        agoraIso: agora,
+      });
+    }
+
+    if (!atend) {
+      let novoRegistro: NovoAtendimentoFields | AtendimentoContinuidadeFields;
+      // Preenchido só no caminho de continuidade — é dele que saem o status
+      // inicial e o responsável para a timeline/log.
+      let camposContinuidade: AtendimentoContinuidadeFields | null = null;
+      if (continuidade) {
+        // Mesmo roteamento da triagem-bot ao concluir: último atendente do
+        // cliente naquele setor (se ainda ativo e disponível) → reservado para
+        // ele; senão → Pendentes do setor.
+        const { data: ultimoAtendente } = await supabase.rpc(
+          "ultimo_atendente_no_departamento",
+          { p_client_id: cliente.id, p_department_id: continuidade.departmentId },
+        );
+        camposContinuidade = montarAtendimentoContinuidade(
+          cliente.id,
+          continuidade.departmentId,
+          (ultimoAtendente as string | null) ?? null,
+          agora,
+        );
+        novoRegistro = camposContinuidade;
+      } else {
+        novoRegistro = montarNovoAtendimento(cliente.id, modoSessao, agora);
+      }
       const { data: novoAtend, error: errAt } = await supabase
         .from("atendimentos")
-        .insert(montarNovoAtendimento(cliente.id, modoSessao, agora))
+        .insert(novoRegistro)
         .select("id, status, current_department_id, triagem_started_at, created_at")
         .single();
       if (errAt) {
@@ -1445,13 +1535,36 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ ok: true });
       } else {
         atend = novoAtend;
+        if (continuidade && camposContinuidade) {
+          await supabase.from("timeline_events").insert({
+            atendimento_id: atend.id,
+            tipo_evento: "iniciado_atendimento",
+            actor_user_id: null,
+            target_user_id: camposContinuidade.assigned_to,
+            to_department_id: continuidade.departmentId,
+            payload: {
+              origem: "continuidade_pos_encerramento",
+              atendimento_anterior_id: continuidade.anteriorId,
+              horas_desde_fechamento: continuidade.horasDesdeFechamento,
+            },
+          });
+        }
         log({
           funcao: FUNCAO,
-          evento: "atendimento_criado",
+          evento: continuidade ? "atendimento_continuidade_criado" : "atendimento_criado",
           status: "ok",
           atendimento_id: atend.id,
           client_id: cliente.id,
-          extra: { modo_sessao: modoSessao },
+          extra: continuidade && camposContinuidade
+            ? {
+              modo_sessao: modoSessao,
+              dept: continuidade.departmentId,
+              anterior: continuidade.anteriorId,
+              horas_desde_fechamento: continuidade.horasDesdeFechamento,
+              status_inicial: camposContinuidade.status,
+              assigned_to: camposContinuidade.assigned_to,
+            }
+            : { modo_sessao: modoSessao },
         });
       }
     }

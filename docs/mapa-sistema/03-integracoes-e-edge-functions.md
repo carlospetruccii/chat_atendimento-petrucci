@@ -61,6 +61,20 @@ função mais importante do backend. Cuida de três situações:
    > uma **triagem nova** — não reabre. (Antes, um encerramento manual era reaberto caso o
    > atendimento tivesse conversa "externa" antiga, o que confundia o operador.) O caminho
    > `fromMe` mantém a reabertura por conversa externa.
+   > **Continuidade pós‑encerramento (31/07/2026).** Antes de abrir uma triagem nova, o
+   > webhook olha o **último atendimento encerrado com setor** daquele cliente. Se ele foi
+   > fechado dentro da janela `janela_continuidade_apos_encerramento` (aba **Tempos**, 72h por
+   > padrão), o atendimento novo nasce **já naquele setor** com `triagem_estagio='concluida'`
+   > — o `triagem-bot` nunca é acionado e o cliente **não vê o menu de setores de novo**. O
+   > roteamento espelha o fim da triagem: `ultimo_atendente_no_departamento` → `reservado`
+   > para ele; senão `pendente` do setor. O atendimento encerrado **não é reaberto** (não
+   > desfaz o encerramento do atendente nem suja a contagem de resolvidos); a continuidade
+   > fica registrada na timeline com `origem='continuidade_pos_encerramento'`.
+   > Motivo: com o encerramento automático desligado, **todo** encerramento é manual, e a
+   > reabertura automática (que só cobre `automatico_inatividade`) deixou de valer na
+   > prática — o cliente que respondia depois levava o menu na cara. Vale só no modo
+   > "normal": Lista de Sessões sempre reinicia e "Sem Triagem" já não tem menu. `0` na
+   > janela desliga a regra.
    > **Lista de Sessões.** Ao criar um atendimento novo, o webhook checa se o número está
    > na tabela `sessoes_triagem` (ativo). Se estiver, marca o atendimento com `is_sessao = true`
    > e **pula a reabertura automática** — VIPs internos sempre reiniciam o fluxo de sessão
