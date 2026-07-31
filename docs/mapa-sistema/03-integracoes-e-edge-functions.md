@@ -279,7 +279,11 @@ Compartilha o helper `_shared/google-people.ts`. Ações (`POST { action }`):
 
 #### 11. `cron-encerramento-automatico`
 A cada 30 min: **encerra sozinho** atendimentos `em_atendimento`/`reservado` parados há
-muito tempo (padrão 24h). Não mexe em triagem nem em pendentes.
+muito tempo (padrão 24h). Não mexe em triagem nem em pendentes. Tem um **toggle próprio**
+— `system_config.encerramento_automatico_ativo` (aba Operação, **nasce desligado**) —
+separado do kill‑switch geral: mesmo com o bot ligado, este cron só age se o toggle
+estiver ligado. Chave ausente ou qualquer valor diferente de `'true'` = desligado
+(fail‑safe: na dúvida, não encerra a conversa de ninguém).
 
 #### 12. `cron-notificacao-admin`
 A cada 5 min: avisa o **Administrador** (papel de supervisão), por WhatsApp e na tabela
@@ -316,7 +320,7 @@ Elas são agendadas pelo próprio Postgres (pg_cron). Desde 02/07/2026 os jobs e
 | `triagem-bot` | a cada **10 segundos** | Sim |
 | `cron-retry-mensagens-falha` | a cada **2 minutos** | Sim |
 | `cron-notificacao-admin` | a cada **5 minutos** | Sim |
-| `cron-encerramento-automatico` | a cada **30 minutos** | Sim |
+| `cron-encerramento-automatico` | a cada **30 minutos** | Sim, **e** o toggle próprio `encerramento_automatico_ativo` (desligado por padrão) |
 | `cron-bot-reactivation` | **1x/dia** (03:00 UTC = 00:00 BRT) | — (é justamente quem religa) |
 | `cron-alerta-atendimento-parado` | a cada **5 minutos** | Sim — migration `20260720121000_agenda_cron_alerta_atendimento_parado.sql` |
 | `google-contatos-sync` → `google-contacts` (`sync`) | a cada **15 minutos** | Não (independe do bot; no‑op se a conta Google não estiver conectada) — migrations `20260702120500_google_agenda_cron.sql` (criou) e `20260702200000_rename_agenda_para_contatos.sql` (renomeou o job) |

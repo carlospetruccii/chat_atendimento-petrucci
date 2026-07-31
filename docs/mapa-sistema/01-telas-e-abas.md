@@ -324,6 +324,10 @@ um lápis para editar o número. Inclui, entre outros: intervalo anti‑flood da
 tempo de reserva do especialista, tempo para avisar a supervisão, tempo de encerramento
 automático, tentativas máximas da triagem e tempo de abandono.
 
+> O campo **"Encerrar atendimento parado por inatividade"** só tem efeito se o toggle
+> **"Encerrar atendimentos parados por inatividade"** da aba **Operação** estiver ligado
+> (nasce desligado). Com ele desligado, a tela avisa "Sem efeito" ao lado do campo.
+
 ### Aba 3 — Horário
 Define o **horário comercial** e os **feriados**. Tabelas: `business_hours` e `holidays`.
 - **Adicionar/remover faixa de horário** por dia da semana (valida que não se sobreponham).
@@ -364,6 +368,7 @@ O **painel de controle do robô** (só superadmin). Tudo aqui é guardado em `sy
 | **Pendentes abertos a todos** (modo emergência) | Enquanto a triagem está desligada, deixa todos os departamentos verem os pendentes uns dos outros. |
 | **Reiniciar triagem ao virar o dia** | Se o cliente volta noutro dia, encerra a triagem antiga e começa uma nova. |
 | **Lembrete na triagem sem resposta** + **tempo (min)** | Liga o lembrete automático quando o cliente para de responder na triagem, e define após quantos minutos. |
+| **Encerrar atendimentos parados por inatividade** (liga/desliga) | Controla, **independente** do kill‑switch geral, se o `cron-encerramento-automatico` fecha sozinho atendimentos reservados/em andamento sem mensagem há muito tempo. **Nasce desligado** — chave `encerramento_automatico_ativo` em `system_config`. Desligado, só encerramento manual pelo atendente. O tempo de inatividade continua ajustável na aba Tempos, mas só tem efeito com este toggle ligado. |
 
 ### Aba 7 — Lista de Sessões
 Lista **opcional** de números liberados (gerentes, diretoria, contatos internos) que
