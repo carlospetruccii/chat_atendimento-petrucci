@@ -4,6 +4,10 @@
 // (last_message_at) há mais que system_config.tempo_encerramento_automatico
 // minutos (default 1440 = 24h).
 //
+// Só age se system_config.encerramento_automatico_ativo = 'true' (toggle na aba
+// Configurações → Operação). Chave ausente ou qualquer outro valor = desligado,
+// e o encerramento passa a ser 100% manual.
+//
 // NÃO envia mensagem ao cliente. NÃO toca em em_triagem (regra própria
 // da triagem-bot) nem em pendente (cliente ainda esperando alguém pegar).
 
@@ -27,7 +31,20 @@ Deno.serve(async (_req: Request) => {
       return new Response(JSON.stringify({ ok: true, acao: "kill_switch" }));
     }
 
-    // 2) Tempo configurado
+    // 2) Toggle próprio do encerramento automático (default: DESLIGADO)
+    const { data: toggleRow } = await supabase
+      .from("system_config")
+      .select("valor")
+      .eq("chave", "encerramento_automatico_ativo")
+      .maybeSingle();
+
+    const encerramentoAtivo = ((toggleRow?.valor ?? "") as string).trim() === "true";
+    if (!encerramentoAtivo) {
+      log({ funcao: FUNCAO, evento: "encerramento_pulado_desativado", status: "ok", duracao_ms: cron() });
+      return new Response(JSON.stringify({ ok: true, acao: "desativado" }));
+    }
+
+    // 3) Tempo configurado
     const { data: cfgRow } = await supabase
       .from("system_config")
       .select("valor")
@@ -42,7 +59,7 @@ Deno.serve(async (_req: Request) => {
     const agoraMs = Date.now();
     const cutoffIso = new Date(agoraMs - tempoMin * 60_000).toISOString();
 
-    // 3) Candidatos
+    // 4) Candidatos
     const { data: candidatos, error: errSel } = await supabase
       .from("atendimentos")
       .select("id,status,assigned_to,last_message_at")

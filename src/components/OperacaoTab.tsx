@@ -33,6 +33,7 @@ import {
   fetchOperacaoConfig,
   setBotAtivacaoProgramada,
   setBotAtivo,
+  setEncerramentoAutomaticoAtivo,
   setNotificarColaboradoresPendente,
   setPendentesAbertosATodos,
   setTriagemLembreteAtivo,
@@ -136,6 +137,19 @@ export function OperacaoTab() {
     onSuccess: (_d, ativo) => {
       qc.invalidateQueries({ queryKey: ["operacao-config"] });
       toast.success(ativo ? "Lembrete da triagem ativado." : "Lembrete da triagem desativado.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const toggleEncerramentoMut = useMutation({
+    mutationFn: (ativo: boolean) => setEncerramentoAutomaticoAtivo(ativo),
+    onSuccess: (_d, ativo) => {
+      qc.invalidateQueries({ queryKey: ["operacao-config"] });
+      toast.success(
+        ativo
+          ? "Encerramento automático ligado — atendimentos parados voltam a ser encerrados sozinhos."
+          : "Encerramento automático desligado — só encerramento manual a partir de agora.",
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -394,6 +408,41 @@ export function OperacaoTab() {
             <div className="font-medium">
               Avisos pausados — o bot está desligado. Eles voltam assim que o bot
               for religado.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bloco 1.95 — Encerramento automático por inatividade */}
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-foreground">
+              Encerrar atendimentos parados por inatividade
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Quando ligado, todo atendimento reservado ou em andamento que ficar
+              o tempo configurado sem nenhuma mensagem (de lado nenhum) é
+              encerrado sozinho, em silêncio — o cliente não recebe aviso. Ajuste
+              o tempo em Configurações → Tempos →{" "}
+              <em>Encerrar atendimento parado por inatividade</em>. Desligado, o
+              atendimento só encerra quando o atendente encerra na mão.
+            </p>
+          </div>
+          <Switch
+            checked={cfg.encerramento_automatico_ativo}
+            disabled={toggleEncerramentoMut.isPending}
+            onCheckedChange={(v) => toggleEncerramentoMut.mutate(v)}
+            className="scale-125"
+          />
+        </div>
+
+        {!cfg.encerramento_automatico_ativo && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-muted p-4 text-sm text-muted-foreground">
+            <XCircle className="h-5 w-5 shrink-0" strokeWidth={2} />
+            <div className="font-medium">
+              Só encerramento manual — nenhum atendimento é fechado
+              automaticamente por falta de mensagem.
             </div>
           </div>
         )}

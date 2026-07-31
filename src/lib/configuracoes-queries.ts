@@ -634,14 +634,23 @@ export async function fetchTempos(): Promise<TempoRow[]> {
   const { data, error } = await supabase
     .from("system_config")
     .select("chave, valor, descricao")
-    .in("chave", chaves);
+    // O toggle do encerramento não é um tempo, mas define se o tempo dele tem
+    // efeito — sem isso o campo parece valer algo com a automação desligada.
+    .in("chave", [...chaves, "encerramento_automatico_ativo"]);
   if (error) throw error;
   const map = new Map((data ?? []).map((r) => [r.chave, r]));
+  const encerramentoAtivo =
+    (map.get("encerramento_automatico_ativo")?.valor ?? "").trim() === "true";
   return TEMPOS.map((meta) => {
     const row = map.get(meta.chave);
     const n = Number.parseInt((row?.valor ?? "").trim(), 10);
+    const inativo =
+      meta.chave === "tempo_encerramento_automatico" && !encerramentoAtivo
+        ? "Sem efeito: o encerramento automático está desligado em Operação, então nenhum atendimento é encerrado por inatividade."
+        : meta.inativo;
     return {
       ...meta,
+      inativo,
       valor: Number.isFinite(n) ? n : null,
       descricao: row?.descricao ?? null,
     };
@@ -677,6 +686,7 @@ export interface OperacaoConfig {
   triagem_lembrete_ativo: boolean;
   triagem_lembrete_minutos: number;
   notificar_colaboradores_pendente: boolean;
+  encerramento_automatico_ativo: boolean;
 }
 
 export async function fetchOperacaoConfig(): Promise<OperacaoConfig> {
@@ -692,6 +702,7 @@ export async function fetchOperacaoConfig(): Promise<OperacaoConfig> {
       "triagem_lembrete_ativo",
       "triagem_lembrete_minutos",
       "notificar_colaboradores_pendente",
+      "encerramento_automatico_ativo",
     ]);
   if (error) throw error;
   const map = new Map((data ?? []).map((r) => [r.chave, r.valor]));
@@ -704,7 +715,24 @@ export async function fetchOperacaoConfig(): Promise<OperacaoConfig> {
     triagem_lembrete_ativo: (map.get("triagem_lembrete_ativo") ?? "true") === "true",
     triagem_lembrete_minutos: parseInt(map.get("triagem_lembrete_minutos") ?? "30", 10) || 30,
     notificar_colaboradores_pendente: map.get("notificar_colaboradores_pendente") === "true",
+    // Chave ausente = desligado, igual à Edge Function (na dúvida, não encerra).
+    encerramento_automatico_ativo: map.get("encerramento_automatico_ativo") === "true",
   };
+}
+
+export async function setEncerramentoAutomaticoAtivo(ativo: boolean) {
+  const { data: auth } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from("system_config")
+    .update({ valor: String(ativo), updated_by: auth.user?.id ?? null })
+    .eq("chave", "encerramento_automatico_ativo")
+    .select("chave");
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      'Configuração "encerramento_automatico_ativo" não existe em system_config — nada foi salvo.',
+    );
+  }
 }
 
 export async function setTriagemReiniciaAoVirarDia(ativo: boolean) {
