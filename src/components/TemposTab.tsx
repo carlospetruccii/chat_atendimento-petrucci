@@ -34,7 +34,7 @@ export function TemposTab() {
 
   const openEdit = (row: TempoRow) => {
     setEditing(row);
-    setDraft(String(row.valor));
+    setDraft(row.valor === null ? "" : String(row.valor));
   };
 
   const handleSave = async () => {
@@ -83,7 +83,7 @@ export function TemposTab() {
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-semibold text-foreground tabular-nums">
-                    {f.valor}
+                    {f.valor ?? "—"}
                   </span>
                   <span className="text-sm text-muted-foreground w-16">
                     {f.unit || "—"}

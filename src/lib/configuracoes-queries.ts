@@ -537,15 +537,15 @@ export const TEMPOS: TempoMeta[] = [
     max: 300,
   },
   {
-    chave: "tempo_reserva_especialista",
-    label: "Tempo de reserva do especialista",
-    unit: "minutos",
+    chave: "triagem_max_tentativas",
+    label: "Máx. de tentativas na triagem",
+    unit: "",
     min: 1,
-    max: 1440,
+    max: 10,
   },
   {
-    chave: "tempo_reserva_ultimo_atendente",
-    label: "Tempo de reserva do último atendente",
+    chave: "tempo_abandono_triagem",
+    label: "Tempo de abandono na triagem",
     unit: "minutos",
     min: 1,
     max: 1440,
@@ -565,37 +565,31 @@ export const TEMPOS: TempoMeta[] = [
     max: 1440,
   },
   {
+    chave: "tempo_alerta_atendimento_parado",
+    label: "Tempo até alertar sobre atendimento parado",
+    unit: "minutos",
+    min: 1,
+    max: 1440,
+  },
+  {
+    chave: "intervalo_repeticao_alerta_atendimento_parado",
+    label: "Intervalo de repetição do alerta de atendimento parado",
+    unit: "minutos",
+    min: 1,
+    max: 1440,
+  },
+  {
     chave: "tempo_encerramento_automatico",
     label: "Tempo para encerramento automático",
     unit: "minutos",
     min: 1,
     max: 10080,
   },
-  {
-    chave: "tempo_novo_atendimento",
-    label: "Tempo para considerar novo atendimento",
-    unit: "minutos",
-    min: 1,
-    max: 1440,
-  },
-  {
-    chave: "tempo_abandono_triagem",
-    label: "Tempo de abandono na triagem",
-    unit: "minutos",
-    min: 1,
-    max: 1440,
-  },
-  {
-    chave: "triagem_max_tentativas",
-    label: "Máx. de tentativas na triagem",
-    unit: "",
-    min: 1,
-    max: 10,
-  },
 ];
 
 export interface TempoRow extends TempoMeta {
-  valor: number;
+  /** null = chave ausente em system_config (não configurada). Nunca falseie como 0. */
+  valor: number | null;
   descricao: string | null;
 }
 
@@ -609,9 +603,10 @@ export async function fetchTempos(): Promise<TempoRow[]> {
   const map = new Map((data ?? []).map((r) => [r.chave, r]));
   return TEMPOS.map((meta) => {
     const row = map.get(meta.chave);
+    const n = Number.parseInt((row?.valor ?? "").trim(), 10);
     return {
       ...meta,
-      valor: row?.valor ? Number(row.valor) : 0,
+      valor: Number.isFinite(n) ? n : null,
       descricao: row?.descricao ?? null,
     };
   });
@@ -619,11 +614,20 @@ export async function fetchTempos(): Promise<TempoRow[]> {
 
 export async function updateTempo(chave: string, valor: number) {
   const { data: auth } = await supabase.auth.getUser();
-  const { error } = await supabase
+  // `.select()` é obrigatório aqui: sem ele um UPDATE que não casa nenhuma linha
+  // volta sem erro e o save "dá certo" sem gravar nada — foi exatamente esse
+  // silêncio que escondeu a aba Tempos zerada.
+  const { data, error } = await supabase
     .from("system_config")
     .update({ valor: String(valor), updated_by: auth.user?.id ?? null })
-    .eq("chave", chave);
+    .eq("chave", chave)
+    .select("chave");
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      `Configuração "${chave}" não existe em system_config — nada foi salvo.`,
+    );
+  }
 }
 
 // ============ Operação (kill switch) ============
