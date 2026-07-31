@@ -601,6 +601,103 @@ fetch direto).
 
 ---
 
+## 8. Histórico antigo (mensagens de ANTES do webhook existir)
+
+> Objetivo: trazer, por cliente, as mensagens que existiram no WhatsApp antes do
+> dia em que o sistema começou a gravar — encaixadas na posição cronológica
+> certa da conversa que o cliente já tem.
+
+### Por que `/message/find` NÃO serve pra isso
+`POST /message/find` (usado pelo [`backfill-mensagens-externas`](supabase/functions/backfill-mensagens-externas/index.ts))
+lê o banco **da própria uazapi**, e ela **guarda só 7 dias** — confirmado tanto na
+doc de `/instance/connect` ("mensagens mais antigas do que 7 dias são excluídas
+durante a madrugada") quanto em produção: `ver_chat` (diagnóstico abaixo) mostrou
+chats com janela real de exatamente 7 dias, mesmo tendo pedido histórico maior.
+
+### O caminho certo: `POST /message/history-sync`
+Pede ao **WhatsApp** (não à uazapi) para reenviar mensagens antigas de um chat.
+Duas pegadinhas que **não estão no OpenAPI** — descobertas lendo o corpo dos 400
+em produção:
+
+1. **A âncora por `messageid` não funciona para o passado.** Se o messageid já
+   foi purgado do banco de 7 dias da uazapi (é sempre o caso aqui), ela responde
+   `400 {"error":"messageid not found locally for chat and timestamp is
+   required"}`. A âncora que funciona é **`timestamp`** (segundos, Unix) — e ela
+   também exige **`fromMe`** (`400 {"error":"...and fromMe is required"}`) para
+   desambiguar de qual lado é a mensagem-referência.
+2. **É assíncrono.** A resposta do POST é só "pedido enviado". As mensagens
+   voltam depois no evento **`history`** do webhook (e, segundo a doc, também
+   ficam disponíveis via `/message/find` — mas só dentro da janela de 7 dias que
+   ela mantém).
+
+```ts
+// _shared/uazapi-client.ts — solicitarHistoricoChat()
+{
+  number: chatid,           // JID do chat, ex: 5511999998888@s.whatsapp.net
+  mode: "history",
+  count: 100,               // teto da rota
+  timestamp: 1785500000,    // segundos — a âncora que de fato funciona
+  fromMe: true,             // direção da mensagem-âncora
+}
+```
+
+### As duas funções (por que são separadas do fluxo normal)
+- **[`historico-solicitar`](supabase/functions/historico-solicitar/index.ts)**
+  (PEDE): para cada cliente com atendimento, acha a mensagem mais antiga que já
+  temos dele (o "dia X" dele), abre um pedido em `historico_import_pedidos` com
+  a janela `[desde, ate)` e chama `history-sync`. `dry_run` é o padrão. Rodar de
+  novo depois anda mais para trás (a âncora passa a ser a mensagem mais antiga
+  já importada). Auth: JWT de superadmin ou `x-backfill-secret`.
+- **[`webhook-historico`](supabase/functions/webhook-historico/index.ts)**
+  (GRAVA): endpoint **dedicado só ao evento `history`**, registrado como um
+  **segundo webhook** na mesma instância (`garantirWebhookHistorico()`,
+  `POST /webhook` com `action:"add"` — a uazapi aceita múltiplos webhooks).
+  Separado do [`webhook-zapi-receive`](supabase/functions/webhook-zapi-receive/index.ts)
+  de propósito: o receiver principal cria atendimento, roda triagem e
+  **responde** ao cliente — um lote de histórico caindo lá dispararia bot e
+  notificação para conversa de semanas atrás. Este endpoint **só grava**, nunca
+  envia, nunca cria cliente/atendimento/timeline.
+
+### Portão de segurança: `historico_import_pedidos`
+O evento `history` também dispara **sozinho** numa reconexão de QR code — sem
+ninguém ter pedido nada. Por isso `webhook-historico` só aceita um lote se
+existir um pedido **não expirado** para aquele `chatid` nessa tabela (ledger dos
+pedidos, escrita exclusiva de service_role). Fora da janela `[desde, ate)` do
+pedido, ou sem pedido, a mensagem é descartada.
+
+### Onde a mensagem antiga encaixa
+No atendimento **mais antigo** do cliente (não cria atendimento retroativo — sem
+onde encaixar, pula), com `created_at` = hora real da mensagem no WhatsApp.
+Outbound antigo entra como `sender_type:'externo'` — o único valor que **não**
+dispara `promote_atendimento_em_atendimento`, então atendimento encerrado não
+reabre nem ganha `first_response_at` retroativo. Os triggers de `last_message_at`
+usam `GREATEST` com guarda, então a ordem da Inbox não anda para trás.
+
+### Estado em produção (31/07/2026) — bloqueado no WhatsApp, não no código
+Infra validada de ponta a ponta: webhook `history` registrado
+(`garantirWebhookHistorico` → `criado:true`), 3 pedidos aceitos pela uazapi
+(`erros:0`). **Mas o WhatsApp não entregou nada** — nem no webhook (0 chamadas
+nos logs), nem no `/message/find` (chat continua mostrando só a janela de 7
+dias), mesmo com o celular aberto. Suspeita: multi-device não reenvia um período
+que o companion (a instância uazapi) nunca sincronizou da primeira vez.
+
+Para checar de novo (diagnóstico embutido em `historico-solicitar`, sem tocar em
+nada):
+```bash
+curl -s -X POST "$URL/functions/v1/historico-solicitar" \
+  -H "Authorization: Bearer $ANON_KEY" -H "x-backfill-secret: $BACKFILL_SECRET" \
+  -H "Content-Type: application/json" -d '{"ver_chat":"5519999998888@s.whatsapp.net"}'
+# → { total, mais_antiga, mais_nova } — se a janela continuar em 7 dias, o
+#   WhatsApp ainda não entregou.
+```
+
+Se não vier depois de esperar (pedidos expiram em `janela_horas`, padrão 12h): o
+caminho pela API está esgotado. Alternativa: importar do **export de conversa**
+(`.txt`) que o próprio WhatsApp gera no celular — não implementado, exigiria um
+parser dedicado.
+
+---
+
 ## Arquivos-chave deste projeto (por parte)
 
 | Parte | Arquivo |
@@ -626,7 +723,8 @@ UAZAPI_WEBHOOK_SECRET=<segredo-query>     # validação secundária do webhook
 
 ### Endpoints uazapi realmente usados (lista fechada)
 `POST /send/text` · `POST /send/media` · `POST /send/menu` · `POST /message/delete` ·
-`POST /message/download` · `POST /instance/connect` · `GET /instance/status` ·
-`POST /instance/disconnect` · `POST /webhook` · `GET /webhook` · `POST /chat/details`
+`POST /message/download` · `POST /message/find` · `POST /message/history-sync` ·
+`POST /instance/connect` · `GET /instance/status` · `POST /instance/disconnect` ·
+`POST /webhook` · `GET /webhook` · `POST /chat/details`
 </content>
 </invoke>
