@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pencil, Loader2 } from "lucide-react";
+import { Pencil, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -8,7 +8,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { fetchTempos, updateTempo, type TempoRow } from "@/lib/configuracoes-queries";
+import {
+  fetchTempos,
+  updateTempo,
+  TEMPO_GRUPOS,
+  type TempoRow,
+} from "@/lib/configuracoes-queries";
 
 export function TemposTab() {
   const [rows, setRows] = useState<TempoRow[] | null>(null);
@@ -72,34 +77,58 @@ export function TemposTab() {
         </div>
       ) : (
         <div className="divide-y divide-border">
-          {(rows ?? []).map((f) => (
-            <div key={f.chave} className="p-6">
-              <div className="flex items-start justify-between gap-6">
-                <div className="flex-1 min-w-0">
-                  <label className="block text-sm font-semibold text-foreground">{f.label}</label>
-                  <p className="mt-1 text-xs text-muted-foreground max-w-2xl">
-                    {f.descricao ?? "—"}
-                  </p>
+          {TEMPO_GRUPOS.map((grupo) => {
+            const doGrupo = (rows ?? []).filter((f) => f.grupo === grupo.id);
+            if (doGrupo.length === 0) return null;
+            return (
+              <section key={grupo.id}>
+                <div className="bg-muted/40 px-6 py-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                    {grupo.titulo}
+                  </h4>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{grupo.descricao}</p>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-sm font-semibold text-foreground tabular-nums">
-                    {f.valor ?? "—"}
-                  </span>
-                  <span className="text-sm text-muted-foreground w-16">
-                    {f.unit || "—"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(f)}
-                    className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
-                    title="Editar"
-                  >
-                    <Pencil className="h-4 w-4" strokeWidth={1.8} />
-                  </button>
+                <div className="divide-y divide-border">
+                  {doGrupo.map((f) => (
+                    <div key={f.chave} className="p-6">
+                      <div className="flex items-start justify-between gap-6">
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-sm font-semibold text-foreground">
+                            {f.label}
+                          </label>
+                          {f.inativo && (
+                            <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                              <AlertTriangle className="h-3 w-3" strokeWidth={2} />
+                              {f.inativo}
+                            </span>
+                          )}
+                          <p className="mt-1 text-xs text-muted-foreground max-w-2xl">
+                            {f.descricao ?? "—"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-sm font-semibold text-foreground tabular-nums">
+                            {f.valor ?? "—"}
+                          </span>
+                          <span className="text-sm text-muted-foreground w-24">
+                            {f.unit || "—"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(f)}
+                            className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Editar"
+                          >
+                            <Pencil className="h-4 w-4" strokeWidth={1.8} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            </div>
-          ))}
+              </section>
+            );
+          })}
         </div>
       )}
 

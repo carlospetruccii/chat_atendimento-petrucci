@@ -518,7 +518,28 @@ export async function deleteHoliday(id: string) {
 
 // ============ Tempos (system_config) ============
 
-export type TempoUnit = "segundos" | "minutos" | ""; /* sem unidade */
+export type TempoUnit = "segundos" | "minutos" | "minutos úteis" | ""; /* sem unidade */
+
+/** Seções da aba Tempos. A ordem aqui é a ordem exibida na tela. */
+export const TEMPO_GRUPOS = [
+  {
+    id: "triagem",
+    titulo: "Bot de triagem",
+    descricao: "Como o bot conversa com o cliente antes de entregar para uma pessoa.",
+  },
+  {
+    id: "avisos",
+    titulo: "Avisos internos no WhatsApp",
+    descricao: "Quando a equipe é cobrada por cliente esperando sem atendimento.",
+  },
+  {
+    id: "encerramento",
+    titulo: "Encerramento",
+    descricao: "Quando um atendimento é fechado sozinho por inatividade.",
+  },
+] as const;
+
+export type TempoGrupoId = (typeof TEMPO_GRUPOS)[number]["id"];
 
 export interface TempoMeta {
   chave: string;
@@ -526,64 +547,79 @@ export interface TempoMeta {
   unit: TempoUnit;
   min: number;
   max: number;
+  grupo: TempoGrupoId;
+  /** Presente = o ajuste não tem efeito hoje; a tela mostra o motivo. */
+  inativo?: string;
 }
 
 export const TEMPOS: TempoMeta[] = [
   {
     chave: "delay_anti_flood_triagem",
-    label: "Delay anti-flood da triagem",
+    label: "Esperar o cliente terminar de digitar",
     unit: "segundos",
     min: 1,
     max: 300,
+    grupo: "triagem",
   },
   {
     chave: "triagem_max_tentativas",
-    label: "Máx. de tentativas na triagem",
+    label: "Tentativas antes do bot desistir e chamar uma pessoa",
     unit: "",
     min: 1,
     max: 10,
+    grupo: "triagem",
   },
   {
     chave: "tempo_abandono_triagem",
-    label: "Tempo de abandono na triagem",
+    label: "Encerrar triagem quando o cliente para de responder",
     unit: "minutos",
     min: 1,
     max: 1440,
-  },
-  {
-    chave: "tempo_notificacao_admin",
-    label: "Tempo até notificar o administrador",
-    unit: "minutos",
-    min: 1,
-    max: 1440,
-  },
-  {
-    chave: "intervalo_repeticao_notificacao_admin",
-    label: "Intervalo de repetição da notificação ao administrador",
-    unit: "minutos",
-    min: 1,
-    max: 1440,
+    grupo: "triagem",
   },
   {
     chave: "tempo_alerta_atendimento_parado",
-    label: "Tempo até alertar sobre atendimento parado",
-    unit: "minutos",
+    label: "Avisar o responsável do setor: cliente esperando sem atendimento",
+    unit: "minutos úteis",
     min: 1,
     max: 1440,
+    grupo: "avisos",
   },
   {
     chave: "intervalo_repeticao_alerta_atendimento_parado",
-    label: "Intervalo de repetição do alerta de atendimento parado",
+    label: "Cobrar de novo o responsável do setor",
     unit: "minutos",
     min: 1,
     max: 1440,
+    grupo: "avisos",
+  },
+  {
+    chave: "tempo_notificacao_admin",
+    label: "Avisar o número do administrador: cliente pendente",
+    unit: "minutos",
+    min: 1,
+    max: 1440,
+    grupo: "avisos",
+    inativo:
+      "Sem efeito: não há número de administrador cadastrado, então esse aviso nunca é enviado.",
+  },
+  {
+    chave: "intervalo_repeticao_notificacao_admin",
+    label: "Cobrar de novo o número do administrador",
+    unit: "minutos",
+    min: 1,
+    max: 1440,
+    grupo: "avisos",
+    inativo:
+      "Sem efeito: não há número de administrador cadastrado, então esse aviso nunca é enviado.",
   },
   {
     chave: "tempo_encerramento_automatico",
-    label: "Tempo para encerramento automático",
+    label: "Encerrar atendimento parado por inatividade",
     unit: "minutos",
     min: 1,
     max: 10080,
+    grupo: "encerramento",
   },
 ];
 
