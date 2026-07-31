@@ -487,6 +487,90 @@ export async function buscarMensagensDoChat(params: {
   );
 }
 
+/**
+ * Pede ao WhatsApp o histórico ANTIGO de um chat (POST /message/history-sync).
+ *
+ * ASSÍNCRONO: a resposta é só o "pedido enviado". As mensagens voltam depois no
+ * evento `history` do webhook — por isso existe a função webhook-historico.
+ *
+ * `messageid` é a ÂNCORA: a uazapi busca para trás a partir dela (mande o
+ * messageid cru, sem o prefixo `owner:`). Sem âncora, a instância usa a mensagem
+ * mais antiga que ela conhece do chat.
+ *
+ * A doc avisa que a recuperação pode só acontecer com o WhatsApp aberto no
+ * celular ou ativo em segundo plano, e o WhatsApp só devolve o que ainda existe
+ * no aparelho. É melhor esforço, não garantia.
+ */
+export async function solicitarHistoricoChat(params: {
+  chatid: string;
+  messageid?: string | null;
+  /**
+   * Instante da âncora, em SEGUNDOS. Obrigatório na prática: a âncora por
+   * `messageid` só funciona se a mensagem ainda estiver no banco da uazapi, que
+   * guarda 7 dias — e o histórico que queremos é justamente mais antigo. Sem
+   * isso a rota responde 400 "messageid not found locally for chat and
+   * timestamp is required" (não documentado no OpenAPI, confirmado em produção).
+   */
+  timestampSegundos?: number | null;
+  /**
+   * Direção da mensagem-âncora. A rota pede o par (timestamp, fromMe) para
+   * identificar a âncora quando o messageid já não está no banco dela — sem
+   * isso responde 400 "fromMe is required".
+   */
+  fromMe?: boolean | null;
+  count?: number;
+}): Promise<unknown> {
+  const payload: Record<string, unknown> = {
+    number: params.chatid,
+    mode: "history",
+    count: Math.min(100, Math.max(1, Math.trunc(params.count ?? 100))),
+  };
+  if (params.messageid) payload.messageid = params.messageid;
+  if (params.timestampSegundos && Number.isFinite(params.timestampSegundos)) {
+    payload.timestamp = Math.trunc(params.timestampSegundos);
+  }
+  if (typeof params.fromMe === "boolean") payload.fromMe = params.fromMe;
+  return await chamar("POST", "/message/history-sync", payload);
+}
+
+/**
+ * Garante um webhook DEDICADO ao evento `history`, apontando para `url`.
+ *
+ * Separado de propósito: o receiver principal cria atendimento, roda triagem e
+ * responde ao cliente. Um lote de histórico caindo lá dispararia bot e
+ * notificação para conversa de semanas atrás. Aqui usamos `action: "add"`, que
+ * cria um webhook ADICIONAL — o principal continua intacto.
+ *
+ * Idempotente: se já existe webhook com essa url, não cria outro.
+ */
+export async function garantirWebhookHistorico(
+  url: string,
+): Promise<{ criado: boolean; ja_existia: boolean }> {
+  const atuais = await verWebhook();
+  const lista = Array.isArray(atuais)
+    ? atuais
+    : (() => {
+      const o = (atuais ?? {}) as Record<string, unknown>;
+      const cand = o.webhooks ?? o.data ?? o.items;
+      return Array.isArray(cand) ? cand : (o.url ? [o] : []);
+    })();
+
+  const jaTem = (lista as unknown[]).some((w) => {
+    const o = (w ?? {}) as Record<string, unknown>;
+    return typeof o.url === "string" && o.url.trim() === url.trim();
+  });
+  if (jaTem) return { criado: false, ja_existia: true };
+
+  await chamar("POST", "/webhook", {
+    action: "add",
+    url,
+    events: ["history"],
+    excludeMessages: [],
+    enabled: true,
+  });
+  return { criado: true, ja_existia: false };
+}
+
 // ————————————————————————————————————————————————————————————————
 // CONTATO (nome / detalhes do chat)
 // ————————————————————————————————————————————————————————————————
