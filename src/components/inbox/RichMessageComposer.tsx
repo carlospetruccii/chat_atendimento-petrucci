@@ -194,6 +194,10 @@ export const RichMessageComposer = forwardRef<RichMessageComposerHandle, RichMes
     const contentEditableEl = useMemo(
       () => (
         <ContentEditable
+          // Corretor ortográfico nativo do navegador em pt-BR (sublinha erros
+          // e sugere correção no clique direito, como o Gboard).
+          spellCheck
+          lang="pt-BR"
           aria-placeholder={placeholder}
           placeholder={
             <div className="pointer-events-none absolute inset-0 text-sm text-muted-foreground">

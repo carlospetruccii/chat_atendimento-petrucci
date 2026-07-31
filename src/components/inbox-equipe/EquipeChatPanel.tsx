@@ -22,6 +22,8 @@ import {
   RichMessageComposer,
   type RichMessageComposerHandle,
 } from "@/components/inbox/RichMessageComposer";
+import { transcreverAudio } from "@/lib/ai-texto";
+import { useTranscricaoPendente } from "@/hooks/useTranscricaoPendente";
 
 interface Props {
   conversa: ConversaInterna;
@@ -49,6 +51,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
   const [pendingMedia, setPendingMedia] = useState<{ file: File; tipo: MediaTipo } | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
   const recorder = useAudioRecorder();
+  const setTranscricaoPendente = useTranscricaoPendente(composerRef);
 
   const chat = useConversaInternaHistory({ conversaId: conversa.id, enabled: true });
 
@@ -130,22 +133,17 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
     }
   };
 
+  // O áudio ditado não é enviado: a IA transcreve/corrige e o texto cai no
+  // composer para a pessoa revisar e enviar como mensagem de texto.
   const handleSendRecorded = async () => {
     if (!recordedAudio) return;
     setSending(true);
     try {
-      await enviarMidiaInterna({
-        conversaId: conversa.id,
-        tipo: "audio",
-        arquivo: recordedAudio.blob,
-        nomeArquivo: "audio.ogg",
-        duracaoSegundos: recordedAudio.durationSeconds,
-      });
+      const texto = await transcreverAudio(recordedAudio.blob, recordedAudio.mimeType);
       setRecordedAudio(null);
-      invalidarLista();
-      requestAnimationFrame(() => chat.scrollToBottom(true));
+      setTranscricaoPendente(texto);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o áudio.");
+      toast.error(e instanceof Error ? e.message : "Não foi possível transcrever o áudio.");
     } finally {
       setSending(false);
     }

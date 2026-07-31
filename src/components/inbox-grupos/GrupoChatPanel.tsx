@@ -10,10 +10,12 @@ import {
   type GrupoMessage,
   marcarGrupoLido,
   marcarGrupoLidoNoWhatsapp,
-  sendGrupoAudio,
   sendGrupoMedia,
   sendGrupoTexto,
 } from "@/lib/grupos-queries";
+import { SugestaoEnvioDialog } from "@/components/inbox/SugestaoEnvioDialog";
+import { transcreverAudio } from "@/lib/ai-texto";
+import { useTranscricaoPendente } from "@/hooks/useTranscricaoPendente";
 import { agruparMensagensGrupo, autorDaMensagem, corDoParticipante } from "@/lib/grupos-history";
 import { useGrupoHistory } from "@/hooks/useGrupoHistory";
 import { useAudioRecorder, type RecordedAudio } from "@/hooks/useAudioRecorder";
@@ -54,6 +56,9 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
   const [pendingMedia, setPendingMedia] = useState<{ file: File; tipo: MediaTipo } | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
   const [participantesOpen, setParticipantesOpen] = useState(false);
+  // Mensagem aguardando a sugestão otimizada da IA antes do envio.
+  const [pendingOtimizacao, setPendingOtimizacao] = useState<string | null>(null);
+  const setTranscricaoPendente = useTranscricaoPendente(composerRef);
   const recorder = useAudioRecorder();
 
   const chat = useGrupoHistory({ grupoId: grupo.id, enabled: true });
@@ -63,6 +68,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
     setReplyTo(null);
     setPendingMedia(null);
     setRecordedAudio(null);
+    setPendingOtimizacao(null);
   }, [grupo.id]);
 
   // Entrega os callbacks de realtime para o canal único da rota (recriar canal
@@ -120,9 +126,16 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
   // uazapi, então bloqueamos aqui e explicamos.
   const somenteLeitura = grupo.somenteAdminEnvia && !grupo.souAdmin;
 
-  const handleSend = async () => {
+  // Enviar abre o diálogo de sugestão da IA; o envio de fato acontece em
+  // doSend com o texto escolhido (sugestão, editada ou original).
+  const handleSend = () => {
     const content = composerRef.current?.getMarkdownText().trim() ?? "";
-    if (!content) return;
+    if (!content || sending) return;
+    setPendingOtimizacao(content);
+  };
+
+  const doSend = async (content: string) => {
+    if (!content || sending) return;
     setSending(true);
     try {
       await sendGrupoTexto({
@@ -130,6 +143,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
         content,
         replyToMessageId: replyTo?.id ?? null,
       });
+      setPendingOtimizacao(null);
       composerRef.current?.clear();
       setHasDraft(false);
       setReplyTo(null);
@@ -165,22 +179,17 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
     }
   };
 
+  // O áudio ditado não é enviado: a IA transcreve/corrige e o texto cai no
+  // composer para a pessoa revisar e enviar como mensagem de texto.
   const handleSendRecorded = async () => {
     if (!recordedAudio) return;
     setSending(true);
     try {
-      await sendGrupoAudio({
-        grupoId: grupo.id,
-        blob: recordedAudio.blob,
-        mimeType: recordedAudio.mimeType,
-        durationSeconds: recordedAudio.durationSeconds,
-        replyToMessageId: replyTo?.id ?? null,
-      });
+      const texto = await transcreverAudio(recordedAudio.blob, recordedAudio.mimeType);
       setRecordedAudio(null);
-      setReplyTo(null);
-      requestAnimationFrame(() => chat.scrollToBottom(true));
+      setTranscricaoPendente(texto);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o áudio.");
+      toast.error(e instanceof Error ? e.message : "Não foi possível transcrever o áudio.");
     } finally {
       setSending(false);
     }
@@ -524,6 +533,15 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
         sending={sending}
         onCancel={() => setPendingMedia(null)}
         onSend={handleSendMedia}
+      />
+      <SugestaoEnvioDialog
+        original={pendingOtimizacao}
+        enviando={sending}
+        onCancelar={() => {
+          setPendingOtimizacao(null);
+          composerRef.current?.focus();
+        }}
+        onEnviar={doSend}
       />
     </>
   );

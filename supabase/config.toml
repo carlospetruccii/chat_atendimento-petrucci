@@ -46,3 +46,16 @@ verify_jwt = true
 # coexistência. Deletar depois de resolvido.
 [functions.whatsapp-graph-check]
 verify_jwt = false
+
+# TEMPORÁRIO, diagnóstico pontual: sonda o gateway de IA do Lovable (lista
+# modelos, testa chat e transcrição) pra validar a LOVABLE_API_KEY depois de
+# configurada. Guard por secret fixo na query (?k=). Não aceita input. Deletar
+# depois que a IA do composer estiver validada.
+[functions.ai-probe]
+verify_jwt = false
+
+# Assistente de escrita do composer (transcrição de áudio ditado + sugestão de
+# mensagem otimizada via IA do Lovable). Chamado pelo frontend com o JWT do
+# atendente — verify_jwt explícito pra ninguém deployar aberto pelo dashboard.
+[functions.ai-texto]
+verify_jwt = true

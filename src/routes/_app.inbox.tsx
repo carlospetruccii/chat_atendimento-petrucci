@@ -34,7 +34,6 @@ import {
   listInboxConversations,
   searchClientIdsByMessageContent,
   sendInboxMessage,
-  sendInboxAudio,
   sendInboxMedia,
   marcarConversaLida,
   marcarAtendimentoLido,
@@ -62,6 +61,9 @@ import {
   type RichMessageComposerHandle,
 } from "@/components/inbox/RichMessageComposer";
 import { EmojiPicker } from "@/components/inbox/EmojiPicker";
+import { SugestaoEnvioDialog } from "@/components/inbox/SugestaoEnvioDialog";
+import { transcreverAudio } from "@/lib/ai-texto";
+import { useTranscricaoPendente } from "@/hooks/useTranscricaoPendente";
 import { InboxTabs, type InboxAba } from "@/components/inbox/InboxTabs";
 import { GruposPane } from "@/components/inbox-grupos/GruposPane";
 import { EquipePane } from "@/components/inbox-equipe/EquipePane";
@@ -141,6 +143,9 @@ function InboxPage() {
     import("@/hooks/useAudioRecorder").RecordedAudio | null
   >(null);
   const [pendingMedia, setPendingMedia] = useState<{ file: File; tipo: MediaTipo } | null>(null);
+  // Mensagem aguardando a sugestão otimizada da IA antes do envio.
+  const [pendingOtimizacao, setPendingOtimizacao] = useState<string | null>(null);
+  const setTranscricaoPendente = useTranscricaoPendente(composerRef);
   const [repassarOpen, setRepassarOpen] = useState(false);
   const [encerrarOpen, setEncerrarOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -158,9 +163,12 @@ function InboxPage() {
     });
   };
 
-  // Limpa "responder" ao trocar de conversa.
+  // Limpa "responder" e a sugestão pendente ao trocar de conversa — a troca
+  // pode vir de fora (notificação, supervisão), e enviar a sugestão da
+  // conversa antiga mandaria a mensagem para o cliente errado.
   useEffect(() => {
     setReplyTo(null);
+    setPendingOtimizacao(null);
   }, [selected]);
 
   // Sincroniza ?conversation= com state
@@ -430,9 +438,16 @@ function InboxPage() {
     );
   }
 
-  const handleSend = async () => {
+  // Enviar abre o diálogo de sugestão da IA; o envio de fato acontece em
+  // doSend com o texto escolhido (sugestão, editada ou original).
+  const handleSend = () => {
     const content = composerRef.current?.getMarkdownText().trim() ?? "";
-    if (!current || !content) return;
+    if (!current || !content || sending) return;
+    setPendingOtimizacao(content);
+  };
+
+  const doSend = async (content: string) => {
+    if (!current || !content || sending) return;
     setSending(true);
     try {
       await sendInboxMessage({
@@ -446,6 +461,7 @@ function InboxPage() {
       composerRef.current?.clear();
       setHasDraft(false);
       setReplyTo(null);
+      setPendingOtimizacao(null);
       // Realtime já vai trazer; força scroll para o fim na próxima paint.
       requestAnimationFrame(() => {
         chat.scrollToBottom(true);
@@ -476,22 +492,19 @@ function InboxPage() {
     setRecordedAudio(result);
   };
 
+  // O áudio ditado não é enviado: a IA transcreve/corrige e o texto cai no
+  // composer para a pessoa revisar e enviar como mensagem de texto. A inserção
+  // acontece num efeito porque a barra de áudio SUBSTITUI o composer — o ref
+  // só volta a existir depois do remount, no commit seguinte.
   const handleSendRecorded = async () => {
     if (!current || !recordedAudio) return;
     setSending(true);
     try {
-      await sendInboxAudio({
-        atendimentoId: current.id,
-        blob: recordedAudio.blob,
-        mimeType: recordedAudio.mimeType,
-        durationSeconds: recordedAudio.durationSeconds,
-        replyToMessageId: replyTo?.id ?? null,
-      });
+      const texto = await transcreverAudio(recordedAudio.blob, recordedAudio.mimeType);
       setRecordedAudio(null);
-      setReplyTo(null);
-      requestAnimationFrame(() => chat.scrollToBottom(true));
+      setTranscricaoPendente(texto);
     } catch (e) {
-      toast.error("Não foi possível enviar o áudio.");
+      toast.error(e instanceof Error ? e.message : "Não foi possível transcrever o áudio.");
       console.error(e);
     } finally {
       setSending(false);
@@ -1106,6 +1119,15 @@ function InboxPage() {
         sending={sending}
         onCancel={() => setPendingMedia(null)}
         onSend={handleSendMedia}
+      />
+      <SugestaoEnvioDialog
+        original={pendingOtimizacao}
+        enviando={sending}
+        onCancelar={() => {
+          setPendingOtimizacao(null);
+          composerRef.current?.focus();
+        }}
+        onEnviar={doSend}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Send, Trash2, Loader2, Pause, Play, Square, Mic } from "lucide-react";
+import { Trash2, Loader2, Pause, Play, Square, Mic, Sparkles } from "lucide-react";
 import type { RecorderState, RecordedAudio } from "@/hooks/useAudioRecorder";
 
 function fmt(s: number): string {
@@ -19,7 +19,7 @@ interface Props {
   onStop: () => void; // para gravação → vai para revisão
   onCancel: () => void; // descarta gravação em andamento
   onDelete: () => void; // descarta áudio gravado em revisão
-  onSend: () => void;
+  onSend: () => void; // transcreve o áudio em texto (IA) e joga no composer
 }
 
 export function AudioRecorderBar({
@@ -79,10 +79,21 @@ export function AudioRecorderBar({
           type="button"
           onClick={onSend}
           disabled={sending}
-          className="rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-          aria-label="Enviar áudio"
+          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          aria-label="Transcrever em texto"
+          title="A IA transcreve e corrige o que você falou; o texto vai para o campo de mensagem."
         >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" strokeWidth={1.8} />}
+          {sending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Transcrevendo…
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" strokeWidth={1.8} />
+              Transcrever
+            </>
+          )}
         </button>
       </div>
     );
