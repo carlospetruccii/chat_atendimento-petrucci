@@ -31,7 +31,9 @@ import {
   garantirWebhookHistorico,
   solicitarHistoricoChat,
   UazapiError,
+  verWebhook,
 } from "../_shared/uazapi-client.ts";
+import { buscarMensagensDoChat } from "../_shared/uazapi-client.ts";
 import { chatIdDoNumero, inteiroNoIntervalo, messageidCru } from "../_shared/historico.ts";
 
 const FUNCAO = "historico-solicitar";
@@ -68,6 +70,10 @@ function comparaConstante(a: string, b: string): boolean {
 }
 
 interface Payload {
+  /** Diagnóstico: devolve os webhooks registrados na uazapi e para aí. */
+  ver_webhook?: boolean;
+  /** Diagnóstico: lista o que a uazapi TEM deste chat (janela de datas). */
+  ver_chat?: string;
   dias?: number;
   limite_clientes?: number;
   offset?: number;
@@ -285,6 +291,31 @@ Deno.serve(async (req: Request) => {
   const incluirColaboradores = payload.incluir_colaboradores === true;
 
   try {
+    // Diagnóstico puro: sem isso, descobrir se o webhook de `history` ficou de
+    // fato registrado exigiria o token da instância na mão de alguém.
+    if (payload.ver_webhook === true) {
+      return jsonResponse({ ok: true, webhooks: await verWebhook() });
+    }
+
+    // Diagnóstico: o que a uazapi tem deste chat agora. Serve para saber se o
+    // history-sync já populou o banco dela (a doc diz que o resultado também
+    // fica em /message/find) — se ficar, dá para ler de lá em vez de depender
+    // da entrega do webhook.
+    if (typeof payload.ver_chat === "string" && payload.ver_chat.trim() !== "") {
+      const msgs = await buscarMensagensDoChat({ chatid: payload.ver_chat.trim(), limit: 200 });
+      const datas = msgs
+        .map((m) => (typeof m.messageTimestamp === "number" ? m.messageTimestamp : Number(m.messageTimestamp)))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .map((n) => new Date(n < 1e12 ? n * 1000 : n).toISOString())
+        .sort();
+      return jsonResponse({
+        ok: true,
+        total: msgs.length,
+        mais_antiga: datas[0] ?? null,
+        mais_nova: datas[datas.length - 1] ?? null,
+      });
+    }
+
     // Registro do webhook dedicado ao evento `history`. Sem ele o lote não chega
     // a lugar nenhum — a instância está registrada só com
     // ["messages","messages_update","connection"].
