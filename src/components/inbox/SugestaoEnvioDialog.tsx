@@ -108,7 +108,7 @@ export function SugestaoEnvioDialog({ original, enviando, onCancelar, onEnviar }
               <Textarea
                 value={sugestao ?? ""}
                 onChange={(e) => setSugestao(e.target.value)}
-                rows={4}
+                rows={10}
                 lang="pt-BR"
                 spellCheck
                 className="text-sm"

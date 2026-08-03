@@ -26,14 +26,44 @@ const MODELO_TRANSCRICAO = "openai/gpt-4o-mini-transcribe";
 const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
 const MAX_TEXTO_CHARS = 4000;
 
+// Fidelidade ao que a pessoa escreveu. Sem isso o modelo "melhora" o texto
+// trocando termo técnico por sinônimo — num teste real ele transformou
+// "o DAS de junho" em "sua fatura de junho" (DAS é guia de imposto, não
+// fatura) e "mando o boleto" em "enviaremos o boleto".
+const REGRA_FIDELIDADE = `FIDELIDADE (obrigatório):
+Não troque termos técnicos, siglas nem nomes próprios por sinônimos. DAS, DCTF, PGDAS, CCT, e-Social, FGTS, Simples Nacional, nomes de sistemas, de bancos e de empresas ficam EXATAMENTE como estão — corrija apenas maiúsculas e acentos.
+Quem escreveu "DAS" não quis dizer "fatura" nem "guia"; quem escreveu "extrato" não quis dizer "relatório".
+Mantenha a pessoa do verbo: se a pessoa escreveu em primeira pessoa do singular ("mando", "verifiquei", "te retorno"), não passe para plural ("enviaremos", "verificamos").
+Não invente prazo, valor, nome, banco nem passo que não esteja no texto.`;
+
+// Formato das mensagens da equipe: blocos curtos separados por linha em branco,
+// um assunto por bloco, na ordem em que o cliente vai executar. Vale para os
+// dois prompts — texto revisado e áudio transcrito saem no mesmo padrão.
+const REGRA_FORMATO = `FORMATO DA MENSAGEM (obrigatório):
+Quebre o texto em blocos curtos separados por LINHA EM BRANCO, um assunto por bloco, no máximo 2 frases cada.
+Quando há passos a seguir, cada passo é um bloco, na ordem em que a pessoa deve executar.
+Se a mensagem toda tem 2 frases ou menos, deixe em um único bloco — não invente separação.
+Não use marcadores de lista (-, *, 1.), títulos, nem linhas de assunto. É conversa de WhatsApp, não documento.
+Use *negrito* só em nomes de sistema/aplicativo, prazos e valores QUE JÁ ESTEJAM no texto — nunca para criar destaque novo.`;
+
 const PROMPT_CORRECAO_AUDIO = `Você recebe a transcrição bruta de um áudio ditado por um atendente de suporte que será enviado como MENSAGEM DE TEXTO no WhatsApp para um cliente.
 Sua tarefa: corrigir o português (pt-BR), pontuar e organizar o texto, removendo vícios de fala ("é...", "hã", repetições), mantendo FIELMENTE o sentido e todas as informações ditas.
 Não adicione saudações, despedidas nem informações novas. Não comente nada.
+
+${REGRA_FIDELIDADE}
+
+${REGRA_FORMATO}
+
 Responda APENAS com o texto final da mensagem.`;
 
 const PROMPT_OTIMIZACAO = `Você revisa mensagens que um atendente de suporte envia a clientes pelo WhatsApp, em português do Brasil.
 Reescreva a mensagem corrigindo ortografia e gramática e melhorando clareza e profissionalismo, mantendo o tom cordial e TODO o conteúdo e sentido original.
 Não adicione informações, saudações ou despedidas que não existam na mensagem. Preserve a formatação do WhatsApp (*negrito*, _itálico_) e os emojis usados.
+
+${REGRA_FIDELIDADE}
+
+${REGRA_FORMATO}
+
 Responda APENAS com a mensagem reescrita, sem comentários.`;
 
 function resposta(body: Record<string, unknown>): Response {
