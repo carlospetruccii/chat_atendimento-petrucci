@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { otimizarTexto } from "@/lib/ai-texto";
+import type { OrigemTextoEnviado } from "@/lib/otimizacao-ia";
 
 interface Props {
   /** Mensagem original digitada; null = diálogo fechado. */
@@ -19,8 +20,11 @@ interface Props {
   enviando: boolean;
   /** Fechar sem enviar — a pessoa volta a editar o rascunho. */
   onCancelar: () => void;
-  /** Enviar o texto escolhido (sugestão, editada ou original). */
-  onEnviar: (texto: string) => void;
+  /**
+   * Enviar o texto escolhido. `origem` diz de qual botão ele veio, para a
+   * mensagem registrar se o texto é da IA ou da pessoa.
+   */
+  onEnviar: (texto: string, origem: OrigemTextoEnviado) => void;
 }
 
 /**
@@ -50,7 +54,7 @@ export function SugestaoEnvioDialog({ original, enviando, onCancelar, onEnviar }
           // Nada a melhorar: envia direto, sem burocracia. O textarea é
           // preenchido antes para o diálogo não ficar vazio se o envio falhar.
           setSugestao(original);
-          onEnviarRef.current(original);
+          onEnviarRef.current(original, "original");
           return;
         }
         setSugestao(texto);
@@ -61,7 +65,7 @@ export function SugestaoEnvioDialog({ original, enviando, onCancelar, onEnviar }
         toast.error(e instanceof Error ? e.message : "IA indisponível.", {
           description: "A mensagem foi enviada como você escreveu.",
         });
-        onEnviarRef.current(original);
+        onEnviarRef.current(original, "original");
       })
       .finally(() => {
         if (ativo) setCarregando(false);
@@ -120,14 +124,14 @@ export function SugestaoEnvioDialog({ original, enviando, onCancelar, onEnviar }
             // Bloqueado enquanto a IA responde: com a resposta em voo, um
             // clique aqui + o auto-envio do efeito mandariam a mensagem 2x.
             disabled={enviando || carregando || !original}
-            onClick={() => original && onEnviar(original)}
+            onClick={() => original && onEnviar(original, "original")}
           >
             Enviar original
           </Button>
           <Button
             type="button"
             disabled={enviando || carregando || !sugestao?.trim()}
-            onClick={() => sugestao && onEnviar(sugestao.trim())}
+            onClick={() => sugestao && onEnviar(sugestao.trim(), "sugestao")}
           >
             {enviando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Enviar sugestão

@@ -1239,12 +1239,14 @@ export type Database = {
           client_id: string
           company_id: string
           content: string | null
+          content_original: string | null
           created_at: string
           department_id: string | null
           direction: Database["public"]["Enums"]["direction_mensagem"]
           id: string
           media_metadata: Json | null
           media_url: string | null
+          otimizado_ia: boolean | null
           reply_to_message_id: string | null
           sender_type: Database["public"]["Enums"]["sender_type"]
           sent_by_user_id: string | null
@@ -1261,12 +1263,14 @@ export type Database = {
           client_id: string
           company_id?: string
           content?: string | null
+          content_original?: string | null
           created_at?: string
           department_id?: string | null
           direction: Database["public"]["Enums"]["direction_mensagem"]
           id?: string
           media_metadata?: Json | null
           media_url?: string | null
+          otimizado_ia?: boolean | null
           reply_to_message_id?: string | null
           sender_type: Database["public"]["Enums"]["sender_type"]
           sent_by_user_id?: string | null
@@ -1283,12 +1287,14 @@ export type Database = {
           client_id?: string
           company_id?: string
           content?: string | null
+          content_original?: string | null
           created_at?: string
           department_id?: string | null
           direction?: Database["public"]["Enums"]["direction_mensagem"]
           id?: string
           media_metadata?: Json | null
           media_url?: string | null
+          otimizado_ia?: boolean | null
           reply_to_message_id?: string | null
           sender_type?: Database["public"]["Enums"]["sender_type"]
           sent_by_user_id?: string | null

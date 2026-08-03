@@ -14,6 +14,7 @@ import {
   UserPlus,
   Loader2,
   Reply,
+  Sparkles,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatWhatsAppText } from "@/lib/whatsapp-format";
@@ -63,6 +64,7 @@ import {
 import { EmojiPicker } from "@/components/inbox/EmojiPicker";
 import { SugestaoEnvioDialog } from "@/components/inbox/SugestaoEnvioDialog";
 import { transcreverAudio } from "@/lib/ai-texto";
+import { marcarOtimizacaoIa, type OrigemTextoEnviado } from "@/lib/otimizacao-ia";
 import { useTranscricaoPendente } from "@/hooks/useTranscricaoPendente";
 import { InboxTabs, type InboxAba } from "@/components/inbox/InboxTabs";
 import { GruposPane } from "@/components/inbox-grupos/GruposPane";
@@ -446,7 +448,7 @@ function InboxPage() {
     setPendingOtimizacao(content);
   };
 
-  const doSend = async (content: string) => {
+  const doSend = async (content: string, origem: OrigemTextoEnviado) => {
     if (!current || !content || sending) return;
     setSending(true);
     try {
@@ -457,6 +459,7 @@ function InboxPage() {
         userId: user.id,
         content,
         replyToMessageId: replyTo?.id ?? null,
+        marca: marcarOtimizacaoIa(pendingOtimizacao ?? content, content, origem),
       });
       composerRef.current?.clear();
       setHasDraft(false);
@@ -963,6 +966,18 @@ function InboxPage() {
                               {formatTime(m.createdAt)}
                               {m.senderType === "bot" && " · bot"}
                               {m.senderType === "sistema" && " · sistema"}
+                              {m.otimizadoIa && (
+                                <span
+                                  className="ml-1 inline-flex items-center gap-0.5 align-[-1px]"
+                                  title={
+                                    m.contentOriginal
+                                      ? `Texto revisado pela IA antes do envio.\n\nOriginal:\n${m.contentOriginal}`
+                                      : "Texto revisado pela IA antes do envio."
+                                  }
+                                >
+                                  · <Sparkles className="h-2.5 w-2.5" strokeWidth={2} /> IA
+                                </span>
+                              )}
                             </span>
                           </div>
                           {!supervisionMode && (

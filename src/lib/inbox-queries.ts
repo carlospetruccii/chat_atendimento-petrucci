@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchContatoNamesByNumbers } from "@/lib/contatos-queries";
+import type { MarcaOtimizacaoIa } from "@/lib/otimizacao-ia";
 
 export type AtendimentoStatus =
   | "em_triagem"
@@ -45,6 +46,10 @@ export interface InboxMessage {
   mediaMetadata: Record<string, unknown> | null;
   createdAt: string;
   replyToMessageId: string | null;
+  /** true = texto veio da sugestão da IA; null = desconhecido (ver migration). */
+  otimizadoIa: boolean | null;
+  /** O que a pessoa digitou antes da sugestão da IA (só quando otimizadoIa). */
+  contentOriginal: string | null;
 }
 
 // Mantido para referência; usuários comuns filtram inline abaixo.
@@ -217,7 +222,7 @@ export async function searchClientIdsByMessageContent(term: string): Promise<Set
 }
 
 const MESSAGE_COLUMNS =
-  "id, atendimento_id, direction, sender_type, sent_by_user_id, tipo, content, media_url, media_metadata, reply_to_message_id, created_at, sent_by:users!mensagens_sent_by_user_id_fkey ( id, nome )";
+  "id, atendimento_id, direction, sender_type, sent_by_user_id, tipo, content, media_url, media_metadata, reply_to_message_id, created_at, otimizado_ia, content_original, sent_by:users!mensagens_sent_by_user_id_fkey ( id, nome )";
 
 type RawMessageRow = {
   id: string;
@@ -231,6 +236,8 @@ type RawMessageRow = {
   media_metadata: Record<string, unknown> | null;
   reply_to_message_id: string | null;
   created_at: string;
+  otimizado_ia: boolean | null;
+  content_original: string | null;
   sent_by: { id: string; nome: string } | null;
 };
 
@@ -248,6 +255,8 @@ function mapMessage(m: RawMessageRow): InboxMessage {
     mediaMetadata: m.media_metadata ?? null,
     replyToMessageId: m.reply_to_message_id ?? null,
     createdAt: m.created_at,
+    otimizadoIa: m.otimizado_ia ?? null,
+    contentOriginal: m.content_original ?? null,
   };
 }
 
@@ -493,6 +502,8 @@ export async function sendInboxMessage(params: {
   userId: string;
   content: string;
   replyToMessageId?: string | null;
+  /** Marca de autoria do texto — ver `marcarOtimizacaoIa`. */
+  marca: MarcaOtimizacaoIa;
 }): Promise<void> {
   const { error } = await supabase.from("mensagens").insert({
     atendimento_id: params.atendimentoId,
@@ -505,6 +516,8 @@ export async function sendInboxMessage(params: {
     content: params.content,
     status_envio: "aguardando_envio",
     reply_to_message_id: params.replyToMessageId ?? null,
+    otimizado_ia: params.marca.otimizadoIa,
+    content_original: params.marca.contentOriginal,
   });
   if (error) throw error;
 
