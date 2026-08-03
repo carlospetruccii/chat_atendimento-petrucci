@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       alertas_atendimento_parado: {
@@ -869,6 +844,21 @@ export type Database = {
           },
         ]
       }
+      envios_internos_whatsapp: {
+        Row: {
+          criado_em: string
+          uazapi_message_id: string
+        }
+        Insert: {
+          criado_em?: string
+          uazapi_message_id: string
+        }
+        Update: {
+          criado_em?: string
+          uazapi_message_id?: string
+        }
+        Relationships: []
+      }
       google_integration: {
         Row: {
           access_token: string | null
@@ -1138,6 +1128,63 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "grupos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      historico_import_pedidos: {
+        Row: {
+          ancora_messageid: string | null
+          ate: string
+          chatid: string
+          client_id: string
+          company_id: string
+          desde: string
+          expira_em: string
+          id: string
+          inseridas: number
+          recebidas: number
+          solicitado_em: string
+        }
+        Insert: {
+          ancora_messageid?: string | null
+          ate: string
+          chatid: string
+          client_id: string
+          company_id: string
+          desde: string
+          expira_em: string
+          id?: string
+          inseridas?: number
+          recebidas?: number
+          solicitado_em?: string
+        }
+        Update: {
+          ancora_messageid?: string | null
+          ate?: string
+          chatid?: string
+          client_id?: string
+          company_id?: string
+          desde?: string
+          expira_em?: string
+          id?: string
+          inseridas?: number
+          recebidas?: number
+          solicitado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "historico_import_pedidos_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historico_import_pedidos_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -2344,9 +2391,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       close_reason: [
