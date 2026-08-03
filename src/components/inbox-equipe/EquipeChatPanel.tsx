@@ -51,7 +51,11 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
   const [pendingMedia, setPendingMedia] = useState<{ file: File; tipo: MediaTipo } | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
   const recorder = useAudioRecorder();
+  const [transcribing, setTranscribing] = useState(false);
   const setTranscricaoPendente = useTranscricaoPendente(composerRef);
+  // Conversa aberta AGORA — lida depois de awaits, onde o closure está velho.
+  const conversaIdRef = useRef(conversa.id);
+  conversaIdRef.current = conversa.id;
 
   const chat = useConversaInternaHistory({ conversaId: conversa.id, enabled: true });
 
@@ -133,19 +137,44 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
     }
   };
 
-  // O áudio ditado não é enviado: a IA transcreve/corrige e o texto cai no
-  // composer para a pessoa revisar e enviar como mensagem de texto.
   const handleSendRecorded = async () => {
-    if (!recordedAudio) return;
+    if (!recordedAudio || sending) return;
     setSending(true);
     try {
+      await enviarMidiaInterna({
+        conversaId: conversa.id,
+        tipo: "audio",
+        arquivo: recordedAudio.blob,
+        nomeArquivo: "audio.ogg",
+        duracaoSegundos: recordedAudio.durationSeconds,
+      });
+      setRecordedAudio(null);
+      invalidarLista();
+      requestAnimationFrame(() => chat.scrollToBottom(true));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o áudio.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Alternativa ao envio do áudio: a IA transcreve/corrige e o texto cai no
+  // composer para a pessoa revisar e enviar como mensagem de texto.
+  const handleTranscribeRecorded = async () => {
+    if (!recordedAudio || transcribing) return;
+    const conversaDaGravacao = conversa.id;
+    setTranscribing(true);
+    try {
       const texto = await transcreverAudio(recordedAudio.blob, recordedAudio.mimeType);
+      // Trocou de conversa enquanto a IA respondia: descarta em vez de jogar o
+      // texto ditado no composer de outra pessoa.
+      if (conversaDaGravacao !== conversaIdRef.current) return;
       setRecordedAudio(null);
       setTranscricaoPendente(texto);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível transcrever o áudio.");
     } finally {
-      setSending(false);
+      setTranscribing(false);
     }
   };
 
@@ -314,6 +343,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
             maxSeconds={recorder.maxSeconds}
             recorded={recordedAudio}
             sending={sending}
+            transcribing={transcribing}
             onPause={recorder.pause}
             onResume={recorder.resume}
             onStop={handleStopRecording}
@@ -323,6 +353,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
             }}
             onDelete={() => setRecordedAudio(null)}
             onSend={handleSendRecorded}
+            onTranscribe={handleTranscribeRecorded}
           />
         ) : (
           <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">

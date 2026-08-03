@@ -10,6 +10,7 @@ import {
   type GrupoMessage,
   marcarGrupoLido,
   marcarGrupoLidoNoWhatsapp,
+  sendGrupoAudio,
   sendGrupoMedia,
   sendGrupoTexto,
 } from "@/lib/grupos-queries";
@@ -58,7 +59,11 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
   const [participantesOpen, setParticipantesOpen] = useState(false);
   // Mensagem aguardando a sugestão otimizada da IA antes do envio.
   const [pendingOtimizacao, setPendingOtimizacao] = useState<string | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   const setTranscricaoPendente = useTranscricaoPendente(composerRef);
+  // Grupo aberto AGORA — lido depois de awaits, onde o closure está velho.
+  const grupoIdRef = useRef(grupo.id);
+  grupoIdRef.current = grupo.id;
   const recorder = useAudioRecorder();
 
   const chat = useGrupoHistory({ grupoId: grupo.id, enabled: true });
@@ -179,19 +184,44 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
     }
   };
 
-  // O áudio ditado não é enviado: a IA transcreve/corrige e o texto cai no
-  // composer para a pessoa revisar e enviar como mensagem de texto.
   const handleSendRecorded = async () => {
-    if (!recordedAudio) return;
+    if (!recordedAudio || sending) return;
     setSending(true);
     try {
+      await sendGrupoAudio({
+        grupoId: grupo.id,
+        blob: recordedAudio.blob,
+        mimeType: recordedAudio.mimeType,
+        durationSeconds: recordedAudio.durationSeconds,
+        replyToMessageId: replyTo?.id ?? null,
+      });
+      setRecordedAudio(null);
+      setReplyTo(null);
+      requestAnimationFrame(() => chat.scrollToBottom(true));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o áudio.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Alternativa ao envio do áudio: a IA transcreve/corrige e o texto cai no
+  // composer para a pessoa revisar e enviar como mensagem de texto.
+  const handleTranscribeRecorded = async () => {
+    if (!recordedAudio || transcribing) return;
+    const grupoDaGravacao = grupo.id;
+    setTranscribing(true);
+    try {
       const texto = await transcreverAudio(recordedAudio.blob, recordedAudio.mimeType);
+      // Trocou de grupo enquanto a IA respondia: descarta em vez de jogar o
+      // texto ditado no composer de outro grupo.
+      if (grupoDaGravacao !== grupoIdRef.current) return;
       setRecordedAudio(null);
       setTranscricaoPendente(texto);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível transcrever o áudio.");
     } finally {
-      setSending(false);
+      setTranscribing(false);
     }
   };
 
@@ -472,6 +502,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
               maxSeconds={recorder.maxSeconds}
               recorded={recordedAudio}
               sending={sending}
+              transcribing={transcribing}
               onPause={recorder.pause}
               onResume={recorder.resume}
               onStop={handleStopRecording}
@@ -481,6 +512,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
               }}
               onDelete={() => setRecordedAudio(null)}
               onSend={handleSendRecorded}
+              onTranscribe={handleTranscribeRecorded}
             />
           ) : (
             <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">

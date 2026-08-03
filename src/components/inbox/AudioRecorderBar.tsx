@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Trash2, Loader2, Pause, Play, Square, Mic, Sparkles } from "lucide-react";
+import { Send, Trash2, Loader2, Pause, Play, Square, Mic, Sparkles } from "lucide-react";
 import type { RecorderState, RecordedAudio } from "@/hooks/useAudioRecorder";
 
 function fmt(s: number): string {
@@ -14,12 +14,20 @@ interface Props {
   maxSeconds: number;
   recorded: RecordedAudio | null;
   sending: boolean;
+  /** Transcrição da IA em andamento (loading no botão Transcrever). */
+  transcribing: boolean;
   onPause: () => void;
   onResume: () => void;
   onStop: () => void; // para gravação → vai para revisão
   onCancel: () => void; // descarta gravação em andamento
   onDelete: () => void; // descarta áudio gravado em revisão
-  onSend: () => void; // transcreve o áudio em texto (IA) e joga no composer
+  onSend: () => void; // envia o áudio como mensagem de voz
+  /**
+   * Transcreve o áudio em texto (IA) e joga no composer, sem enviar áudio.
+   * Obrigatória de propósito: onSend e onTranscribe fazem coisas opostas, então
+   * um chamador novo tem que declarar as duas em vez de herdar um default.
+   */
+  onTranscribe: () => void;
 }
 
 export function AudioRecorderBar({
@@ -28,12 +36,14 @@ export function AudioRecorderBar({
   maxSeconds,
   recorded,
   sending,
+  transcribing,
   onPause,
   onResume,
   onStop,
   onCancel,
   onDelete,
   onSend,
+  onTranscribe,
 }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -51,14 +61,15 @@ export function AudioRecorderBar({
     .toString()
     .padStart(2, "0")}`;
 
-  // Fase 3: revisão
+  // Fase 3: revisão — a pessoa escolhe entre virar texto (IA) ou enviar o áudio.
   if (recorded) {
+    const ocupado = sending || transcribing;
     return (
-      <div className="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
+      <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
         <button
           type="button"
           onClick={onDelete}
-          disabled={sending}
+          disabled={ocupado}
           className="text-muted-foreground hover:text-destructive disabled:opacity-50"
           aria-label="Apagar áudio"
         >
@@ -77,13 +88,13 @@ export function AudioRecorderBar({
         </span>
         <button
           type="button"
-          onClick={onSend}
-          disabled={sending}
-          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          onClick={onTranscribe}
+          disabled={ocupado}
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
           aria-label="Transcrever em texto"
           title="A IA transcreve e corrige o que você falou; o texto vai para o campo de mensagem."
         >
-          {sending ? (
+          {transcribing ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               Transcrevendo…
@@ -93,6 +104,20 @@ export function AudioRecorderBar({
               <Sparkles className="h-4 w-4" strokeWidth={1.8} />
               Transcrever
             </>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={ocupado}
+          className="shrink-0 rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          aria-label="Enviar áudio"
+          title="Envia a gravação como mensagem de voz."
+        >
+          {sending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" strokeWidth={1.8} />
           )}
         </button>
       </div>

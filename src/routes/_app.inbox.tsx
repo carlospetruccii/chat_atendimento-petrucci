@@ -35,6 +35,7 @@ import {
   listInboxConversations,
   searchClientIdsByMessageContent,
   sendInboxMessage,
+  sendInboxAudio,
   sendInboxMedia,
   marcarConversaLida,
   marcarAtendimentoLido,
@@ -147,7 +148,11 @@ function InboxPage() {
   const [pendingMedia, setPendingMedia] = useState<{ file: File; tipo: MediaTipo } | null>(null);
   // Mensagem aguardando a sugestão otimizada da IA antes do envio.
   const [pendingOtimizacao, setPendingOtimizacao] = useState<string | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   const setTranscricaoPendente = useTranscricaoPendente(composerRef);
+  // Conversa aberta AGORA — lida depois de awaits, onde o closure está velho.
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const [repassarOpen, setRepassarOpen] = useState(false);
   const [encerrarOpen, setEncerrarOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -165,13 +170,17 @@ function InboxPage() {
     });
   };
 
-  // Limpa "responder" e a sugestão pendente ao trocar de conversa — a troca
-  // pode vir de fora (notificação, supervisão), e enviar a sugestão da
-  // conversa antiga mandaria a mensagem para o cliente errado.
+  // Descarta tudo que estava em composição ao trocar de conversa. A troca pode
+  // vir de fora (notificação, supervisão, link), e a barra de áudio/anexo não
+  // remonta — sem isso, enviar mandaria a gravação da conversa antiga para o
+  // cliente novo.
   useEffect(() => {
     setReplyTo(null);
     setPendingOtimizacao(null);
-  }, [selected]);
+    setPendingMedia(null);
+    setRecordedAudio(null);
+    recorder.cancel();
+  }, [selected, recorder.cancel]);
 
   // Sincroniza ?conversation= com state
   useEffect(() => {
@@ -495,22 +504,48 @@ function InboxPage() {
     setRecordedAudio(result);
   };
 
-  // O áudio ditado não é enviado: a IA transcreve/corrige e o texto cai no
+  const handleSendRecorded = async () => {
+    if (!current || !recordedAudio || sending) return;
+    setSending(true);
+    try {
+      await sendInboxAudio({
+        atendimentoId: current.id,
+        blob: recordedAudio.blob,
+        mimeType: recordedAudio.mimeType,
+        durationSeconds: recordedAudio.durationSeconds,
+        replyToMessageId: replyTo?.id ?? null,
+      });
+      setRecordedAudio(null);
+      setReplyTo(null);
+      requestAnimationFrame(() => chat.scrollToBottom(true));
+    } catch (e) {
+      toast.error("Não foi possível enviar o áudio.");
+      console.error(e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Alternativa ao envio do áudio: a IA transcreve/corrige e o texto cai no
   // composer para a pessoa revisar e enviar como mensagem de texto. A inserção
   // acontece num efeito porque a barra de áudio SUBSTITUI o composer — o ref
   // só volta a existir depois do remount, no commit seguinte.
-  const handleSendRecorded = async () => {
-    if (!current || !recordedAudio) return;
-    setSending(true);
+  const handleTranscribeRecorded = async () => {
+    if (!current || !recordedAudio || transcribing) return;
+    const conversaDaGravacao = current.id;
+    setTranscribing(true);
     try {
       const texto = await transcreverAudio(recordedAudio.blob, recordedAudio.mimeType);
+      // Trocou de conversa enquanto a IA respondia: descarta em vez de jogar o
+      // texto ditado no composer de outro cliente.
+      if (conversaDaGravacao !== selectedRef.current) return;
       setRecordedAudio(null);
       setTranscricaoPendente(texto);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível transcrever o áudio.");
       console.error(e);
     } finally {
-      setSending(false);
+      setTranscribing(false);
     }
   };
 
@@ -1040,12 +1075,14 @@ function InboxPage() {
                       maxSeconds={recorder.maxSeconds}
                       recorded={recordedAudio}
                       sending={sending}
+                      transcribing={transcribing}
                       onPause={recorder.pause}
                       onResume={recorder.resume}
                       onStop={handleStopRecording}
                       onCancel={handleCancelRecording}
                       onDelete={handleDeleteRecorded}
                       onSend={handleSendRecorded}
+                      onTranscribe={handleTranscribeRecorded}
                     />
                   ) : (
                     <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
