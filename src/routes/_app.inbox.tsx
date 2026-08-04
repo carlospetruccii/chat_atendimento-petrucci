@@ -535,7 +535,11 @@ function InboxPage() {
     const conversaDaGravacao = current.id;
     setTranscribing(true);
     try {
-      const texto = await transcreverAudio(recordedAudio.blob, recordedAudio.mimeType);
+      const texto = await transcreverAudio(
+        recordedAudio.blob,
+        recordedAudio.mimeType,
+        current.clientNome,
+      );
       // Trocou de conversa enquanto a IA respondia: descarta em vez de jogar o
       // texto ditado no composer de outro cliente.
       if (conversaDaGravacao !== selectedRef.current) return;
