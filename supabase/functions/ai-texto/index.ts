@@ -21,10 +21,20 @@ const CORS_HEADERS = {
 };
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-const MODELO_CHAT = "google/gemini-2.5-flash";
-const MODELO_TRANSCRICAO = "openai/gpt-4o-mini-transcribe";
+const MODELO_CHAT = "google/gemini-3.6-flash";
+const MODELO_TRANSCRICAO = "openai/gpt-4o-transcribe";
 const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
 const MAX_TEXTO_CHARS = 4000;
+
+// Anexar o áudio no 2º passo custa ~4/3 do tamanho em base64. A gravação do
+// atendente tem segundos; um arquivo grande viraria um pedido de dezenas de MB
+// que o gateway recusa. Acima deste corte a revisão é feita só com o texto.
+const MAX_AUDIO_INLINE_BYTES = 6 * 1024 * 1024;
+
+// Vocabulário do dia a dia da contabilidade: vai no campo `prompt` da
+// transcrição para o modelo não trocar sigla por palavra parecida.
+const TERMOS_CONTABEIS =
+  "DAS, DCTF, DCTFWeb, PGDAS, PGDAS-D, Simples Nacional, MEI, e-Social, FGTS, GFIP, SEFIP, INSS, IRPJ, CSLL, PIS, COFINS, ICMS, ISS, IRRF, DIRF, RAIS, CAGED, CNPJ, CPF, NF-e, NFS-e, SPED, ECD, ECF, CCT, eCAC, Sefaz, Receita Federal, Junta Comercial, Domicílio Tributário, Conectividade Social, certidão negativa, parcelamento, pró-labore, holerite, décimo terceiro, rescisão, alvará, guia, boleto, competência, retenção";
 
 // Fidelidade ao que a pessoa escreveu. Sem isso o modelo "melhora" o texto
 // trocando termo técnico por sinônimo — num teste real ele transformou
