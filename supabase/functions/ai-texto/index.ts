@@ -91,7 +91,49 @@ function erroGateway(status: number): string {
   return `Falha na IA (${status}).`;
 }
 
-async function chatCompletion(apiKey: string, system: string, user: string): Promise<string> {
+interface AudioInline {
+  base64: string;
+  formato: string;
+}
+
+/** Extensão/formato do arquivo de áudio a partir do mime informado. */
+function formatoDeAudio(mime: string): string {
+  const extMap: Record<string, string> = {
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/aac": "aac",
+    "audio/flac": "flac",
+  };
+  return extMap[(mime || "").split(";")[0]] ?? "webm";
+}
+
+function paraBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+async function chatCompletion(
+  apiKey: string,
+  system: string,
+  user: string,
+  audio?: AudioInline,
+): Promise<string> {
+  // Com áudio anexado o modelo confere o sentido pela fala; sem ele o pedido
+  // é o mesmo de sempre (texto puro).
+  const content = audio
+    ? [
+        { type: "text", text: user },
+        { type: "input_audio", input_audio: { data: audio.base64, format: audio.formato } },
+      ]
+    : user;
+
   const resp = await fetch(`${GATEWAY}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -99,10 +141,10 @@ async function chatCompletion(apiKey: string, system: string, user: string): Pro
       model: MODELO_CHAT,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: user },
+        { role: "user", content },
       ],
     }),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(audio ? 60_000 : 20_000),
   });
   if (!resp.ok) {
     const detalhe = await resp.text().catch(() => "");
@@ -115,21 +157,20 @@ async function chatCompletion(apiKey: string, system: string, user: string): Pro
   return texto;
 }
 
-async function transcrever(apiKey: string, file: File): Promise<string> {
-  const mime = (file.type || "").split(";")[0];
-  const extMap: Record<string, string> = {
-    "audio/webm": "webm",
-    "audio/ogg": "ogg",
-    "audio/mp4": "mp4",
-    "audio/mpeg": "mp3",
-    "audio/wav": "wav",
-  };
-  const ext = extMap[mime] ?? "webm";
+async function transcrever(apiKey: string, file: File, cliente: string | null): Promise<string> {
+  const ext = formatoDeAudio(file.type);
+
+  // Lista de palavras difíceis: siglas fixas do escritório + o nome do cliente
+  // da conversa (quando existe), que é o termo que mais sai errado.
+  const vocabulario = cliente
+    ? `${TERMOS_CONTABEIS}, ${cliente}`
+    : TERMOS_CONTABEIS;
 
   const form = new FormData();
   form.append("model", MODELO_TRANSCRICAO);
   form.append("file", file, `gravacao.${ext}`);
   form.append("language", "pt");
+  form.append("prompt", vocabulario);
 
   const resp = await fetch(`${GATEWAY}/audio/transcriptions`, {
     method: "POST",
