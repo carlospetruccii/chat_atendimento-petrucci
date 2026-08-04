@@ -60,6 +60,8 @@ const PROMPT_CORRECAO_AUDIO = `Você recebe a transcrição bruta de um áudio d
 Sua tarefa: corrigir o português (pt-BR), pontuar e organizar o texto, removendo vícios de fala ("é...", "hã", repetições), mantendo FIELMENTE o sentido e todas as informações ditas.
 Não adicione saudações, despedidas nem informações novas. Não comente nada.
 
+Quando o ÁUDIO ORIGINAL vier junto neste pedido, OUÇA o áudio antes de escrever: ele é a fonte da verdade do sentido. Se a pessoa se corrigiu no meio da fala, mantenha só a versão corrigida; se ela afirmou, não transforme em dúvida (nem o contrário). A transcrição bruta serve de referência para a grafia de números, siglas e nomes próprios — nunca para adivinhar o sentido.
+
 ${REGRA_FIDELIDADE}
 
 ${REGRA_FORMATO}
