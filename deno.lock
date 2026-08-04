@@ -47,7 +47,7 @@
         "npm:@lexical/headless@0.48.0",
         "npm:@lexical/markdown@0.48.0",
         "npm:@lexical/react@0.48.0",
-        "npm:@lovable.dev/vite-tanstack-config@^2.6.4",
+        "npm:@lovable.dev/vite-tanstack-config@2.8.5",
         "npm:@radix-ui/react-accordion@^1.2.12",
         "npm:@radix-ui/react-alert-dialog@^1.1.15",
         "npm:@radix-ui/react-aspect-ratio@^1.1.8",
