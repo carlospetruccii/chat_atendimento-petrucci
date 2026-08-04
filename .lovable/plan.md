@@ -50,3 +50,7 @@ Nenhum arquivo de UI/visual, nenhum botão, nenhum texto de tela, nada do envio 
 
 **Verificação**
 - Chamada real à função com um áudio de teste, conferindo `ok: true`, o texto final e o texto cru, além dos logs da edge function.
+
+## Correção pendente que vem junto
+
+O build está quebrado hoje por um erro de tipo pré-existente em `src/routes/_app.inbox.tsx` (linha 168, parâmetro `prev` sem tipo na navegação de abas), sem relação com a IA. Como preciso tocar nesse arquivo mesmo assim, tipo esse parâmetro na mesma passada para o build voltar a passar.
