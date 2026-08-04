@@ -220,19 +220,46 @@ Deno.serve(async (req) => {
       if (file.size > MAX_AUDIO_BYTES) {
         return resposta({ ok: false, erro: "Áudio acima do limite (24 MB)." });
       }
+      const clienteRaw = form.get("cliente");
+      const cliente = typeof clienteRaw === "string" && clienteRaw.trim() !== ""
+        ? clienteRaw.trim().slice(0, 120)
+        : null;
 
-      const bruto = await transcrever(apiKey, file);
+      const bruto = await transcrever(apiKey, file, cliente);
       if (!bruto) {
         return resposta({ ok: false, erro: "Não foi possível entender o áudio. Tente gravar de novo." });
       }
-      // Correção é melhoria: se o chat falhar, a transcrição bruta ainda serve.
+
+      // Escada de degradação: (1) revisão ouvindo o áudio, (2) revisão só com o
+      // texto, (3) transcrição bruta. Nenhum degrau é pior que o anterior.
+      let audio: AudioInline | null = null;
+      if (file.size <= MAX_AUDIO_INLINE_BYTES) {
+        try {
+          audio = {
+            base64: paraBase64(new Uint8Array(await file.arrayBuffer())),
+            formato: formatoDeAudio(file.type),
+          };
+        } catch (e) {
+          console.error(`[ai-texto] falha ao preparar audio inline: ${e}`);
+        }
+      } else {
+        console.warn(`[ai-texto] audio de ${file.size} bytes grande demais para anexar na revisao`);
+      }
+
       let texto = bruto;
       try {
-        texto = await chatCompletion(apiKey, PROMPT_CORRECAO_AUDIO, bruto);
+        texto = await chatCompletion(apiKey, PROMPT_CORRECAO_AUDIO, bruto, audio ?? undefined);
       } catch (e) {
-        console.error(`[ai-texto] correcao falhou, usando transcricao bruta: ${e}`);
+        console.error(`[ai-texto] revisao com audio falhou: ${e}`);
+        if (audio) {
+          try {
+            texto = await chatCompletion(apiKey, PROMPT_CORRECAO_AUDIO, bruto);
+          } catch (e2) {
+            console.error(`[ai-texto] revisao so com texto falhou, usando bruto: ${e2}`);
+          }
+        }
       }
-      return resposta({ ok: true, texto });
+      return resposta({ ok: true, texto, textoBruto: bruto });
     }
 
     // Texto digitado → sugestão otimizada.
