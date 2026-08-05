@@ -4,11 +4,15 @@
 // Contrato com o frontend (sempre responde 200 com { ok, texto?, erro? }
 // para o cliente não precisar tratar FunctionsHttpError):
 //
-//   POST multipart/form-data { file: Blob }        → transcreve o áudio ditado
-//     pelo atendente e devolve o texto já corrigido/pontuado em pt-BR.
+//   POST multipart/form-data { file: Blob, cliente? }  → transcreve FIELMENTE o
+//     áudio ditado: só pontuação, maiúsculas e acentos. NÃO reescreve, não
+//     formata, não melhora. Quem polir é o atendente, no endpoint abaixo.
 //
 //   POST application/json { texto: string }        → devolve uma sugestão da
-//     mensagem otimizada (ortografia, clareza, profissionalismo).
+//     mensagem otimizada (ortografia, clareza, profissionalismo, formatação).
+//
+// Os dois passos são separados de propósito: juntar transcrição com reescrita
+// fazia a IA "melhorar" o texto e mudar o que o atendente quis dizer.
 //
 // Requer o secret LOVABLE_API_KEY (gerado pelo Lovable para o projeto).
 // JWT é validado pelo gateway do Supabase (verify_jwt padrão).
@@ -47,8 +51,9 @@ Mantenha a pessoa do verbo: se a pessoa escreveu em primeira pessoa do singular 
 Não invente prazo, valor, nome, banco nem passo que não esteja no texto.`;
 
 // Formato das mensagens da equipe: blocos curtos separados por linha em branco,
-// um assunto por bloco, na ordem em que o cliente vai executar. Vale para os
-// dois prompts — texto revisado e áudio transcrito saem no mesmo padrão.
+// um assunto por bloco, na ordem em que o cliente vai executar. Vale APENAS para
+// a otimização de texto digitado — a transcrição de áudio NÃO formata nada (ver
+// PROMPT_TRANSCRICAO_FIEL).
 const REGRA_FORMATO = `FORMATO DA MENSAGEM (obrigatório):
 Quebre o texto em blocos curtos separados por LINHA EM BRANCO, um assunto por bloco, no máximo 2 frases cada.
 Quando há passos a seguir, cada passo é um bloco, na ordem em que a pessoa deve executar.
@@ -56,17 +61,38 @@ Se a mensagem toda tem 2 frases ou menos, deixe em um único bloco — não inve
 Não use marcadores de lista (-, *, 1.), títulos, nem linhas de assunto. É conversa de WhatsApp, não documento.
 Use *negrito* só em nomes de sistema/aplicativo, prazos e valores QUE JÁ ESTEJAM no texto — nunca para criar destaque novo.`;
 
-const PROMPT_CORRECAO_AUDIO = `Você recebe a transcrição bruta de um áudio ditado por um atendente de suporte que será enviado como MENSAGEM DE TEXTO no WhatsApp para um cliente.
-Sua tarefa: corrigir o português (pt-BR), pontuar e organizar o texto, removendo vícios de fala ("é...", "hã", repetições), mantendo FIELMENTE o sentido e todas as informações ditas.
-Não adicione saudações, despedidas nem informações novas. Não comente nada.
+// TRANSCRIÇÃO ≠ REDAÇÃO. Antes este prompt pedia transcrição E reescrita
+// editorial (tirar vício de fala, quebrar em blocos, aplicar negrito) sob ~25
+// linhas de regra. Cada uma dessas liberdades era uma chance de divergir do que
+// a pessoa quis dizer — e foi essa a queixa dos atendentes ("escreve errado e
+// não o que quero passar"). O polimento agora é do botão "Sugestão da IA", que
+// já existe e o atendente aciona quando quer. Aqui só se pontua.
+const PROMPT_TRANSCRICAO_FIEL = `Você é um transcritor profissional de português do Brasil. Recebe o áudio de um atendente ditando uma mensagem e a transcrição bruta desse mesmo áudio.
+Sua ÚNICA tarefa é devolver por escrito o que a pessoa falou. Você NÃO é redator, NÃO é revisor e NÃO melhora nada.
 
-Quando o ÁUDIO ORIGINAL vier junto neste pedido, OUÇA o áudio antes de escrever: ele é a fonte da verdade do sentido. Se a pessoa se corrigiu no meio da fala, mantenha só a versão corrigida; se ela afirmou, não transforme em dúvida (nem o contrário). A transcrição bruta serve de referência para a grafia de números, siglas e nomes próprios — nunca para adivinhar o sentido.
+O ÁUDIO é a fonte da verdade. A transcrição bruta serve só de referência para a grafia de números, valores, siglas e nomes próprios. Se as duas divergirem, vale o que você ouviu no áudio.
+
+VOCÊ PODE, e apenas isto:
+- pontuar (ponto, vírgula, interrogação) e usar maiúsculas e acentos corretos
+- separar em parágrafos onde a pessoa claramente fez uma pausa longa
+- remover só vício de fala puro, sem conteúdo: "é...", "hã", "ahn", "tipo assim", gaguejo e palavra repetida por engano
+- quando a pessoa se corrigiu no meio da fala ("manda o DAS, não, o DCTF"), manter só a versão que ela corrigiu
+
+VOCÊ NÃO PODE, em nenhuma hipótese:
+- reescrever, reordenar, resumir ou expandir qualquer frase
+- trocar uma palavra por sinônimo, mesmo que a sua pareça melhor
+- deixar o texto mais formal, mais educado ou mais profissional
+- quebrar a mensagem em blocos por assunto, criar lista, título ou marcador
+- usar *negrito*, _itálico_ ou qualquer marcação
+- acrescentar saudação, despedida, emoji ou qualquer informação que não foi falada
+- mudar a pessoa do verbo: "mando" não vira "enviaremos", "vou ver" não vira "verificaremos"
+- corrigir a gramática da pessoa se isso mudar as palavras que ela escolheu
+
+Se a fala saiu desorganizada, ela sai desorganizada no texto. Isso é correto: quem revisa é o atendente, e ele tem um botão separado para otimizar depois.
 
 ${REGRA_FIDELIDADE}
 
-${REGRA_FORMATO}
-
-Responda APENAS com o texto final da mensagem.`;
+Responda APENAS com a transcrição, sem comentário nenhum.`;
 
 const PROMPT_OTIMIZACAO = `Você revisa mensagens que um atendente de suporte envia a clientes pelo WhatsApp, em português do Brasil.
 Reescreva a mensagem corrigindo ortografia e gramática e melhorando clareza e profissionalismo, mantendo o tom cordial e TODO o conteúdo e sentido original.
@@ -89,6 +115,19 @@ function erroGateway(status: number): string {
   if (status === 429) return "Muitas solicitações de IA. Aguarde alguns segundos e tente de novo.";
   if (status === 402) return "Créditos de IA esgotados no Lovable.";
   return `Falha na IA (${status}).`;
+}
+
+// Carrega status + corpo do gateway junto da mensagem amigável. Sem isso não há
+// como saber se a revisão caiu por recusa do bloco de áudio (400/415) ou por
+// rate limit/crédito (429/402) — e os logs desta função não estão acessíveis.
+class ErroGateway extends Error {
+  constructor(
+    readonly status: number,
+    readonly detalhe: string,
+  ) {
+    super(erroGateway(status));
+    this.name = "ErroGateway";
+  }
 }
 
 interface AudioInline {
@@ -149,7 +188,7 @@ async function chatCompletion(
   if (!resp.ok) {
     const detalhe = await resp.text().catch(() => "");
     console.error(`[ai-texto] chat ${resp.status}: ${detalhe.slice(0, 300)}`);
-    throw new Error(erroGateway(resp.status));
+    throw new ErroGateway(resp.status, detalhe.slice(0, 300));
   }
   const data = await resp.json();
   const texto = data?.choices?.[0]?.message?.content?.trim();
@@ -232,7 +271,16 @@ Deno.serve(async (req) => {
 
       // Escada de degradação: (1) revisão ouvindo o áudio, (2) revisão só com o
       // texto, (3) transcrição bruta. Nenhum degrau é pior que o anterior.
+      //
+      // `via` e `diag` vão na resposta porque a escada degrada em SILÊNCIO: se o
+      // gateway recusar o bloco de áudio, o atendente recebe texto normalmente e
+      // parece que funcionou, mas o conserto principal não aconteceu. Os logs
+      // desta função não estão acessíveis (o MCP falha e o CLI 2.107 não tem
+      // `functions logs`), então o diagnóstico volta pelo próprio corpo.
       let audio: AudioInline | null = null;
+      let via = "audio";
+      let diag: string | undefined;
+
       if (file.size <= MAX_AUDIO_INLINE_BYTES) {
         try {
           audio = {
@@ -240,26 +288,49 @@ Deno.serve(async (req) => {
             formato: formatoDeAudio(file.type),
           };
         } catch (e) {
-          console.error(`[ai-texto] falha ao preparar audio inline: ${e}`);
+          via = "texto";
+          diag = `falha ao preparar audio inline: ${e}`;
+          console.error(`[ai-texto] ${diag}`);
         }
       } else {
-        console.warn(`[ai-texto] audio de ${file.size} bytes grande demais para anexar na revisao`);
+        via = "texto";
+        diag = `audio de ${file.size} bytes acima do corte de ${MAX_AUDIO_INLINE_BYTES}`;
+        console.warn(`[ai-texto] ${diag}`);
       }
 
       let texto = bruto;
       try {
-        texto = await chatCompletion(apiKey, PROMPT_CORRECAO_AUDIO, bruto, audio ?? undefined);
+        texto = await chatCompletion(apiKey, PROMPT_TRANSCRICAO_FIEL, bruto, audio ?? undefined);
       } catch (e) {
-        console.error(`[ai-texto] revisao com audio falhou: ${e}`);
+        const detalhe = e instanceof ErroGateway
+          ? `chat ${e.status}: ${e.detalhe}`
+          : String(e);
+        console.error(`[ai-texto] revisao com audio falhou: ${detalhe}`);
+        diag = detalhe;
         if (audio) {
+          via = "texto-apos-recusa";
           try {
-            texto = await chatCompletion(apiKey, PROMPT_CORRECAO_AUDIO, bruto);
+            texto = await chatCompletion(apiKey, PROMPT_TRANSCRICAO_FIEL, bruto);
           } catch (e2) {
+            via = "bruto";
+            diag = `${detalhe} | so-texto tambem falhou: ${e2}`;
             console.error(`[ai-texto] revisao so com texto falhou, usando bruto: ${e2}`);
           }
+        } else {
+          via = "bruto";
         }
       }
-      return resposta({ ok: true, texto, textoBruto: bruto });
+      return resposta({
+        ok: true,
+        texto,
+        textoBruto: bruto,
+        via,
+        formatoAudio: audio?.formato ?? formatoDeAudio(file.type),
+        bytesAudio: file.size,
+        modeloChat: MODELO_CHAT,
+        modeloTranscricao: MODELO_TRANSCRICAO,
+        ...(diag ? { diag } : {}),
+      });
     }
 
     // Texto digitado → sugestão otimizada.
