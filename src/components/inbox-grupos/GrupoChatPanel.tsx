@@ -1,3 +1,4 @@
+import { FotoPerfil } from "@/components/FotoPerfil";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Loader2, Mic, Reply, Send, Users } from "lucide-react";
@@ -271,19 +272,11 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
       {/* Cabeçalho */}
       <div className="flex items-center justify-between gap-3 border-b border-border bg-card px-6 py-3">
         <div className="flex items-center gap-3 min-w-0">
-          {grupo.fotoUrl ? (
-            <img
-              src={grupo.fotoUrl}
-              alt=""
-              width={36}
-              height={36}
-              className="h-9 w-9 rounded-full object-cover"
-            />
-          ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-primary">
-              <Users className="h-4 w-4" strokeWidth={1.8} />
-            </div>
-          )}
+          <FotoPerfil
+            url={grupo.fotoUrl}
+            fallback={<Users className="h-4 w-4" strokeWidth={1.8} />}
+            className="h-9 w-9"
+          />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-medium text-foreground truncate">{grupo.nome}</span>

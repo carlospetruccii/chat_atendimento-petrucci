@@ -73,7 +73,16 @@ export function mapearGrupoUazapi(bruto: unknown): GrupoUazapi | null {
 
   const nome = primeiroTexto(g, ["Name", "name", "subject", "GroupName", "wa_name", "wa_contactName"]);
   const topico = primeiroTexto(g, ["Topic", "topic", "description", "desc"]);
-  const fotoUrl = primeiroTexto(g, ["imgUrl", "ImgUrl", "profilePicUrl", "picture", "image", "wa_profilePicUrl"]);
+  const fotoUrl = primeiroTexto(g, [
+    "image_preview_url",
+    "image_url",
+    "imgUrl",
+    "ImgUrl",
+    "profilePicUrl",
+    "picture",
+    "image",
+    "wa_profilePicUrl",
+  ]);
 
   const participantes = g.Participants ?? g.participants ?? g.members;
   const participantesTotal = Array.isArray(participantes)

@@ -14,6 +14,7 @@ export interface InboxConversation {
   clientId: string;
   clientNome: string;
   clientNumero: string;
+  clientFotoUrl: string | null;
   status: AtendimentoStatus;
   departmentId: string | null;
   departmentNome: string | null;
@@ -79,7 +80,7 @@ export async function listInboxConversations(
       current_department_id,
       last_message_at,
       created_at,
-      client:clients!atendimentos_client_id_fkey!inner ( id, nome, numero_whatsapp ),
+      client:clients!atendimentos_client_id_fkey!inner ( id, nome, numero_whatsapp, foto_url ),
       department:departments!atendimentos_current_department_id_fkey ( id, nome, cor ),
       assigned:users!atendimentos_assigned_to_fkey ( id, nome )
     `,
@@ -159,7 +160,12 @@ export async function listInboxConversations(
   );
 
   return rows.map((r) => {
-    const client = r.client as { id: string; nome: string | null; numero_whatsapp: string };
+    const client = r.client as {
+      id: string;
+      nome: string | null;
+      numero_whatsapp: string;
+      foto_url: string | null;
+    };
     const dept = r.department as { id: string; nome: string; cor: string } | null;
     const assigned = r.assigned as { id: string; nome: string } | null;
     const preview = previewByAtendimento.get(r.id);
@@ -185,6 +191,7 @@ export async function listInboxConversations(
       clientNome:
         contatoNames.get(client.numero_whatsapp) ?? client.nome ?? client.numero_whatsapp,
       clientNumero: client.numero_whatsapp,
+      clientFotoUrl: client.foto_url,
       status: r.status as AtendimentoStatus,
       departmentId: r.current_department_id,
       departmentNome: dept?.nome ?? null,

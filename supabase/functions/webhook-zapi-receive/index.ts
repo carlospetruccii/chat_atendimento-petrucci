@@ -15,6 +15,8 @@ import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { buscarNomeContato } from "../_shared/uazapi-client.ts";
 import { ehEnvioInterno } from "../_shared/envio-interno.ts";
+import { fotoDoChat } from "../_shared/foto-perfil.ts";
+import { atualizarFotoEmSegundoPlano } from "../_shared/foto-perfil-sync.ts";
 import { baixarESalvarMidia } from "../_shared/midia-mensagem.ts";
 import {
   dataDaMensagem,
@@ -289,6 +291,9 @@ async function buscarEncerradoReabrivel(
     close_reason: string | null;
   }>) {
     if (c.close_reason === "automatico_inatividade") return c;
+    // Atendimento criado pela importação inicial só guarda conversa antiga.
+    // Reabri-lo jogaria histórico importado de volta na fila.
+    if (c.close_reason === "migracao_inicial") continue;
     // Inbound: encerramento manual (ou qualquer não-inatividade) é definitivo →
     // cai em triagem nova. A heurística de conversa externa só vale no fromMe.
     if (opts?.apenasInatividade) continue;
@@ -808,6 +813,11 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ ok: true });
       }
       const clienteExt = { id: resolved.id };
+      atualizarFotoEmSegundoPlano(
+        supabase,
+        { tabela: "clients", id: resolved.id, urlConhecida: fotoDoChat(chatObj) },
+        FUNCAO,
+      );
 
       // Eco do NOSSO envio: ou a linha já existe com o id (dedup normal), ou
       // existe sem o id porque o UPDATE pós-envio ainda não rodou (adoção).
@@ -1191,6 +1201,11 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ ok: true });
     }
     const cliente = { id: resolvedIn.id, nome: resolvedIn.nome };
+    atualizarFotoEmSegundoPlano(
+      supabase,
+      { tabela: "clients", id: resolvedIn.id, urlConhecida: fotoDoChat(envelope.chat) },
+      FUNCAO,
+    );
 
     // 3c.3) Resolve atendimento ativo OU cria novo em em_triagem.
     let { data: atend } = await supabase

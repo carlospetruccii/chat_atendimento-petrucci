@@ -171,3 +171,13 @@ Deno.test("extrairParticipantesDaResposta: resposta sem Participants devolve lis
   assertEquals(extrairParticipantesDaResposta({}), []);
   assertEquals(extrairParticipantesDaResposta({ Participants: "nope" }), []);
 });
+
+Deno.test("mapearGrupoUazapi: usa a foto persistida da /group/info (preview primeiro)", () => {
+  const g = mapearGrupoUazapi({
+    JID: "120363000000000001@g.us",
+    Name: "Oficina",
+    image_url: "https://uazapi.example/full.jpg",
+    image_preview_url: "https://uazapi.example/preview.jpg",
+  });
+  assertEquals(g?.fotoUrl, "https://uazapi.example/preview.jpg");
+});

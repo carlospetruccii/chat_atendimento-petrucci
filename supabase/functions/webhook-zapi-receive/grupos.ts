@@ -9,6 +9,8 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0
 import { log } from "../_shared/logger.ts";
 import { deduzirExtensao, obterBytesMidia } from "../_shared/midia-download.ts";
 import { infoGrupo } from "../_shared/uazapi-client.ts";
+import { fotoDoChat } from "../_shared/foto-perfil.ts";
+import { atualizarFotoEmSegundoPlano } from "../_shared/foto-perfil-sync.ts";
 import {
   EXT_FALLBACK,
   type MensagemParseada,
@@ -162,7 +164,8 @@ async function completarDadosDoGrupo(
       .update({
         nome: info.nome,
         topico: info.topico,
-        foto_url: info.fotoUrl,
+        // foto_url fica com atualizarFotoEmSegundoPlano (roda em paralelo):
+        // gravar aqui o null da /group/info apagaria a foto que ela trouxe.
         participantes_total: info.participantesTotal,
         sou_admin: info.souAdmin,
         somente_admin_envia: info.somenteAdminEnvia,
@@ -280,6 +283,12 @@ export async function registrarMensagemGrupo(params: {
     extrairNomeGrupo(payload, envelope),
   );
   if (!grupo) return { ok: false, motivo: "grupo_nao_resolvido" };
+
+  atualizarFotoEmSegundoPlano(
+    supabase,
+    { tabela: "grupos", id: grupo.id, urlConhecida: fotoDoChat(envelope.chat) },
+    FUNCAO,
+  );
 
   // Grupo novo: busca nome/tópico/participantes na uazapi (não bloqueia).
   if (grupo.criado) {

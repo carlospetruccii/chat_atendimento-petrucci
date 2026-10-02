@@ -152,3 +152,13 @@ Deno.test("flags de admin/announce são propagadas para o upsert", () => {
   assertEquals(plano.upserts[0].sou_admin, true);
   assertEquals(plano.upserts[0].somente_admin_envia, true);
 });
+
+Deno.test("upsert não mexe na foto: lista sem foto não apaga a foto guardada", () => {
+  const plano = planejarSincronizacao({
+    companyId: COMPANY,
+    agoraIso: AGORA,
+    daUazapi: [grupo("120363000000000001@g.us")],
+    noBanco: [],
+  });
+  assertEquals("foto_url" in plano.upserts[0], false);
+});

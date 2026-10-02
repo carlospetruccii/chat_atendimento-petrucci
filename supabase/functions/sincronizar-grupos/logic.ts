@@ -15,7 +15,8 @@ export interface LinhaUpsertGrupo {
   wa_jid: string;
   nome: string | null;
   topico: string | null;
-  foto_url: string | null;
+  // Sem foto_url de propósito: a /group/list quase nunca traz foto, e o upsert
+  // apagaria a que já temos. A foto é cuidada à parte (foto-perfil-sync).
   participantes_total: number | null;
   sou_admin: boolean;
   somente_admin_envia: boolean;
@@ -71,7 +72,6 @@ export function planejarSincronizacao(params: {
     wa_jid: g.jid,
     nome: g.nome,
     topico: g.topico,
-    foto_url: g.fotoUrl,
     participantes_total: g.participantesTotal,
     sou_admin: g.souAdmin,
     somente_admin_envia: g.somenteAdminEnvia,

@@ -18,6 +18,34 @@ import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { listarGrupos, ZapiError } from "../_shared/uazapi-client.ts";
 import { exigirMembroAtivo } from "../_shared/empresa.ts";
 import { type GrupoExistente, planejarSincronizacao } from "./logic.ts";
+import { atualizarFotoPerfil } from "../_shared/foto-perfil-sync.ts";
+import type { GrupoUazapi } from "../_shared/uazapi-grupos.ts";
+
+// Fotos: poucas chamadas à uazapi ao mesmo tempo, e um teto de tempo para a
+// sincronização não ficar refém delas (o que faltar sai na próxima).
+const FOTO_CONCORRENCIA = 5;
+const FOTO_PRAZO_MS = 20_000; // + até 2 × 60s do último lote
+
+async function atualizarFotosDosGrupos(
+  gravados: { id: string; wa_jid: string }[],
+  daUazapi: readonly GrupoUazapi[],
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const fotoPorJid = new Map(daUazapi.map((g) => [g.jid, g.fotoUrl]));
+  const inicio = Date.now();
+  for (let i = 0; i < gravados.length; i += FOTO_CONCORRENCIA) {
+    if (Date.now() - inicio > FOTO_PRAZO_MS) return;
+    await Promise.all(
+      gravados.slice(i, i + FOTO_CONCORRENCIA).map((g) =>
+        atualizarFotoPerfil(
+          supabase,
+          { tabela: "grupos", id: g.id, urlConhecida: fotoPorJid.get(g.wa_jid) ?? null },
+          FUNCAO,
+        )
+      ),
+    );
+  }
+}
 
 const FUNCAO = "sincronizar-grupos";
 
@@ -100,11 +128,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // 5) Upsert dos grupos vivos.
+    let gravadosParaFoto: { id: string; wa_jid: string }[] = [];
     if (plano.upserts.length > 0) {
-      const { error: errUp } = await supabase
+      const { data: gravados, error: errUp } = await supabase
         .from("grupos")
-        .upsert(plano.upserts, { onConflict: "company_id,wa_jid" });
+        .upsert(plano.upserts, { onConflict: "company_id,wa_jid" })
+        .select("id, wa_jid");
       if (errUp) throw new Error(`upsert_grupos: ${errUp.message}`);
+      gravadosParaFoto = (gravados ?? []) as { id: string; wa_jid: string }[];
     }
 
     // 6) Desativa os que saíram da lista.
@@ -115,6 +146,14 @@ Deno.serve(async (req: Request) => {
         .in("id", plano.idsParaDesativar);
       if (errDes) throw new Error(`desativar_grupos: ${errDes.message}`);
     }
+
+    // 7) Fotos por último e em segundo plano: a sincronização (inclusive a
+    // desativação acima) não pode ficar refém da uazapi lenta.
+    const tarefaFotos = atualizarFotosDosGrupos(gravadosParaFoto, daUazapi);
+    const edge = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+      .EdgeRuntime;
+    if (edge?.waitUntil) edge.waitUntil(tarefaFotos);
+    else tarefaFotos.catch(() => {});
 
     log({
       funcao: FUNCAO,

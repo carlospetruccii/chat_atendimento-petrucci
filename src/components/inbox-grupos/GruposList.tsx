@@ -1,5 +1,6 @@
 import { Loader2, RefreshCw, Users } from "lucide-react";
 import type { Grupo } from "@/lib/grupos-queries";
+import { FotoPerfil } from "@/components/FotoPerfil";
 
 interface Props {
   grupos: Grupo[];
@@ -88,19 +89,7 @@ export function GruposList({
             }`}
           >
             <div className="flex gap-3">
-              {g.fotoUrl ? (
-                <img
-                  src={g.fotoUrl}
-                  alt=""
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 shrink-0 rounded-full object-cover"
-                />
-              ) : (
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-medium text-primary">
-                  {iniciais(g.nome)}
-                </div>
-              )}
+              <FotoPerfil url={g.fotoUrl} fallback={iniciais(g.nome)} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-sm font-medium text-foreground truncate">{g.nome}</span>

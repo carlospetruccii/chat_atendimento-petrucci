@@ -70,6 +70,7 @@ import { useTranscricaoPendente } from "@/hooks/useTranscricaoPendente";
 import { InboxTabs, type InboxAba } from "@/components/inbox/InboxTabs";
 import { GruposPane } from "@/components/inbox-grupos/GruposPane";
 import { EquipePane } from "@/components/inbox-equipe/EquipePane";
+import { FotoPerfil } from "@/components/FotoPerfil";
 
 interface InboxSearch {
   conversation?: string;
@@ -716,9 +717,7 @@ function InboxPage() {
                     }`}
                   >
                     <div className="flex gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-medium text-primary">
-                        {initialsOf(c.clientNome)}
-                      </div>
+                      <FotoPerfil url={c.clientFotoUrl} fallback={initialsOf(c.clientNome)} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-sm font-medium text-foreground truncate">
@@ -782,9 +781,11 @@ function InboxPage() {
               {/* Cabeçalho */}
               <div className="flex items-center justify-between gap-3 border-b border-border bg-card px-6 py-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-sm font-medium text-primary">
-                    {initialsOf(current.clientNome)}
-                  </div>
+                  <FotoPerfil
+                    url={current.clientFotoUrl}
+                    fallback={initialsOf(current.clientNome)}
+                    className="h-9 w-9"
+                  />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-foreground truncate">

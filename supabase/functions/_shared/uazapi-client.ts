@@ -32,6 +32,7 @@ import {
   mapearGrupoUazapi,
   type ParticipanteGrupoUazapi,
 } from "./uazapi-grupos.ts";
+import { fotoDoChat, lerFotoGrupo } from "./foto-perfil.ts";
 
 export type { GrupoUazapi, ParticipanteGrupoUazapi };
 
@@ -39,6 +40,8 @@ const MAX_TENTATIVAS = 3;
 // Timeout por requisição — evita que uma conexão pendurada na uazapi trave a
 // Edge Function (ex.: o loop do cron de alertas) indefinidamente.
 const REQUEST_TIMEOUT_MS = 20_000;
+// /group/info para foto (pode ir ao WhatsApp): lenta, ganha folga própria.
+const TIMEOUT_FOTO_GRUPO_MS = 60_000;
 
 function getBaseUrl(): string {
   const url = Deno.env.get("UAZAPI_URL");
@@ -95,7 +98,7 @@ async function chamar(
   metodo: MetodoHttp,
   endpoint: string,
   payload?: unknown,
-  opts?: { admin?: boolean },
+  opts?: { admin?: boolean; timeoutMs?: number },
 ): Promise<unknown> {
   const url = `${getBaseUrl()}${endpoint}`;
   const headers: Record<string, string> = {
@@ -109,7 +112,7 @@ async function chamar(
 
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? REQUEST_TIMEOUT_MS);
     let resp: Response;
     try {
       resp = await fetch(url, {
@@ -450,6 +453,22 @@ export async function infoGrupo(jid: string): Promise<GrupoUazapi | null> {
   return mapearGrupoUazapi(env.group ?? env.Group ?? env.data ?? null);
 }
 
+/**
+ * Foto do grupo pela /group/info. Ela só devolve `image_*_url` que a uazapi
+ * JÁ persistiu (não consulta o WhatsApp). Por isso: primeiro a leitura
+ * barata; só se não houver foto nem a marca de "grupo sem foto"
+ * (`picture_empty_at`) pede a atualização remota (`force`), que é lenta.
+ */
+export async function fotoGrupo(jid: string): Promise<string | null> {
+  // Grupo cuja foto a uazapi ainda não conferiu: a /group/info vai ao WhatsApp
+  // e passa fácil dos 20s padrão — mesmo sem force.
+  const opts = { timeoutMs: TIMEOUT_FOTO_GRUPO_MS };
+  const rapida = lerFotoGrupo(await chamar("POST", "/group/info", { groupjid: jid }, opts));
+  if (rapida.url || rapida.semFoto) return rapida.url;
+  const remota = await chamar("POST", "/group/info", { groupjid: jid, force: true }, opts);
+  return lerFotoGrupo(remota).url;
+}
+
 /** Lista os participantes (número + nome, quando disponível) de um grupo. */
 export async function participantesGrupo(jid: string): Promise<ParticipanteGrupoUazapi[]> {
   const resp = await chamar("POST", "/group/info", { groupjid: jid });
@@ -485,6 +504,33 @@ export async function buscarMensagensDoChat(params: {
   return (lista as unknown[]).filter(
     (m): m is Record<string, unknown> => !!m && typeof m === "object",
   );
+}
+
+/**
+ * Chats individuais da instância, do mais recente para o mais antigo.
+ * `POST /chat/find { wa_isGroup:false, sort, limit, offset }` → { chats[], pagination }.
+ */
+export async function listarChats(params: {
+  limit: number;
+  offset: number;
+}): Promise<{ chats: Record<string, unknown>[]; total: number | null }> {
+  const r = (await chamar("POST", "/chat/find", {
+    operator: "AND",
+    sort: "-wa_lastMsgTimestamp",
+    wa_isGroup: false,
+    limit: params.limit,
+    offset: params.offset,
+  })) as Record<string, unknown>;
+
+  const lista = Array.isArray(r?.chats) ? r.chats : (Array.isArray(r) ? r : []);
+  const pag = (r?.pagination ?? {}) as Record<string, unknown>;
+  const total = typeof pag.totalRecords === "number" ? pag.totalRecords : null;
+  return {
+    chats: (lista as unknown[]).filter(
+      (c): c is Record<string, unknown> => !!c && typeof c === "object",
+    ),
+    total,
+  };
 }
 
 /**
@@ -574,6 +620,18 @@ export async function garantirWebhookHistorico(
 // ————————————————————————————————————————————————————————————————
 // CONTATO (nome / detalhes do chat)
 // ————————————————————————————————————————————————————————————————
+
+/**
+ * Foto de perfil (miniatura) de uma pessoa ou grupo — POST /chat/details com
+ * `preview: true`. Aceita número ou JID de grupo. null = sem foto visível.
+ */
+export async function buscarFotoPerfil(numeroOuJid: string): Promise<string | null> {
+  const r = await chamar("POST", "/chat/details", {
+    number: normalizarDestino(numeroOuJid),
+    preview: true,
+  });
+  return fotoDoChat(r);
+}
 
 // Busca o nome do contato via POST /chat/details. Usado quando iniciamos uma
 // conversa pelo celular (fromMe): o webhook não traz o nome do destinatário,

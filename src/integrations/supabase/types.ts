@@ -369,6 +369,8 @@ export type Database = {
           chat_lid: string | null
           company_id: string
           created_at: string
+          foto_atualizada_em: string | null
+          foto_url: string | null
           id: string
           nome: string | null
           numero_whatsapp: string
@@ -378,6 +380,8 @@ export type Database = {
           chat_lid?: string | null
           company_id?: string
           created_at?: string
+          foto_atualizada_em?: string | null
+          foto_url?: string | null
           id?: string
           nome?: string | null
           numero_whatsapp: string
@@ -387,6 +391,8 @@ export type Database = {
           chat_lid?: string | null
           company_id?: string
           created_at?: string
+          foto_atualizada_em?: string | null
+          foto_url?: string | null
           id?: string
           nome?: string | null
           numero_whatsapp?: string
@@ -1078,6 +1084,7 @@ export type Database = {
           ativo: boolean
           company_id: string
           created_at: string
+          foto_atualizada_em: string | null
           foto_url: string | null
           id: string
           last_message_at: string | null
@@ -1095,6 +1102,7 @@ export type Database = {
           ativo?: boolean
           company_id?: string
           created_at?: string
+          foto_atualizada_em?: string | null
           foto_url?: string | null
           id?: string
           last_message_at?: string | null
@@ -1112,6 +1120,7 @@ export type Database = {
           ativo?: boolean
           company_id?: string
           created_at?: string
+          foto_atualizada_em?: string | null
           foto_url?: string | null
           id?: string
           last_message_at?: string | null

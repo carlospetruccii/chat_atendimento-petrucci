@@ -58,6 +58,16 @@ verify_jwt = true
 [functions.historico-solicitar]
 verify_jwt = true
 
+# Importação inicial das conversas já existentes no WhatsApp: exige JWT e checa
+# superadmin (ou service_role) no corpo. Escreve em clients/atendimentos/mensagens.
+[functions.importar-conversas]
+verify_jwt = true
+
+# Renova fotos de perfil vencidas (clientes e grupos). Chamada pelo pg_cron com
+# a chave pública, como os outros crons; só age em registros vencidos.
+[functions.atualizar-fotos]
+verify_jwt = true
+
 # Endpoint público chamado pela uazapi com o evento `history` (retorno assíncrono
 # dos pedidos acima). verify_jwt = false porque quem chama é a uazapi, não um
 # usuário logado; a autenticação é o token da instância no corpo (fail-closed) +
