@@ -33,7 +33,7 @@ o mapa completo em linguagem simples.
 ### Atendimento (o coração)
 | Tabela | Para que serve |
 |--------|----------------|
-| **clients** | Os clientes, identificados pelo número de WhatsApp (`numero_whatsapp`). Tem também `chat_lid`, um identificador alternativo de conversa usado pela API do WhatsApp. |
+| **clients** | Os clientes, identificados pelo número de WhatsApp (`numero_whatsapp`). Tem também `chat_lid`, um identificador alternativo de conversa usado pela API do WhatsApp, e `foto_url` + `foto_atualizada_em` (foto de perfil do WhatsApp, URL temporária, escrita pelo backend: webhook, `importar-conversas` e o cron `atualizar-fotos`). |
 | **departments** | Os setores de atendimento. |
 | **atendimentos** | **A conversa/ticket.** Guarda o status (`em_triagem`, `pendente`, `reservado`, `em_atendimento`, `encerrado`), o estágio da triagem (`aguardando_inicio` → `aguardando_departamento` → `aguardando_colaborador` (só sessão) → `concluida`), quem está atendendo (`assigned_to`), o departamento atual, marcos de tempo (início, 1ª resposta, encerramento, motivo) e `is_sessao` (`true` quando veio de um número da **Lista de Sessões** — roda o fluxo interno). |
 | **mensagens** | **Cada mensagem.** Direção (`inbound`/`outbound`), quem enviou (`cliente`/`atendente`/`bot`/`sistema`/`externo`), tipo (texto, imagem, áudio, vídeo, documento, sticker, localização, contato), o texto, o link da mídia, resposta citada e o status de envio/entrega. Guarda o `zapi_message_id` (o ID no WhatsApp). |
@@ -42,7 +42,7 @@ o mapa completo em linguagem simples.
 ### Grupos de WhatsApp (estrutura separada)
 | Tabela | Para que serve |
 |--------|----------------|
-| **grupos** | Um **grupo de WhatsApp**. Identidade é o `wa_jid` (`120363...@g.us`, único por empresa). Guarda nome, tópico, foto, nº de participantes, se **nosso número é admin** (`sou_admin`), se o grupo é "somente admins enviam" (`somente_admin_envia`), `ativo` (false = saímos/fomos removidos — nunca apagamos) e `synced_at`. |
+| **grupos** | Um **grupo de WhatsApp**. Identidade é o `wa_jid` (`120363...@g.us`, único por empresa). Guarda nome, tópico, foto (`foto_url` + `foto_atualizada_em`, URL temporária escrita pelo backend: webhook, `sincronizar-grupos` e o cron `atualizar-fotos`), nº de participantes, se **nosso número é admin** (`sou_admin`), se o grupo é "somente admins enviam" (`somente_admin_envia`), `ativo` (false = saímos/fomos removidos — nunca apagamos) e `synced_at`. |
 | **grupo_mensagens** | Cada mensagem do grupo. Mesmo formato de `mensagens`, **sem** atendimento, cliente nem departamento; em troca tem `participante_numero`/`participante_nome` (quem falou dentro do grupo). `sender_type` é `participante` (inbound), `atendente` (nós pelo sistema), `externo` (nós pelo celular da empresa) ou `sistema`. |
 | **grupo_leituras** | Estado de leitura por pessoa (`grupo_id + user_id + last_read_at`) — é o que alimenta o badge de não lidas. |
 

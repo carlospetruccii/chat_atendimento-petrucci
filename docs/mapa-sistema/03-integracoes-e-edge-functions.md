@@ -201,7 +201,9 @@ Recebe o áudio gravado, guarda no cofre `mensagens-midia`, grava a mensagem e e
 
 #### 5. `send-whatsapp-media` — enviar imagem/vídeo/documento
 Igual ao áudio, para arquivos (limite **16 MB**). Guarda no cofre, grava a mensagem
-(com legenda) e envia pela Z‑API.
+(com legenda) e envia pela Z‑API. O Storage do projeto está no **plano Free do Supabase**
+(teto total de **50 MiB** por arquivo, sem como subir; é o teto também de baixa de mídia
+recebida).
 
 #### 5b. `notificar-repasse` — avisa o colaborador no WhatsApp pessoal
 Chamada pelo frontend (best‑effort, `void`) logo após um repasse (`repassar_atendimento`)
@@ -244,6 +246,48 @@ Chamada **automaticamente** ao abrir a aba Grupos do Inbox, no máximo uma vez a
 **upsert** por `(company_id, wa_jid)`. Grupo que não vem mais na lista é marcado
 `ativo = false` — **nunca apagado**, para o histórico de mensagens continuar legível.
 Idempotente: rodar duas vezes não duplica nada. Autorização: qualquer membro ativo.
+Não mexe em `foto_url` (ver 5e).
+
+#### 5e. Fotos de perfil (clientes e grupos) — `atualizar-fotos` e `_shared/foto-perfil-sync.ts`
+Implementação própria do chat-carlos (o Almore usa outra, a `contatos-fotos`). A foto é um link
+do CDN do WhatsApp, que **expira**, então guardamos `foto_url` + `foto_atualizada_em` em
+`clients` e `grupos` e renovamos depois de **3 dias** (`FOTO_TTL_MS`).
+
+Quem grava:
+- **`webhook-zapi-receive`**, ao receber mensagem (`atualizarFotoEmSegundoPlano`): usa a foto
+  que veio no próprio evento; se não veio e a guardada venceu, pergunta à uazapi
+  (`/chat/details` para pessoa, `/group/info` para grupo). Cooldown de 10 min por contato
+  dentro da mesma instância da função.
+- **`importar-conversas`**, na carga inicial dos chats.
+- **`sincronizar-grupos`** / `webhook-zapi-receive/grupos.ts` não apagam a foto ao atualizar o grupo.
+- **`atualizar-fotos`** (cron, migration `20261002170000`, `verify_jwt` + chave pública): cobre
+  quem está parado. Lote de 60 por tabela, 5 em paralelo, para de iniciar lotes depois de 20 s
+  (devolve `tem_mais`). Só grupos ativos.
+
+Regras:
+- Só aceita URL `https://` (`urlSegura`).
+- Falha da uazapi adia a próxima tentativa em ~1 h, sem apagar a foto atual.
+- Nunca derruba o registro da mensagem: foto é enfeite.
+- Na tela, `src/components/FotoPerfil.tsx` mostra a foto ou as iniciais/ícone; se o link
+  quebrar, o fallback aparece sozinho.
+
+#### 5f. `mensagem-acao` — apagar para todos e editar
+Chamada pelo menu da bolha (`verify_jwt = true`). Usa `POST /message/delete` e `/message/edit`
+da uazapi e depois carimba `apagada_em` / `editada_em` / `conteudo_anterior` em `mensagens`
+(colunas que só o servidor escreve; triggers `protect_mensagem_*`). Pode quem é o responsável
+pelo atendimento, superadmin ou quem tem `force_close`. Respeita as janelas do WhatsApp
+(`_shared/janelas-whatsapp.ts`), lote de até 10 mensagens e teto de 40 apagadas por hora por
+usuário. Mensagem `externo` só é apagável se `media_metadata.origem = "celular"`.
+O webhook também carimba `apagada_em` quando o cliente apaga (evento Deleted/Revoked).
+
+#### 5g. `mensagem-encaminhar` — encaminhar para outra conversa
+`verify_jwt = true`. Confere permissão na conversa de origem e na de destino, copia a mídia para
+um caminho novo no Storage (`encaminhadas/<atendimento>/<uuid>.<ext>`), grava a mensagem e envia
+pela uazapi com `forward: true` em segundo plano.
+
+#### 5h. `reprocessar-midia` — "Tentar novamente" na mídia que falhou
+`verify_jwt = true`, restrita à empresa de quem pede, com intervalo mínimo por mensagem. Busca
+o arquivo de novo na uazapi (`_shared/midia-mensagem.ts`). Teto de **50 MiB** (plano Free).
 
 #### 6. `cleanup-disparo-acidental-bot` — limpeza pontual (⚠️ histórica)
 Uma função **de uso único**, criada para **desfazer um disparo acidental do robô** que
@@ -285,6 +329,22 @@ Compartilha o helper `_shared/google-people.ts`. Ações (`POST { action }`):
 `verify_jwt = false` (o callback é um GET do navegador, sem JWT). Os secrets
 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` ficam só no servidor. Ver a tela
 [Contatos / aba Contatos Google](01-telas-e-abas.md).
+
+#### 9c. `ai-texto` — Assistente de escrita do composer + Transcrição e otimização
+Backend do **assistente de escrita** e da **transcrição de áudio**. Chama a **OpenAI** direto
+(sem intermediários). Dois endpoints, mesma função:
+- **`POST multipart/form-data { file, cliente? }`** — Transcreve áudio ditado **fielmente**
+  (só pontuação, maiúsculas e acentos; NÃO reescreve). Mesmo funcionamento para áudio
+  recebido — menu da bolha no Inbox: "Transcrever áudio" aparece quando o áudio já foi baixado.
+  Nenhum dado fica no banco; transcrição vive só no cache da aba por 30 min.
+- **`POST application/json { texto }`** — Otimiza uma mensagem digitada (ortografia, grameza,
+  clareza, formatação em blocos, profissionalismo). Template separado da transcrição de
+  propósito: juntar mudava o que o atendente quis dizer.
+
+Usa secret **`API_KEY_OPENAI_TRANSCRIBE`** (chave da OpenAI) e modelos **`gpt-transcribe`**
+(transcrição) e **`gpt-5-nano`** (otimização). Mesmo custo por áudio, quer ditado quer
+recebido. Idempotência via cache do react-query no frontend (mesma chave para o mesmo
+`storage_path`). Detalhes em [01 — Transcrever um áudio recebido](01-telas-e-abas.md#transcrever-um-áudio-recebido).
 
 ### Tarefas automáticas (crons)
 
@@ -356,9 +416,10 @@ Configurados no Supabase (nunca no código do frontend):
 
 | Segredo | Para que serve |
 |---------|----------------|
-| `ZAPI_INSTANCE_ID` | Identifica a instância da Z‑API (WhatsApp). |
-| `ZAPI_TOKEN` | Autentica na Z‑API. |
-| `ZAPI_CLIENT_TOKEN` | Valida que quem chama o webhook é mesmo a Z‑API. |
+| `UAZAPI_URL` | URL da instância uazapi (ex.: `https://SEU-SUBDOMINIO.uazapi.com`). |
+| `UAZAPI_TOKEN` | Token da instância uazapi (header `token` em operações normais). |
+| `UAZAPI_WEBHOOK_SECRET` | Segredo da URL do webhook para validar origem. |
+| `API_KEY_OPENAI_TRANSCRIBE` | Chave da OpenAI para transcrição de áudio e otimização de texto (modelos `gpt-transcribe` e `gpt-5-nano`). |
 | `CLEANUP_CONFIRM_TOKEN` | Senha extra para rodar a função de limpeza pontual. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Credenciais OAuth dos contatos do Google (People API). Sem elas, a aba **Contatos Google** mostra "não configurado". |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Conexão com o banco (injetados automaticamente). |

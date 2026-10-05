@@ -63,3 +63,23 @@ um novo build (*Retry build*), de preferência limpando o *Build cache*.
 
 - Projeto atual: `kxssjlvrbkkdicgevwtl` (`supabase/config.toml`).
 - Projeto antigo: `hfcfkxozzbrzzrejtbdj`. Usuários de Auth não migram sozinhos entre projetos.
+- Plano: **Free** (upload de até 50 MB por arquivo e Edge Function com no máximo 150 s).
+
+## Edge Functions e banco
+
+O push na `main` publica **só o front**. Edge Functions e migrations sobem à parte:
+
+```bash
+supabase functions deploy <nome> [<nome> ...] --project-ref kxssjlvrbkkdicgevwtl
+```
+
+- O `verify_jwt` de cada função vem do `supabase/config.toml`.
+- Publique as funções **antes** do push quando o front novo depender delas.
+- Migrations: aplicar uma a uma (MCP do Supabase ou SQL editor). Não use `supabase db push`:
+  o histórico remoto não tem as migrations antigas e várias não são idempotentes.
+- Secrets: `supabase secrets list --project-ref kxssjlvrbkkdicgevwtl`. A IA (`ai-texto`)
+  precisa de `API_KEY_OPENAI_TRANSCRIBE`.
+
+Detalhes do port de outubro/2026 (lista de funções, secrets e pendências):
+[`port-chatatendimento-2026-10.md`](port-chatatendimento-2026-10.md).
+

@@ -19,6 +19,8 @@ ela mostra e o que ela grava quando você salva.
 - [Configurações](#configurações) — 9 abas
 - [Telas internas da Almore (workspaces)](#telas-internas-da-almore-workspaces)
 
+> **Nota sobre fotos de perfil:** O chat-carlos tem implementação própria (não usa a `contatos-fotos` do Almore). A foto vem do próprio evento do WhatsApp ou da uazapi (`/chat/details` para pessoa, `/group/info` para grupo) e é gravada por o webhook (`_shared/foto-perfil-sync.ts`, ao receber mensagem), a importação inicial (`importar-conversas`) e o cron `atualizar-fotos`, que renova quem está parado. O link expira, então é renovado depois de 3 dias. Na tela, `FotoPerfil` mostra a foto ou as iniciais. Veja [02 — Banco de dados](#02--banco-de-dados) e [03 — Integrações](#03--integrações-e-edge-functions).
+
 ---
 
 ## Barra lateral e barra de topo
@@ -88,7 +90,8 @@ aba escolhida fica na URL (`?aba=grupos`), então recarregar mantém onde você 
   primeiro. Ao criar, leva para o Inbox com a conversa já aberta.
 - Campo **"Buscar conversas…"** — filtra por nome do cliente, telefone ou pelo **conteúdo
   das mensagens** (espera você parar de digitar, ~300ms).
-- A lista mostra, para cada conversa: avatar com iniciais, nome, horário da última
+- A lista mostra, para cada conversa: **foto de perfil do WhatsApp** (ou iniciais, se o
+  contato não tem foto — gravada pelo webhook e renovada pelo cron `atualizar-fotos`), nome, horário da última
   mensagem, uma prévia (mídia aparece como emoji: 📷 imagem, 🎤 áudio, 🎥 vídeo, 📎
   documento) e selos de departamento e status.
 - **O que cada um vê:** um atendente comum vê **só as conversas atribuídas a ele** que
@@ -150,6 +153,19 @@ A tela gera um "link temporário" (15 min) para exibir cada arquivo. Enquanto o 
 ainda está baixando a mídia, aparece um "carregando"; se o download falhou, aparece
 "Mídia indisponível" com um botão de tentar de novo.
 
+### Transcrever um áudio recebido
+No menu da mensagem (os três pontinhos da bolha) existe **"Transcrever áudio"** — só
+aparece em mensagem de áudio cuja mídia já foi baixada. Ao clicar, aparece
+"Transcrevendo áudio…" embaixo do player e depois o texto, na própria bolha. É a mesma
+IA da transcrição do áudio ditado pelo atendente (função `ai-texto`, ver
+[03 — Integrações](03-integracoes-e-edge-functions.md#ai-texto--assistente-de-escrita-do-composer-transcrição-otimização)),
+com a mesma chave e os mesmos modelos — logo, **mesmo custo por áudio**.
+
+Dois limites de propósito:
+- A transcrição **não é gravada no banco**: vive só no cache da aba. Recarregou a
+  página, precisa pedir de novo (e gasta de novo).
+- A opção existe só no inbox de clientes — não no chat de grupos nem no da equipe.
+
 ### Atualização em tempo real
 A tela "escuta" o banco: quando chega uma mensagem nova ou muda um atendimento, a lista
 e o chat se atualizam sozinhos, sem recarregar a página.
@@ -180,7 +196,8 @@ lista inteira e pode escrever.
   - Se a lista estiver vazia porque a busca automática falhou, aparece um link
     discreto **"Buscar no WhatsApp de novo"** — é a única saída manual, de propósito.
 - Campo **"Buscar grupos…"** — filtra por nome, tópico ou conteúdo das mensagens.
-- Cada linha mostra foto (ou iniciais), nome, prévia com quem falou (`Maria: …` /
+- Cada linha mostra foto do grupo (gravada pelo webhook e pelo `sincronizar-grupos`, renovada pelo `atualizar-fotos`; sem foto,
+  iniciais), nome, prévia com quem falou (`Maria: …` /
   `Você: …`), horário, badge de não lidas, nº de participantes e, quando for o caso, o
   selo **"só admin envia"**.
 

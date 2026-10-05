@@ -26,10 +26,9 @@ Por dentro, o sistema é feito de três camadas:
    triagem e as tarefas automáticas (encerrar conversas paradas, avisar a supervisão,
    reenviar mensagens que falharam).
 
-O WhatsApp em si é acessado por um serviço externo. **Hoje o código usa a Z‑API** em
-todos os pontos. O rumo do projeto é migrar para a **uazapi** — então cada ponto que
-hoje diz "z‑api" é um lugar que vai precisar mudar (ver
-[Integrações](03-integracoes-e-edge-functions.md) e [Riscos](05-dados-de-exemplo-e-riscos.md)).
+O WhatsApp em si é acessado por um serviço externo: a **uazapi**. Ver
+[Integrações](03-integracoes-e-edge-functions.md#07--referência-da-integração-uazapi) para detalhes
+técnicos da API.
 
 ### Estado atual, em uma frase
 
@@ -47,7 +46,7 @@ removido — ela está **dormindo**, pronta para ser reativada no futuro.
 |-----------|-------------|
 | **[01 — Telas e abas](01-telas-e-abas.md)** | Todas as telas, uma por uma; cada aba, cada botão e o que faz; de onde vêm os dados e o que é gravado. |
 | **[02 — Banco de dados](02-banco-de-dados.md)** | Todas as tabelas, para que servem, como se ligam; funções, gatilhos e regras de segurança. |
-| **[03 — Integrações e Edge Functions](03-integracoes-e-edge-functions.md)** | As 13 funções de backend; todo ponto de contato com o WhatsApp; onde está a Z‑API; as tarefas automáticas (crons). |
+| **[03 — Integrações e Edge Functions](03-integracoes-e-edge-functions.md)** | As funções de backend; todo ponto de contato com o WhatsApp (uazapi); as tarefas automáticas (crons). |
 | **[04 — Multi‑empresa e autenticação](04-multiempresa-e-autenticacao.md)** | Login, papéis (permissões), a "trava" de isolamento por empresa e como ligá‑la. |
 | **[05 — Dados de exemplo e riscos](05-dados-de-exemplo-e-riscos.md)** | Onde há dados mockados / "Empresa Exemplo", e os pontos de atenção antes de limpar os mocks e ligar a uazapi. |
 | **[08 — Notificação de repasse no WhatsApp](08-notificacao-repasse-whatsapp.md)** | Aviso no WhatsApp pessoal do colaborador ao repassar/atribuir atendimento; correções de segurança (escalonamento de privilégio e PII do telefone); estado do rollout. |
@@ -59,8 +58,8 @@ removido — ela está **dormindo**, pronta para ser reativada no futuro.
 Este é o coração do sistema. Vale a pena entender esta sequência antes de mergulhar nos
 detalhes:
 
-1. **Chega uma mensagem.** O cliente escreve no WhatsApp. A Z‑API avisa o sistema
-   chamando a função **`webhook-zapi-receive`**. Ela encontra (ou cria) o cliente,
+1. **Chega uma mensagem.** O cliente escreve no WhatsApp. A uazapi avisa o sistema
+   chamando a função **`webhook-zapi-receive`** (nome mantido por compatibilidade). Ela encontra (ou cria) o cliente,
    cria um **atendimento** com status `em_triagem` e grava a mensagem. Se veio foto/áudio,
    baixa o arquivo para um cofre privado de mídia (`mensagens-midia`).
 
@@ -88,7 +87,7 @@ detalhes:
    `pendente` sem ninguém pegar, a supervisão ("Administrador") é avisada por WhatsApp.
 
 6. **O WhatsApp confirma.** Quando a mensagem é entregue/lida no celular do cliente, a
-   Z‑API avisa de novo o `webhook-zapi-receive`, que atualiza o status de cada mensagem.
+   uazapi avisa de novo o `webhook-zapi-receive`, que atualiza o status de cada mensagem.
 
 Um detalhe importante: **o cliente também pode ser respondido pelo celular pessoal da
 empresa** (fora do sistema). Nesse caso o webhook registra essa mensagem como "externo"
@@ -107,7 +106,7 @@ para ela aparecer no Inbox — e pode até reabrir um atendimento encerrado.
 | **Reservado** | Atendimento já atribuído a um atendente, mas ele ainda não respondeu. |
 | **Administrador** | O papel de **supervisão** — quem vê tudo e recebe os avisos de conversas paradas. Era chamado "Luana" antes. |
 | **Bot / Kill‑switch** | O robô de triagem e as automações. Podem ser ligados/desligados por um interruptor (`bot_ativo`) na aba **Operação**. |
-| **Z‑API** | Serviço externo usado hoje para falar com o WhatsApp. O alvo do projeto é trocar pela **uazapi**. |
+| **uazapi** | Serviço externo que integra o WhatsApp. API oficial com documentação em **docs.uazapi.com**. |
 | **Modo aberto** | O estado atual: sem login, todos entram como "Operador" administrador. |
 | **Empresa Exemplo** | A empresa‑padrão (ID `11111111‑…`) onde **todos os dados de hoje** ficam guardados. |
 | **`auth_enforcement_enabled`** | A "trava" única que liga/desliga a separação por empresa. Hoje: `false` (desligada). |

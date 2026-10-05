@@ -6,8 +6,11 @@
 > conectado como `postgres` (portanto **enxergando tudo**, sem as travas de RLS).
 > **Nada foi alterado** — só consultas de leitura.
 >
-> Projeto: **`hfcfkxozzbrzzrejtbdj`** ("Chat WhatsApp Almore"), o mesmo que o app usa
-> (`.env` → `SUPABASE_URL`).
+> **⚠️ Nota importante:** O snapshot abaixo é do projeto Almore (**`hfcfkxozzbrzzrejtbdj`**).
+> O chat-carlos está no **projeto `kxssjlvrbkkdicgevwtl`** (Supabase Free). As estruturas
+> são semelhantes, mas há diferenças (p.ex., teto de armazenamento 50 MiB vs 300 MB,
+> ausência de aba Docs neste fork). Use este snapshot como referência de schema, não de
+> dados reais.
 
 ---
 
