@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-PROJECT_REF="hfcfkxozzbrzzrejtbdj"
+PROJECT_REF="kxssjlvrbkkdicgevwtl"
 FUNCAO="backfill-mensagens-externas"
 DIAS=7
 LOTE=25

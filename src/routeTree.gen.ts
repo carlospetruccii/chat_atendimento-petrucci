@@ -9,27 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TrocarSenhaRouteImport } from './routes/trocar-senha'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AlmoreRouteImport } from './routes/almore'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AlmoreRouteImport } from './routes/almore'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as TrocarSenhaRouteImport } from './routes/trocar-senha'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
-import { Route as AlmoreMembrosCompanyIdRouteImport } from './routes/almore-membros.$companyId'
-import { Route as AppSupervisaoRouteImport } from './routes/_app.supervisao'
-import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
-import { Route as AppInboxRouteImport } from './routes/_app.inbox'
-import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
-import { Route as AppContatosRouteImport } from './routes/_app.contatos'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
+import { Route as AppContatosRouteImport } from './routes/_app.contatos'
+import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppInboxRouteImport } from './routes/_app.inbox'
+import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
+import { Route as AppSupervisaoRouteImport } from './routes/_app.supervisao'
+import { Route as AlmoreMembrosCompanyIdRouteImport } from './routes/almore-membros.$companyId'
 
-const TrocarSenhaRoute = TrocarSenhaRouteImport.update({
-  id: '/trocar-senha',
-  path: '/trocar-senha',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlmoreRoute = AlmoreRouteImport.update({
@@ -37,8 +31,14 @@ const AlmoreRoute = AlmoreRouteImport.update({
   path: '/almore',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrocarSenhaRoute = TrocarSenhaRouteImport.update({
+  id: '/trocar-senha',
+  path: '/trocar-senha',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -46,29 +46,9 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
-const AlmoreMembrosCompanyIdRoute = AlmoreMembrosCompanyIdRouteImport.update({
-  id: '/almore-membros/$companyId',
-  path: '/almore-membros/$companyId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppSupervisaoRoute = AppSupervisaoRouteImport.update({
-  id: '/supervisao',
-  path: '/supervisao',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppPendentesRoute = AppPendentesRouteImport.update({
-  id: '/pendentes',
-  path: '/pendentes',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppInboxRoute = AppInboxRouteImport.update({
-  id: '/inbox',
-  path: '/inbox',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppDashboardRoute = AppDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
+const AppConfiguracoesRoute = AppConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
   getParentRoute: () => AppRoute,
 } as any)
 const AppContatosRoute = AppContatosRouteImport.update({
@@ -76,10 +56,30 @@ const AppContatosRoute = AppContatosRouteImport.update({
   path: '/contatos',
   getParentRoute: () => AppRoute,
 } as any)
-const AppConfiguracoesRoute = AppConfiguracoesRouteImport.update({
-  id: '/configuracoes',
-  path: '/configuracoes',
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => AppRoute,
+} as any)
+const AppInboxRoute = AppInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPendentesRoute = AppPendentesRouteImport.update({
+  id: '/pendentes',
+  path: '/pendentes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSupervisaoRoute = AppSupervisaoRouteImport.update({
+  id: '/supervisao',
+  path: '/supervisao',
+  getParentRoute: () => AppRoute,
+} as any)
+const AlmoreMembrosCompanyIdRoute = AlmoreMembrosCompanyIdRouteImport.update({
+  id: '/almore-membros/$companyId',
+  path: '/almore-membros/$companyId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -176,18 +176,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/trocar-senha': {
-      id: '/trocar-senha'
-      path: '/trocar-senha'
-      fullPath: '/trocar-senha'
-      preLoaderRoute: typeof TrocarSenhaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/almore': {
@@ -197,11 +190,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlmoreRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app': {
-      id: '/_app'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/trocar-senha': {
+      id: '/trocar-senha'
+      path: '/trocar-senha'
+      fullPath: '/trocar-senha'
+      preLoaderRoute: typeof TrocarSenhaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -211,39 +211,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/almore-membros/$companyId': {
-      id: '/almore-membros/$companyId'
-      path: '/almore-membros/$companyId'
-      fullPath: '/almore-membros/$companyId'
-      preLoaderRoute: typeof AlmoreMembrosCompanyIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_app/supervisao': {
-      id: '/_app/supervisao'
-      path: '/supervisao'
-      fullPath: '/supervisao'
-      preLoaderRoute: typeof AppSupervisaoRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/pendentes': {
-      id: '/_app/pendentes'
-      path: '/pendentes'
-      fullPath: '/pendentes'
-      preLoaderRoute: typeof AppPendentesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/inbox': {
-      id: '/_app/inbox'
-      path: '/inbox'
-      fullPath: '/inbox'
-      preLoaderRoute: typeof AppInboxRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/dashboard': {
-      id: '/_app/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AppDashboardRouteImport
+    '/_app/configuracoes': {
+      id: '/_app/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/configuracoes'
+      preLoaderRoute: typeof AppConfiguracoesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/contatos': {
@@ -253,12 +225,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppContatosRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/configuracoes': {
-      id: '/_app/configuracoes'
-      path: '/configuracoes'
-      fullPath: '/configuracoes'
-      preLoaderRoute: typeof AppConfiguracoesRouteImport
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/inbox': {
+      id: '/_app/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof AppInboxRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/pendentes': {
+      id: '/_app/pendentes'
+      path: '/pendentes'
+      fullPath: '/pendentes'
+      preLoaderRoute: typeof AppPendentesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/supervisao': {
+      id: '/_app/supervisao'
+      path: '/supervisao'
+      fullPath: '/supervisao'
+      preLoaderRoute: typeof AppSupervisaoRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/almore-membros/$companyId': {
+      id: '/almore-membros/$companyId'
+      path: '/almore-membros/$companyId'
+      fullPath: '/almore-membros/$companyId'
+      preLoaderRoute: typeof AlmoreMembrosCompanyIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
