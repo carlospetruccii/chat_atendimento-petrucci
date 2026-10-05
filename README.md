@@ -1,24 +1,19 @@
-# Chat Carlos
+# Chat Atendimento Petrucci
 
-crie uma lading page super simples e basica vazia, eu quero o esqueleto
+Plataforma de atendimento (inbox, contatos, supervisão) integrada ao WhatsApp via uazapi,
+com backend em Supabase e deploy no Cloudflare Workers.
 
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/b1b07acc-2703-4690-8e26-08cd02683be4).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+## Desenvolvimento
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
 npm i
 npm run dev
 ```
+
+Variáveis locais em `.env.local` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PROJECT_ID`,
+`VITE_SUPABASE_PUBLISHABLE_KEY`). Testes: `npm test`.
+
+## Deploy
+
+Push na `main` dispara o deploy automático no Cloudflare. Detalhes em
+[`docs/deploy-cloudflare.md`](docs/deploy-cloudflare.md).

@@ -5,22 +5,15 @@ a cada push na `main` do repositório `carlospetruccii/chat_atendimento-petrucci
 
 URL atual: `https://chat-atendimento-petrucci.re-petrucci.workers.dev`
 
-## Repositórios
+## Repositório
 
-| Remote | Repositório | Uso |
-|---|---|---|
-| `origin` | `DesenvolvedorDevant/chat-carlos` | Original, conectado ao Lovable |
-| `petrucci` | `carlospetruccii/chat_atendimento-petrucci` | Fonte do deploy no Cloudflare |
-
-Para publicar nos dois:
+Fonte do deploy: `carlospetruccii/chat_atendimento-petrucci` (remote `origin`).
+O projeto foi desconectado do Lovable; o repositório antigo
+`DesenvolvedorDevant/chat-carlos` não é mais usado.
 
 ```bash
-git push origin main
-git push petrucci main
+git push origin main   # dispara o deploy automático no Cloudflare
 ```
-
-> O Lovable sincroniza com o `origin`. Nunca reescrever histórico já enviado
-> (force push, rebase, amend).
 
 ## Configuração do Worker
 

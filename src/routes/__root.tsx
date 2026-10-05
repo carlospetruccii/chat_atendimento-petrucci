@@ -7,10 +7,9 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -38,9 +37,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -80,18 +76,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Chat Almore" },
       { name: "description", content: "Builds a basic, empty landing page skeleton for rapid web development, now with Supabase integration." },
-      { name: "author", content: "Lovable" },
       { property: "og:title", content: "Chat Almore" },
       { property: "og:description", content: "Builds a basic, empty landing page skeleton for rapid web development, now with Supabase integration." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "Chat Almore" },
       { name: "twitter:description", content: "Builds a basic, empty landing page skeleton for rapid web development, now with Supabase integration." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b394379f-93f3-4e1a-83b2-1e14f592f6ed/id-preview-f71f1045--c3f4d39c-1e7b-4027-9a23-875f61033c9c.lovable.app-1782940855829.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b394379f-93f3-4e1a-83b2-1e14f592f6ed/id-preview-f71f1045--c3f4d39c-1e7b-4027-9a23-875f61033c9c.lovable.app-1782940855829.png" },
     ],
     links: [
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "icon", type: "image/png", href: "/favicon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" },
