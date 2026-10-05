@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-const BUCKET = "mensagens-midia";
+export const BUCKET_MIDIA = "mensagens-midia";
 const EXPIRES_IN = 900; // 15 min
 
 /**
@@ -18,7 +18,7 @@ export function useSignedMediaUrl(storagePath: string | null | undefined) {
     refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase.storage
-        .from(BUCKET)
+        .from(BUCKET_MIDIA)
         .createSignedUrl(storagePath as string, EXPIRES_IN);
       if (error) throw error;
       return data.signedUrl;

@@ -12,6 +12,83 @@ export function departamentoNotificavel(departmentId: string | null | undefined)
   return id.length > 0 && id !== TRIAGEM_DEPT_ID;
 }
 
+// Quem deve receber o aviso deste atendimento.
+export type AlvoAviso =
+  | { modo: "setor" }
+  | { modo: "reservado"; userId: string };
+
+// Decide o destino do aviso a partir do estado do atendimento:
+//  - 'pendente'  → time inteiro do departamento (ainda não tem dono).
+//  - 'reservado' → SÓ o dono da reserva. O bot já escolheu a pessoa (último
+//    atendente do cliente naquele setor), e mais ninguém pode assumir, então
+//    avisar o setor inteiro seria só barulho.
+// Qualquer outro status — ou 'reservado' sem dono — não gera aviso.
+export function alvoDoAviso(
+  status: string | null | undefined,
+  assignedTo: string | null | undefined,
+): AlvoAviso | null {
+  const s = (status ?? "").trim();
+  if (s === "pendente") return { modo: "setor" };
+  if (s === "reservado") {
+    const userId = (assignedTo ?? "").trim();
+    return userId ? { modo: "reservado", userId } : null;
+  }
+  return null;
+}
+
+// ── Reserva do bot vs. reserva humana ────────────────────────────────────────
+// status='reservado' tem várias origens, e só as automáticas precisam deste
+// aviso. Quem é HUMANO grava um timeline_event com ator preenchido:
+//   - repassar_atendimento      → 'repassado' (ator ≠ destino)
+//   - assign_pendente_a_usuario → 'reservado' (admin atribui, ator ≠ destino)
+//     Nesses dois o notificar-repasse já manda o aviso; repetir = mensagem
+//     duplicada, e com texto errado ("voltou" não descreve um repasse).
+//   - claim_pendente            → 'reservado' com ator = destino (o próprio
+//     colaborador clicou "atender"). O notificar-repasse ignora de propósito e
+//     nós também devemos: avisar quem acabou de clicar é spam.
+//
+// Quem é BOT grava nada (triagem-bot finalizarTriagem/aplicarContinuidade) ou
+// grava com actor_user_id NULL e outro tipo — 'iniciado_atendimento' na
+// continuidade, 'reabertura_automatica' na reabertura. Nenhum desses tipos entra
+// na lista abaixo, então a reserva automática segue notificável.
+//
+// A leitura é segura na ordem do tempo: um evento humano nunca precede a reserva
+// do bot na mesma linha, porque 'em_triagem' só é atribuído na criação do
+// atendimento — nada devolve um atendimento existente para a triagem.
+export const TIPOS_EVENTO_RESERVA_HUMANA = ["repassado", "reservado", "atribuido"];
+
+export interface EventoReservaLike {
+  atendimento_id: string;
+  target_user_id: string | null;
+  actor_user_id: string | null;
+}
+
+export function chaveReserva(atendimentoId: string, userId: string): string {
+  return `${atendimentoId}:${userId}`;
+}
+
+// Indexa as reservas com ator humano, para consulta O(1) no laço. Evento sem
+// ator é do bot e NÃO entra — mesmo que o tipo esteja na lista.
+export function indexarReservasHumanas(
+  eventos: readonly EventoReservaLike[],
+): Set<string> {
+  const idx = new Set<string>();
+  for (const e of eventos) {
+    const alvo = (e.target_user_id ?? "").trim();
+    const ator = (e.actor_user_id ?? "").trim();
+    if (alvo && ator) idx.add(chaveReserva(e.atendimento_id, alvo));
+  }
+  return idx;
+}
+
+export function reservaFeitaPeloBot(
+  idx: ReadonlySet<string>,
+  atendimentoId: string,
+  userId: string,
+): boolean {
+  return !idx.has(chaveReserva(atendimentoId, userId));
+}
+
 export interface ColaboradorLike {
   ativo: boolean | null;
   is_system_user: boolean | null;

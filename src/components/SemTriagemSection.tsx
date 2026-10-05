@@ -86,10 +86,10 @@ export function SemTriagemSection() {
     <div className="max-w-2xl">
       {/* Cabeçalho */}
       <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent">
           <ZapOff className="h-5 w-5 text-primary" strokeWidth={1.75} />
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">Sem Triagem</h2>
           <p className="text-sm text-muted-foreground">
             Números que <strong>não recebem nenhuma triagem</strong>. Ao mandar mensagem, a pessoa{" "}
@@ -176,7 +176,10 @@ export function SemTriagemSection() {
                     ? numerosJaNaLista.has(c.numero_whatsapp)
                     : false;
                   return (
-                    <li key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <li
+                      key={c.id}
+                      className="flex min-h-16 items-center justify-between gap-3 py-2.5"
+                    >
                       <div className="min-w-0">
                         <p className="truncate text-sm text-foreground">{c.nome ?? "Sem nome"}</p>
                         <p className="truncate text-xs text-muted-foreground">
@@ -225,7 +228,7 @@ export function SemTriagemSection() {
         ) : (
           <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
             {itens.map((s: SemTriagemRow) => (
-              <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <li key={s.id} className="flex min-h-16 items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">
                     {s.nome ?? "Sem nome"}

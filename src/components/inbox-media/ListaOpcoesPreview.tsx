@@ -55,9 +55,12 @@ export function ListaOpcoesPreview({ message }: { message: InboxMessage }) {
         disabled
         className="-mx-3 -mb-2 mt-1 flex items-center justify-center gap-2 border-t border-current/10 px-3 py-2.5 text-sm font-medium opacity-90 cursor-default"
       >
-        <List className="h-4 w-4" strokeWidth={2.25} />
-        <span>{buttonLabel}</span>
-        <ChevronRight className="h-4 w-4 opacity-60" strokeWidth={2.25} />
+        <List className="h-4 w-4 shrink-0" strokeWidth={2.25} />
+        {/* min-w-0 + break-anywhere: button_label vem de fora (configurado no
+            fluxo do WhatsApp); se alguém colar algo comprido e sem espaço ali,
+            isso não pode esticar a bolha do chat. */}
+        <span className="min-w-0 break-anywhere">{buttonLabel}</span>
+        <ChevronRight className="h-4 w-4 shrink-0 opacity-60" strokeWidth={2.25} />
       </button>
 
       <span className="-mb-1 inline-flex w-fit items-center gap-1 rounded-full bg-current/10 px-2 py-0.5 text-[10px] font-medium opacity-70">

@@ -59,8 +59,8 @@ export function TemplatesTab() {
           preserveKey && list.some((t) => t.chave === preserveKey)
             ? preserveKey
             : selectedKey && list.some((t) => t.chave === selectedKey)
-            ? selectedKey
-            : list[0].chave;
+              ? selectedKey
+              : list[0].chave;
         setSelectedKey(keep);
         const sel = list.find((t) => t.chave === keep);
         if (sel) {
@@ -85,7 +85,7 @@ export function TemplatesTab() {
     [templates, selectedKey],
   );
 
-  const vars = selected ? TEMPLATE_VARS[selected.chave] ?? [] : [];
+  const vars = selected ? (TEMPLATE_VARS[selected.chave] ?? []) : [];
   const isDirty = selected
     ? draft !== selected.texto ||
       JSON.stringify(draftVariacoes) !== JSON.stringify(selected.variacoes)
@@ -111,8 +111,7 @@ export function TemplatesTab() {
   };
   const changeVariacao = (i: number, val: string) =>
     setDraftVariacoes((v) => v.map((x, idx) => (idx === i ? val : x)));
-  const removeVariacao = (i: number) =>
-    setDraftVariacoes((v) => v.filter((_, idx) => idx !== i));
+  const removeVariacao = (i: number) => setDraftVariacoes((v) => v.filter((_, idx) => idx !== i));
 
   const handleSave = async () => {
     if (!selected) return;
@@ -201,7 +200,7 @@ export function TemplatesTab() {
       <div className="flex items-center justify-end">
         <button
           onClick={() => setNewOpen(true)}
-          className="flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
         >
           <Plus className="h-4 w-4" strokeWidth={1.8} /> Novo template
         </button>
@@ -220,9 +219,7 @@ export function TemplatesTab() {
                     <button
                       onClick={() => handleSelect(t.chave)}
                       className={`flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors border-l-2 ${
-                        isSel
-                          ? "bg-accent border-primary"
-                          : "border-transparent hover:bg-muted"
+                        isSel ? "bg-accent border-primary" : "border-transparent hover:bg-muted"
                       }`}
                     >
                       <div className="min-w-0 flex-1">
@@ -269,9 +266,7 @@ export function TemplatesTab() {
                   <h3 className="text-base font-semibold text-foreground">
                     {TEMPLATE_LABEL[selected.chave] ?? selected.chave}
                   </h3>
-                  <p className="mt-1 text-xs text-muted-foreground font-mono">
-                    {selected.chave}
-                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground font-mono">{selected.chave}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-xs text-muted-foreground">
@@ -291,13 +286,12 @@ export function TemplatesTab() {
 
               {selected.chave === "triagem_pergunta_departamento" && (
                 <div className="mt-4 rounded-md border border-border bg-card px-3 py-2 text-xs text-blue-900">
-                  <strong>Mensagem interativa:</strong> esta pergunta é enviada
-                  no WhatsApp como uma <em>lista de opções</em> (botão "Ver
-                  setores"). O texto acima vira o corpo da mensagem; as opções
-                  vêm automaticamente de <strong>Departamentos</strong> (gerencie
-                  naquela aba). A variável{" "}
-                  <code className="font-mono">{"{{lista_departamentos}}"}</code>{" "}
-                  pode ser removida — não aparece mais no WhatsApp.
+                  <strong>Mensagem interativa:</strong> esta pergunta é enviada no WhatsApp como uma{" "}
+                  <em>lista de opções</em> (botão "Ver setores"). O texto acima vira o corpo da
+                  mensagem; as opções vêm automaticamente de <strong>Departamentos</strong>{" "}
+                  (gerencie naquela aba). A variável{" "}
+                  <code className="font-mono">{"{{lista_departamentos}}"}</code> pode ser removida —
+                  não aparece mais no WhatsApp.
                 </div>
               )}
 
@@ -317,12 +311,11 @@ export function TemplatesTab() {
                       mensagem ao mesmo contato. */}
                   <div className="mt-4 rounded-xl border border-dashed border-border bg-muted/30 p-3">
                     <p className="text-xs text-muted-foreground leading-snug">
-                      Cadastre variações que digam a <strong>mesma coisa com
-                      palavras um pouco diferentes</strong>. O sistema alterna
-                      entre as versões a cada envio, para o mesmo contato não
-                      receber o texto idêntico duas vezes seguidas (evita cara de
-                      robô/spam). É opcional — sem variações, só a versão 1 é
-                      usada.
+                      Cadastre variações que digam a{" "}
+                      <strong>mesma coisa com palavras um pouco diferentes</strong>. O sistema
+                      alterna entre as versões a cada envio, para o mesmo contato não receber o
+                      texto idêntico duas vezes seguidas (evita cara de robô/spam). É opcional — sem
+                      variações, só a versão 1 é usada.
                     </p>
 
                     {draftVariacoes.map((v, i) => (
@@ -364,7 +357,7 @@ export function TemplatesTab() {
                   </div>
 
                   <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="text-xs text-muted-foreground">
+                    <div className="min-w-0 text-xs text-muted-foreground">
                       Atualizado por{" "}
                       <span className="font-medium text-foreground">
                         {selected.updated_by_nome ?? "—"}
@@ -405,9 +398,7 @@ export function TemplatesTab() {
                             className="block w-full text-left rounded-md px-2 py-1.5 hover:bg-muted"
                             title="Inserir no texto"
                           >
-                            <code className="text-xs font-mono text-primary">
-                              {`{{${v}}}`}
-                            </code>
+                            <code className="text-xs font-mono text-primary">{`{{${v}}}`}</code>
                             <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
                               {TEMPLATE_VAR_DESC[v] ?? ""}
                             </p>
@@ -446,9 +437,7 @@ export function TemplatesTab() {
               </p>
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Texto
-              </label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Texto</label>
               <textarea
                 value={newTexto}
                 onChange={(e) => setNewTexto(e.target.value)}
@@ -459,13 +448,13 @@ export function TemplatesTab() {
           <DialogFooter>
             <button
               onClick={() => setNewOpen(false)}
-              className="rounded-md border border-input px-3 py-2 text-sm hover:bg-muted"
+              className="w-full rounded-md border border-input px-3 py-2 text-sm hover:bg-muted sm:w-auto"
             >
               Cancelar
             </button>
             <button
               onClick={handleCreate}
-              className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
             >
               Criar
             </button>

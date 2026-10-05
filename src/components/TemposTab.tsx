@@ -8,12 +8,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  fetchTempos,
-  updateTempo,
-  TEMPO_GRUPOS,
-  type TempoRow,
-} from "@/lib/configuracoes-queries";
+import { fetchTempos, updateTempo, TEMPO_GRUPOS, type TempoRow } from "@/lib/configuracoes-queries";
 
 export function TemposTab() {
   const [rows, setRows] = useState<TempoRow[] | null>(null);
@@ -91,8 +86,12 @@ export function TemposTab() {
                 <div className="divide-y divide-border">
                   {doGrupo.map((f) => (
                     <div key={f.chave} className="p-6">
-                      <div className="flex items-start justify-between gap-6">
-                        <div className="flex-1 min-w-0">
+                      {/* Celular: rótulo/descrição empilham acima de
+                          valor+unidade+editar — lado a lado sobrava só ~120px
+                          pro texto do rótulo em 360px (a coluna de valor
+                          tinha uma unidade de w-24 fixa). */}
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
+                        <div className="min-w-0 md:flex-1">
                           <label className="block text-sm font-semibold text-foreground">
                             {f.label}
                           </label>
@@ -106,17 +105,17 @@ export function TemposTab() {
                             {f.descricao ?? "—"}
                           </p>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center gap-3 md:shrink-0">
                           <span className="text-sm font-semibold text-foreground tabular-nums">
                             {f.valor ?? "—"}
                           </span>
-                          <span className="text-sm text-muted-foreground w-24">
+                          <span className="text-sm text-muted-foreground md:w-24">
                             {f.unit || "—"}
                           </span>
                           <button
                             type="button"
                             onClick={() => openEdit(f)}
-                            className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                            className="touch-target-mobile inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
                             title="Editar"
                           >
                             <Pencil className="h-4 w-4" strokeWidth={1.8} />
@@ -147,9 +146,11 @@ export function TemposTab() {
                   max={editing.max}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  className="w-[140px] rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary sm:w-[140px]"
                 />
-                <span className="text-sm text-muted-foreground">{editing.unit || "—"}</span>
+                <span className="shrink-0 text-sm text-muted-foreground">
+                  {editing.unit || "—"}
+                </span>
               </div>
               <p className="text-xs text-muted-foreground">
                 Faixa permitida: {editing.min} – {editing.max}
@@ -159,14 +160,14 @@ export function TemposTab() {
           <DialogFooter>
             <button
               onClick={() => setEditing(null)}
-              className="rounded-md border border-input px-3 py-2 text-sm hover:bg-muted"
+              className="w-full rounded-md border border-input px-3 py-2 text-sm hover:bg-muted sm:w-auto"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 sm:w-auto"
             >
               {saving ? "Salvando..." : "Salvar"}
             </button>

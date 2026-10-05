@@ -25,6 +25,7 @@
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { gravarIdPosEnvio } from "../_shared/pos-envio.ts";
+import { atualizacaoAposErroEnvio } from "../_shared/erro-envio.ts";
 import {
   enviarMidia,
   enviarTexto,
@@ -62,32 +63,6 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 // Mapeia erros técnicos da Z-API em mensagens curtas e legíveis para o atendente.
-function motivoLegivel(err: unknown): string {
-  if (err instanceof ZapiError) {
-    if (err.status === 429) return "WhatsApp indisponível (limite de requisições)";
-    if (err.status === 401 || err.status === 403) {
-      return "WhatsApp recusou a credencial (verifique a conexão)";
-    }
-    if (err.status === 404) return "Recurso não encontrado no WhatsApp";
-    if (err.status >= 500) return "WhatsApp indisponível";
-    try {
-      const j = JSON.parse(err.body) as { error?: string; message?: string };
-      const msg = j.error ?? j.message;
-      if (msg && typeof msg === "string") return msg.slice(0, 140);
-    } catch {
-      // ignora
-    }
-    if (err.status === 400) return "Dados inválidos para envio (verifique número/mídia)";
-    return `Erro no envio (HTTP ${err.status})`;
-  }
-  if (err instanceof Error) {
-    if (err.name === "TimeoutError" || /timeout/i.test(err.message)) {
-      return "Tempo esgotado ao enviar";
-    }
-    return err.message.slice(0, 140);
-  }
-  return "Falha desconhecida no envio";
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -376,26 +351,23 @@ Deno.serve(async (req: Request) => {
         duracao_ms: t(),
       });
     } catch (err) {
-      const motivo = motivoLegivel(err);
-      const novoMeta = { ...(mediaMetadata ?? {}), erro_motivo: motivo };
+      const upd = atualizacaoAposErroEnvio(err, mediaMetadata);
       await supabase
         .from("mensagens")
-        .update({
-          status_envio: "falha",
-          media_metadata: novoMeta,
-        })
+        .update(upd)
         .eq("id", mensagemId);
 
       log({
         funcao: FUNCAO,
-        evento: "envio_falha",
-        status: "erro",
+        evento: upd.status_envio === "falha" ? "envio_falha" : "envio_incerto",
+        status: upd.status_envio === "falha" ? "erro" : "ok",
         atendimento_id: atendimentoId,
         mensagem_id: mensagemId,
         duracao_ms: t(),
-        erro_msg: motivo,
+        erro_msg: (upd.media_metadata.erro_motivo ?? upd.media_metadata.envio_incerto_motivo) as string,
         extra: {
           zapi_status: err instanceof ZapiError ? err.status : null,
+          status_envio: upd.status_envio,
         },
       });
     }

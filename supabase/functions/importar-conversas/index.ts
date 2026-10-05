@@ -28,12 +28,17 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
-import { buscarMensagensDoChat, listarChats, statusInstancia } from "../_shared/uazapi-client.ts";
+import { buscarMensagensDoChat, listarChatsPaginado, statusInstancia } from "../_shared/uazapi-client.ts";
 import { baixarESalvarMidia } from "../_shared/midia-mensagem.ts";
 import { dataDaMensagem, parseMensagem, TIPOS_COM_DOWNLOAD } from "../_shared/mensagem-uazapi.ts";
 import { idsPossiveis, inteiroNoIntervalo } from "../_shared/historico.ts";
 import { atualizarFotoPerfil } from "../_shared/foto-perfil-sync.ts";
 import { ehOperadorOuSuperadmin } from "../_shared/auth-operador.ts";
+import {
+  numeroCanonicoWhatsapp,
+  selecionarRegistroPorNumeroWhatsapp,
+  variantesNumeroWhatsappBR,
+} from "../_shared/telefone-whatsapp.ts";
 import { type AlvoChat, alvoDoChat, type AtendimentoRef, atendimentoDoMomento } from "./logic.ts";
 
 const FUNCAO = "importar-conversas";
@@ -92,11 +97,16 @@ async function numerosExcluidos(supabase: Supabase): Promise<Set<string>> {
 }
 
 async function garantirCliente(supabase: Supabase, alvo: AlvoChat): Promise<string> {
-  const { data: c } = await supabase
+  // O WhatsApp pode mandar o mesmo celular BR com ou sem o nono dígito: procura
+  // as duas formas para não criar um segundo cliente (e um histórico separado).
+  const variantes = variantesNumeroWhatsappBR(alvo.numero);
+  const { data: candidatos, error: errBusca } = await supabase
     .from("clients")
-    .select("id, nome, chat_lid")
-    .eq("numero_whatsapp", alvo.numero)
-    .maybeSingle();
+    .select("id, nome, chat_lid, numero_whatsapp")
+    .in("numero_whatsapp", variantes.length > 0 ? variantes : [alvo.numero]);
+  if (errBusca) throw new Error(`buscar_cliente: ${errBusca.message}`);
+  const c = selecionarRegistroPorNumeroWhatsapp(candidatos ?? [], alvo.numero) ??
+    (candidatos ?? []).find((x) => x.numero_whatsapp === alvo.numero) ?? null;
   if (c) {
     const patch: Record<string, string> = {};
     if (!c.nome && alvo.nome) patch.nome = alvo.nome;
@@ -105,7 +115,8 @@ async function garantirCliente(supabase: Supabase, alvo: AlvoChat): Promise<stri
     return c.id as string;
   }
 
-  const base = { numero_whatsapp: alvo.numero, nome: alvo.nome };
+  // Cliente novo nasce na forma canônica (com o nono dígito), igual ao webhook.
+  const base = { numero_whatsapp: numeroCanonicoWhatsapp(alvo.numero) ?? alvo.numero, nome: alvo.nome };
   let { data: novo, error } = await supabase
     .from("clients")
     .insert({ ...base, chat_lid: alvo.lid })
@@ -299,7 +310,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const excluidos = await numerosExcluidos(supabase);
-    const { chats, total } = await listarChats({ limit: limite, offset });
+    const { chats, total } = await listarChatsPaginado({ limit: limite, offset });
 
     const resultados: ResultadoChat[] = [];
     let ignorados = 0;

@@ -129,9 +129,15 @@ export interface CadastrarClienteSingleResp {
 export async function cadastrarClienteSingle(
   nome: string,
   telefone: string,
+  opts: { manterNomeExistente?: boolean } = {},
 ): Promise<CadastrarClienteSingleResp> {
   const { data, error } = await supabase.functions.invoke("cadastrar-cliente", {
-    body: { modo: "single", nome, telefone },
+    body: {
+      modo: "single",
+      nome,
+      telefone,
+      ...(opts.manterNomeExistente ? { manter_nome_existente: true } : {}),
+    },
   });
   if (error) {
     // Tenta extrair body de erro

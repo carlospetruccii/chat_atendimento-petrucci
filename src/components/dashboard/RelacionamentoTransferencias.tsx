@@ -10,13 +10,20 @@ import type { TransferenciasCompletas } from "@/lib/relacionamento-queries";
  */
 const SALTOS_PROBLEMA = 2;
 
-export function RelacionamentoTransferencias({ dados }: { dados: TransferenciasCompletas }) {
+export function RelacionamentoTransferencias({
+  dados,
+  className,
+}: {
+  dados: TransferenciasCompletas;
+  className?: string;
+}) {
   const { mediaPorConversa, pctComTransferencia, pctDuasOuMais } = resumoTransferencias(dados);
   const maximo = dados.distribuicao.reduce((acc, f) => Math.max(acc, f.total), 0);
   const temConversas = dados.conversas > 0;
 
   return (
     <VizCard
+      className={className}
       titulo="Peregrinação entre departamentos"
       descricao="Trocas de departamento por conversa. Só conta quando o departamento muda."
       rodape={
@@ -58,7 +65,7 @@ export function RelacionamentoTransferencias({ dados }: { dados: TransferenciasC
                 rotulo={faixa.faixa === "0" ? "nenhuma" : faixa.faixa}
                 valor={faixa.total}
                 maximo={maximo}
-                cor={i >= SALTOS_PROBLEMA ? "var(--viz-cauda)" : "var(--viz-neutro)"}
+                cor={i >= SALTOS_PROBLEMA ? "var(--viz-alerta)" : "var(--viz-neutro)"}
                 // Só anota se houver o que anotar: marcar "dói" numa linha que
                 // vale 0 aponta pra um problema que não existe.
                 anotacao={i === SALTOS_PROBLEMA && dados.duas_ou_mais > 0 ? "dói" : undefined}
@@ -84,7 +91,10 @@ export function RelacionamentoTransferencias({ dados }: { dados: TransferenciasC
             <ul className="mt-3 flex flex-col gap-3">
               {dados.peregrinacoes.map((p) => (
                 <li key={p.atendimento_id} className="flex flex-col gap-1.5">
-                  <span className="truncate text-sm text-foreground">
+                  {/* min-w-0 por consistência com as outras listas — aqui o
+                      pai é flex-col e o span já estica pra largura toda, mas
+                      o par min-w-0+truncate é o padrão do arquivo inteiro. */}
+                  <span className="min-w-0 truncate text-sm text-foreground">
                     {p.cliente ?? "sem nome"}
                   </span>
                   <div className="flex flex-wrap items-center gap-1">

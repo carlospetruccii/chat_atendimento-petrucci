@@ -27,7 +27,7 @@ export function MediaDocument({
   const [downloading, setDownloading] = useState(false);
 
   if (isLoading) return <MediaLoading tipo="documento" />;
-  if (error || !url) return <MediaError />;
+  if (error || !url) return <MediaError tipo="documento" />;
 
   const size = formatBytes(sizeBytes);
   const displayName = fileName ?? "Documento";
@@ -79,7 +79,7 @@ export function MediaDocument({
           type="button"
           onClick={handleDownload}
           disabled={downloading}
-          className="opacity-80 hover:opacity-100 shrink-0 disabled:opacity-50"
+          className="touch-target-mobile flex shrink-0 items-center justify-center opacity-80 hover:opacity-100 disabled:opacity-50"
           aria-label="Baixar"
         >
           {downloading ? (

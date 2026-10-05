@@ -14,8 +14,6 @@ describe("normalizarRelacionamento", () => {
     expect(r.primeira_resposta.histograma).toEqual([]);
     expect(r.primeira_resposta.pior).toBeNull();
     expect(r.transferencias.peregrinacoes).toEqual([]);
-    expect(r.iniciativa.contas_reativas).toEqual([]);
-    expect(r.engajamento.quedas).toEqual([]);
   });
 
   test("percentis ausentes ficam null, não zero", () => {
@@ -35,36 +33,10 @@ describe("normalizarRelacionamento", () => {
   test("numeric do Postgres chega como string e é convertido", () => {
     const r = normalizarRelacionamento({
       primeira_resposta: { p95_min: "98", media_min: "26" },
-      engajamento: { limite_queda_pct: "-50", quedas: [{ delta_pct: "-100" }] },
     });
 
     expect(r.primeira_resposta.p95_min).toBe(98);
     expect(r.primeira_resposta.media_min).toBe(26);
-    expect(r.engajamento.limite_queda_pct).toBe(-50);
-    expect(r.engajamento.quedas[0].delta_pct).toBe(-100);
-  });
-
-  test("engajamento sem baseline mantém defaults sensatos", () => {
-    const r = normalizarRelacionamento({ engajamento: {} });
-
-    expect(r.engajamento.janela_dias).toBe(30);
-    expect(r.engajamento.baseline_min).toBe(5);
-    expect(r.engajamento.janela_reduzida).toBe(false);
-    expect(r.engajamento.clientes_avaliados).toBe(0);
-  });
-
-  test("janela_reduzida só é true quando vem exatamente true", () => {
-    expect(
-      normalizarRelacionamento({ engajamento: { janela_reduzida: true } }).engajamento
-        .janela_reduzida,
-    ).toBe(true);
-    expect(
-      normalizarRelacionamento({ engajamento: { janela_reduzida: "true" } }).engajamento
-        .janela_reduzida,
-    ).toBe(false);
-    expect(
-      normalizarRelacionamento({ engajamento: { janela_reduzida: 1 } }).engajamento.janela_reduzida,
-    ).toBe(false);
   });
 
   test("campos que deveriam ser lista mas vieram como objeto não estouram", () => {
@@ -120,37 +92,11 @@ describe("normalizarRelacionamento", () => {
         empresa_pelo_sistema: 4,
         empresa_fora_do_sistema: 52,
         sem_mensagem: 0,
-        contas_reativas: [
-          { client_id: "c1", cliente: "João Rafael", conversas: 26, pct_cliente: 100 },
-        ],
-      },
-      engajamento: {
-        janela_dias: 14,
-        janela_reduzida: true,
-        baseline_min: 5,
-        limite_queda_pct: -50,
-        clientes_avaliados: 8,
-        em_queda: 4,
-        msgs_agora: 169,
-        msgs_antes: 208,
-        quedas: [
-          {
-            client_id: "c2",
-            cliente: "MK Segurança e Saúde LTDA",
-            agora: 0,
-            antes: 19,
-            delta_pct: -100,
-            dias_sem_contato: 14,
-          },
-        ],
       },
     });
 
     expect(r.primeira_resposta.pior?.cliente).toBe("Larissa Comercial");
     expect(r.primeira_resposta.histograma).toHaveLength(2);
     expect(r.transferencias.peregrinacoes[0].caminho).toEqual(["Fiscal", "Contábil", "Financeiro"]);
-    expect(r.iniciativa.contas_reativas[0].conversas).toBe(26);
-    expect(r.engajamento.janela_dias).toBe(14);
-    expect(r.engajamento.quedas[0].cliente).toBe("MK Segurança e Saúde LTDA");
   });
 });

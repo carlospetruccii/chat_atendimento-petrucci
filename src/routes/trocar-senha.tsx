@@ -57,7 +57,11 @@ function TrocarSenhaPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    // min-h-dvh (não min-h-screen): com o teclado aberto, 100vh continua sendo a
+    // tela inteira e o card fica atrás dele. overflow-y-auto + py-8 garantem que,
+    // se o teclado encolher demais o espaço, dá pra rolar até o topo do card em
+    // vez de ele simplesmente cortar sem jeito de alcançar.
+    <div className="flex min-h-dvh items-center justify-center overflow-y-auto bg-background px-4 py-8">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">

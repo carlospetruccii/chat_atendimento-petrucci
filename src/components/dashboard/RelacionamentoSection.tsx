@@ -2,23 +2,35 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { fetchRelacionamento } from "@/lib/relacionamento-queries";
 import type { DashboardRange } from "@/lib/dashboard-queries";
+import type { DashboardFiltros } from "@/lib/dashboard-filtros";
 import { RelacionamentoPrimeiraResposta } from "./RelacionamentoPrimeiraResposta";
 import { RelacionamentoIniciativa } from "./RelacionamentoIniciativa";
 import { RelacionamentoTransferencias } from "./RelacionamentoTransferencias";
-import { RelacionamentoEngajamento } from "./RelacionamentoEngajamento";
 
 /**
  * Seção de Relacionamento da dashboard.
  *
- * Os KPIs de cima medem a operação (quantos, quanto tempo). Estes quatro medem
+ * Os KPIs de cima medem a operação (quantos, quanto tempo). Estes três medem
  * a EXPERIÊNCIA de quem está do outro lado, usando só metadados — nenhuma
  * conversa é lida. Vem depois de propósito: são leitura de gestão, não de
  * plantão.
  */
-export function RelacionamentoSection({ range }: { range: DashboardRange }) {
+export function RelacionamentoSection({
+  range,
+  filtros,
+}: {
+  range: DashboardRange;
+  filtros: DashboardFiltros;
+}) {
   const { data, isLoading, isError, error, isFetching } = useQuery({
-    queryKey: ["dashboard-relacionamento", range.from, range.to],
-    queryFn: () => fetchRelacionamento(range),
+    queryKey: [
+      "dashboard-relacionamento",
+      range.from,
+      range.to,
+      filtros.departmentId,
+      filtros.userId,
+    ],
+    queryFn: () => fetchRelacionamento(range, filtros),
     refetchInterval: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -35,7 +47,7 @@ export function RelacionamentoSection({ range }: { range: DashboardRange }) {
       </header>
 
       {isError ? (
-        <p className="rounded-2xl border border-destructive/30 bg-card px-6 py-5 text-sm text-destructive">
+        <p className="rounded-2xl border border-destructive/30 bg-card px-4 py-5 text-sm text-destructive sm:px-6">
           Não foi possível carregar as métricas de relacionamento
           {error instanceof Error && error.message ? `: ${error.message}` : "."}
         </p>
@@ -44,16 +56,21 @@ export function RelacionamentoSection({ range }: { range: DashboardRange }) {
       ) : data ? (
         // Em refetch a grade fica visível com opacidade reduzida em vez de
         // voltar ao esqueleto: sem pulo de layout a cada 60s.
+        //
+        // Três cartões: 2 a 2 no tablet (o terceiro ocupa a linha inteira pra
+        // não deixar buraco) e 3 lado a lado a partir de xl.
         <div
           className={cn(
-            "grid grid-cols-1 gap-4 transition-opacity xl:grid-cols-2",
+            "grid grid-cols-1 gap-4 transition-opacity md:grid-cols-2 xl:grid-cols-3",
             isFetching && "opacity-60",
           )}
         >
           <RelacionamentoPrimeiraResposta dados={data.primeira_resposta} />
           <RelacionamentoIniciativa dados={data.iniciativa} />
-          <RelacionamentoTransferencias dados={data.transferencias} />
-          <RelacionamentoEngajamento dados={data.engajamento} />
+          <RelacionamentoTransferencias
+            dados={data.transferencias}
+            className="md:col-span-2 xl:col-span-1"
+          />
         </div>
       ) : null}
     </section>
@@ -62,11 +79,16 @@ export function RelacionamentoSection({ range }: { range: DashboardRange }) {
 
 function EsqueletoRelacionamento() {
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      {[0, 1, 2, 3].map((i) => (
+    // Mesmos breakpoints da grade real — se não bater, o esqueleto muda de
+    // coluna assim que os dados chegam e a página pula.
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="h-[420px] animate-pulse rounded-2xl border border-border bg-card"
+          className={cn(
+            "h-[420px] animate-pulse rounded-2xl border border-border bg-card",
+            i === 2 && "md:col-span-2 xl:col-span-1",
+          )}
           aria-hidden
         />
       ))}

@@ -40,18 +40,54 @@ const MAX_TENTATIVAS = 3;
 // Timeout por requisição — evita que uma conexão pendurada na uazapi trave a
 // Edge Function (ex.: o loop do cron de alertas) indefinidamente.
 const REQUEST_TIMEOUT_MS = 20_000;
+// /message/download é a exceção: a uazapi só responde depois de buscar o
+// arquivo no CDN do WhatsApp e descriptografar. Num anexo de poucos MB (um .rar
+// de documentos, por exemplo) isso passa MUITO dos 20s e a mídia caía como
+// "indisponível" sem que nada estivesse errado. Ver midia-download.ts.
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
 // /group/info para foto (pode ir ao WhatsApp): lenta, ganha folga própria.
 const TIMEOUT_FOTO_GRUPO_MS = 60_000;
 
-function getBaseUrl(): string {
-  const url = Deno.env.get("UAZAPI_URL");
+/**
+ * Qual número (instância uazapi) usar.
+ *   principal  → o número de atendimento (Inbox). É o padrão: nenhum chamador
+ *                antigo precisa mudar.
+ *   financeiro → o número que o outro sistema usa para disparar documentos
+ *                (aba Docs).
+ */
+export type Instancia = "principal" | "financeiro";
+
+/**
+ * Marca de rastreio da uazapi (`track_source` + `track_id`). Volta no eco do
+ * webhook, então quem envia consegue reconhecer o PRÓPRIO envio com certeza —
+ * essencial em instância compartilhada com outro sistema (ver docs-rastreio.ts).
+ */
+export interface Rastreio {
+  origem: string;
+  id: string;
+}
+
+function comRastreio(payload: Record<string, unknown>, r?: Rastreio): Record<string, unknown> {
+  return r ? { ...payload, track_source: r.origem, track_id: r.id } : payload;
+}
+
+function getBaseUrl(instancia: Instancia = "principal"): string {
+  // Instâncias da mesma conta moram no mesmo servidor; a URL própria do
+  // financeiro só existe se um dia ele for para outra conta.
+  // `||`, não `??`: secret cadastrado vazio também cai no servidor padrão.
+  const url = (instancia === "financeiro" ? Deno.env.get("UAZAPI_URL_FINANCEIRO") : undefined) ||
+    Deno.env.get("UAZAPI_URL");
   if (!url) throw new Error("Secret UAZAPI_URL ausente.");
   return url.replace(/\/+$/, "");
 }
 
-function getToken(): string {
-  const token = Deno.env.get("UAZAPI_TOKEN");
-  if (!token) throw new Error("Secret UAZAPI_TOKEN ausente.");
+function getToken(instancia: Instancia = "principal"): string {
+  // Sem fallback para o principal de propósito: mandar mensagem do Docs pelo
+  // número de atendimento seria pior do que falhar.
+  const nome = instancia === "financeiro" ? "UAZAPI_TOKEN_FINANCEIRO" : "UAZAPI_TOKEN";
+  const token = Deno.env.get(nome);
+  if (!token) throw new Error(`Secret ${nome} ausente.`);
   return token;
 }
 
@@ -98,15 +134,20 @@ async function chamar(
   metodo: MetodoHttp,
   endpoint: string,
   payload?: unknown,
-  opts?: { admin?: boolean; timeoutMs?: number },
+  opts?: {
+    admin?: boolean;
+    timeoutMs?: number;
+    maxBytesResposta?: number;
+    instancia?: Instancia;
+  },
 ): Promise<unknown> {
-  const url = `${getBaseUrl()}${endpoint}`;
+  const url = `${getBaseUrl(opts?.instancia)}${endpoint}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
   };
   if (opts?.admin) headers.admintoken = getAdminToken();
-  else headers.token = getToken();
+  else headers.token = getToken(opts?.instancia);
 
   let ultimoErro: UazapiError | null = null;
 
@@ -126,6 +167,21 @@ async function chamar(
     }
 
     if (resp.ok) {
+      // Teto de resposta: /message/download com base64 devolve o arquivo dentro
+      // do JSON, e uma string dessas custa o dobro na memória (UTF-16). Sem o
+      // corte, um anexo grande mata a função com "Memory limit exceeded".
+      const teto = opts?.maxBytesResposta;
+      if (teto !== undefined) {
+        const declarado = Number(resp.headers.get("content-length") ?? "0");
+        if (declarado > teto) {
+          await resp.body?.cancel();
+          throw new UazapiError(
+            `resposta de ${metodo} ${endpoint} maior que o teto (${declarado} bytes)`,
+            resp.status,
+            "",
+          );
+        }
+      }
       const texto = await resp.text();
       try {
         return texto ? JSON.parse(texto) : {};
@@ -169,6 +225,12 @@ export interface EnviarTextoParams {
   mensagem: string;
   // `id` (owner:messageid) da mensagem citada para responder.
   quotedZapiMessageId?: string;
+  // Marca a mensagem com o indicador "Encaminhada" no WhatsApp do destinatário
+  // (ver mensagem-encaminhar). Documentado na doc oficial da uazapi.
+  forward?: boolean;
+  /** Número que envia. Padrão: principal. */
+  instancia?: Instancia;
+  rastreio?: Rastreio;
 }
 
 export async function enviarTexto(params: EnviarTextoParams): Promise<unknown> {
@@ -177,7 +239,10 @@ export async function enviarTexto(params: EnviarTextoParams): Promise<unknown> {
     text: params.mensagem,
   };
   if (params.quotedZapiMessageId) payload.replyid = params.quotedZapiMessageId;
-  return await chamar("POST", "/send/text", payload);
+  if (params.forward) payload.forward = true;
+  return await chamar("POST", "/send/text", comRastreio(payload, params.rastreio), {
+    instancia: params.instancia,
+  });
 }
 
 // Tipos internos do sistema (mesma enum de antes). audio = nota de voz → "ptt".
@@ -201,6 +266,11 @@ export interface EnviarMidiaParams {
   // Compat: extensão (não usada pela uazapi, mantida na assinatura).
   extension?: string;
   quotedZapiMessageId?: string;
+  // Ver EnviarTextoParams.forward.
+  forward?: boolean;
+  /** Número que envia. Padrão: principal. */
+  instancia?: Instancia;
+  rastreio?: Rastreio;
 }
 
 export async function enviarMidia(params: EnviarMidiaParams): Promise<unknown> {
@@ -212,7 +282,10 @@ export async function enviarMidia(params: EnviarMidiaParams): Promise<unknown> {
   if (params.caption) payload.text = params.caption;
   if (params.tipo === "document" && params.fileName) payload.docName = params.fileName;
   if (params.quotedZapiMessageId) payload.replyid = params.quotedZapiMessageId;
-  return await chamar("POST", "/send/media", payload);
+  if (params.forward) payload.forward = true;
+  return await chamar("POST", "/send/media", comRastreio(payload, params.rastreio), {
+    instancia: params.instancia,
+  });
 }
 
 export interface OpcaoLista {
@@ -263,10 +336,51 @@ export interface DeletarMensagemParams {
   telefone?: string;
   // `id` completo (owner:messageid) — guardado em mensagens.zapi_message_id.
   zapiMessageId: string;
+  /** Instância que enviou a mensagem. Padrão: principal. */
+  instancia?: Instancia;
 }
 
 export async function deletarMensagem(params: DeletarMensagemParams): Promise<unknown> {
-  return await chamar("POST", "/message/delete", { id: params.zapiMessageId });
+  return await chamar("POST", "/message/delete", { id: params.zapiMessageId }, {
+    instancia: params.instancia,
+  });
+}
+
+export interface EditarMensagemParams {
+  /** `id` completo (owner:messageid) da mensagem a editar. */
+  zapiMessageId: string;
+  /** Texto novo, já validado (não vazio). */
+  texto: string;
+  /** Instância que enviou a mensagem. Padrão: principal. */
+  instancia?: Instancia;
+}
+
+export interface EditarMensagemResult {
+  /**
+   * ID NOVO da mensagem editada (owner:messageid). O WhatsApp trata a edição
+   * como uma mensagem nova, e os eventos seguintes de status/apagar citam ESTE
+   * id — quem chama tem que regravar zapi_message_id, senão a mensagem fica
+   * órfã de status e apagar depois responde 404. null se a uazapi não devolveu.
+   */
+  novoId: string | null;
+  raw: unknown;
+}
+
+/**
+ * Edita o texto de uma mensagem já enviada (POST /message/edit).
+ *
+ * Só funciona em mensagem enviada pela própria instância e dentro do prazo do
+ * WhatsApp (~15 min) — o prazo NÃO é validado aqui nem pela uazapi; ver
+ * ./janelas-whatsapp.ts.
+ */
+export async function editarMensagem(
+  params: EditarMensagemParams,
+): Promise<EditarMensagemResult> {
+  const resp = await chamar("POST", "/message/edit", {
+    id: params.zapiMessageId,
+    text: params.texto,
+  }, { instancia: params.instancia });
+  return { novoId: extrairMessageId(resp), raw: resp };
 }
 
 // Extrai o id (owner:messageid) da resposta de envio da uazapi.
@@ -289,12 +403,22 @@ export interface BaixarMidiaResult {
 
 /**
  * Baixa o arquivo de uma mensagem recebida (POST /message/download).
- * return_base64=true retorna o conteúdo em base64 para persistir no bucket.
+ *
+ * `retornarBase64` pede o conteúdo inline (return_base64). Sem ele a uazapi
+ * devolve só a `fileURL` já descriptografada — resposta pequena, que é o
+ * caminho preferido para arquivo grande (ver obterBytesMidia).
  */
-export async function baixarMidiaMensagem(id: string): Promise<BaixarMidiaResult> {
+export async function baixarMidiaMensagem(
+  id: string,
+  opts?: { retornarBase64?: boolean; maxBytesResposta?: number; instancia?: Instancia },
+): Promise<BaixarMidiaResult> {
   const resp = (await chamar("POST", "/message/download", {
     id,
-    return_base64: true,
+    return_base64: opts?.retornarBase64 === true,
+  }, {
+    timeoutMs: DOWNLOAD_TIMEOUT_MS,
+    maxBytesResposta: opts?.maxBytesResposta,
+    instancia: opts?.instancia,
   })) as Record<string, unknown>;
   return {
     base64: (resp.base64Data ?? resp.base64 ?? resp.fileBase64 ?? resp.data) as string | undefined,
@@ -360,8 +484,11 @@ export function numeroDoJidInstancia(bruto: unknown): string | undefined {
   return undefined;
 }
 
-export async function statusInstancia(): Promise<StatusResult> {
-  const resp = (await chamar("GET", "/instance/status")) as Record<string, unknown>;
+export async function statusInstancia(instancia?: Instancia): Promise<StatusResult> {
+  const resp = (await chamar("GET", "/instance/status", undefined, { instancia })) as Record<
+    string,
+    unknown
+  >;
   const st = (resp.status ?? {}) as Record<string, unknown>;
   const inst = (resp.instance ?? {}) as Record<string, unknown>;
   return {
@@ -406,8 +533,8 @@ export async function configurarWebhook(params: ConfigurarWebhookParams): Promis
   return await chamar("POST", "/webhook", payload);
 }
 
-export async function verWebhook(): Promise<unknown> {
-  return await chamar("GET", "/webhook");
+export async function verWebhook(instancia?: Instancia): Promise<unknown> {
+  return await chamar("GET", "/webhook", undefined, { instancia });
 }
 
 // ————————————————————————————————————————————————————————————————
@@ -419,11 +546,14 @@ export async function verWebhook(): Promise<unknown> {
 // (o "tique azul") para o remetente, DESDE QUE a conta conectada esteja com
 // "confirmações de leitura" habilitado nas configurações do WhatsApp.
 // Endpoint de chat aceita número em dígitos puros (mesmo padrão de /chat/details).
-export async function marcarChatComoLido(telefone: string): Promise<unknown> {
+export async function marcarChatComoLido(
+  telefone: string,
+  instancia?: Instancia,
+): Promise<unknown> {
   return await chamar("POST", "/chat/read", {
     number: normalizarDestino(telefone),
     read: true,
-  });
+  }, { instancia });
 }
 
 // ————————————————————————————————————————————————————————————————
@@ -491,12 +621,13 @@ export async function buscarMensagensDoChat(params: {
   chatid: string;
   limit?: number;
   offset?: number;
+  instancia?: Instancia;
 }): Promise<Record<string, unknown>[]> {
   const r = (await chamar("POST", "/message/find", {
     chatid: params.chatid,
     limit: params.limit ?? 100,
     offset: params.offset ?? 0,
-  })) as Record<string, unknown>;
+  }, { instancia: params.instancia })) as Record<string, unknown>;
 
   const lista = Array.isArray(r?.messages)
     ? r.messages
@@ -507,10 +638,30 @@ export async function buscarMensagensDoChat(params: {
 }
 
 /**
- * Chats individuais da instância, do mais recente para o mais antigo.
- * `POST /chat/find { wa_isGroup:false, sort, limit, offset }` → { chats[], pagination }.
+ * Conversas individuais da instância, da mais recente para a mais antiga
+ * (`POST /chat/find`, formato compacto). Resposta crua: quem chama extrai.
  */
 export async function listarChats(params: {
+  limit: number;
+  offset: number;
+  instancia?: Instancia;
+}): Promise<unknown> {
+  return await chamar("POST", "/chat/find", {
+    operator: "AND",
+    sort: "-wa_lastMsgTimestamp",
+    compact: true,
+    wa_isGroup: false,
+    limit: params.limit,
+    offset: params.offset,
+  }, { instancia: params.instancia });
+}
+
+/**
+ * Chats individuais da instância, do mais recente para o mais antigo, já
+ * extraídos e com o total da paginação (usado pela importação inicial).
+ * `POST /chat/find { wa_isGroup:false, sort, limit, offset }` → { chats[], pagination }.
+ */
+export async function listarChatsPaginado(params: {
   limit: number;
   offset: number;
 }): Promise<{ chats: Record<string, unknown>[]; total: number | null }> {
@@ -579,6 +730,54 @@ export async function solicitarHistoricoChat(params: {
   return await chamar("POST", "/message/history-sync", payload);
 }
 
+/** Lista de webhooks da instância; a rota devolve array, mas já variou. */
+function listaDeWebhooks(atuais: unknown): unknown[] {
+  if (Array.isArray(atuais)) return atuais;
+  const o = (atuais ?? {}) as Record<string, unknown>;
+  const cand = o.webhooks ?? o.data ?? o.items;
+  return Array.isArray(cand) ? cand : (o.url ? [o] : []);
+}
+
+/**
+ * Garante um webhook ADICIONAL apontando para `url` (`action: "add"`), sem
+ * tocar em nenhum webhook que já exista na instância.
+ *
+ * Idempotente: se já existe webhook com essa url, não cria outro.
+ */
+export async function garantirWebhookAdicional(params: {
+  url: string;
+  events: string[];
+  instancia?: Instancia;
+}): Promise<{ criado: boolean; ja_existia: boolean }> {
+  const atuais = await verWebhook(params.instancia);
+  const existente = listaDeWebhooks(atuais)
+    .map((w) => (w ?? {}) as Record<string, unknown>)
+    .find((o) => typeof o.url === "string" && o.url.trim() === params.url.trim());
+  if (existente) {
+    // Existe mas foi desligado: religa o NOSSO (pelo id), sem tocar nos outros.
+    if (existente.enabled === false && typeof existente.id === "string") {
+      await chamar("POST", "/webhook", {
+        action: "update",
+        id: existente.id,
+        url: params.url,
+        events: params.events,
+        excludeMessages: [],
+        enabled: true,
+      }, { instancia: params.instancia });
+    }
+    return { criado: false, ja_existia: true };
+  }
+
+  await chamar("POST", "/webhook", {
+    action: "add",
+    url: params.url,
+    events: params.events,
+    excludeMessages: [],
+    enabled: true,
+  }, { instancia: params.instancia });
+  return { criado: true, ja_existia: false };
+}
+
 /**
  * Garante um webhook DEDICADO ao evento `history`, apontando para `url`.
  *
@@ -586,35 +785,11 @@ export async function solicitarHistoricoChat(params: {
  * responde ao cliente. Um lote de histórico caindo lá dispararia bot e
  * notificação para conversa de semanas atrás. Aqui usamos `action: "add"`, que
  * cria um webhook ADICIONAL — o principal continua intacto.
- *
- * Idempotente: se já existe webhook com essa url, não cria outro.
  */
 export async function garantirWebhookHistorico(
   url: string,
 ): Promise<{ criado: boolean; ja_existia: boolean }> {
-  const atuais = await verWebhook();
-  const lista = Array.isArray(atuais)
-    ? atuais
-    : (() => {
-      const o = (atuais ?? {}) as Record<string, unknown>;
-      const cand = o.webhooks ?? o.data ?? o.items;
-      return Array.isArray(cand) ? cand : (o.url ? [o] : []);
-    })();
-
-  const jaTem = (lista as unknown[]).some((w) => {
-    const o = (w ?? {}) as Record<string, unknown>;
-    return typeof o.url === "string" && o.url.trim() === url.trim();
-  });
-  if (jaTem) return { criado: false, ja_existia: true };
-
-  await chamar("POST", "/webhook", {
-    action: "add",
-    url,
-    events: ["history"],
-    excludeMessages: [],
-    enabled: true,
-  });
-  return { criado: true, ja_existia: false };
+  return await garantirWebhookAdicional({ url, events: ["history"] });
 }
 
 // ————————————————————————————————————————————————————————————————
@@ -637,11 +812,14 @@ export async function buscarFotoPerfil(numeroOuJid: string): Promise<string | nu
 // conversa pelo celular (fromMe): o webhook não traz o nome do destinatário,
 // mas este endpoint devolve o pushname/nome salvo. Retorna null se não houver
 // nome utilizável (ignora vazio e valores puramente numéricos = telefone).
-export async function buscarNomeContato(numero: string): Promise<string | null> {
+export async function buscarNomeContato(
+  numero: string,
+  instancia?: Instancia,
+): Promise<string | null> {
   try {
     const r = (await chamar("POST", "/chat/details", {
       number: soDigitos(numero),
-    })) as Record<string, unknown>;
+    }, { instancia })) as Record<string, unknown>;
     const candidatos = [r.name, r.wa_name, r.wa_contactName, r.lead_fullName, r.lead_name];
     for (const v of candidatos) {
       if (typeof v === "string" && v.trim() && !/^\+?\d[\d\s-]*$/.test(v.trim())) {

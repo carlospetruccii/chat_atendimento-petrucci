@@ -6,6 +6,9 @@ import {
   type InboxMessage,
 } from "@/lib/inbox-queries";
 
+/** Altura do cabeçalho flutuante da conversa (pt-[5.25rem]) + folga. */
+const ALTURA_CABECALHO_PX = 96;
+
 interface UseChatHistoryParams {
   atendimentoIds: string[];
   enabled: boolean;
@@ -17,6 +20,9 @@ interface UseChatHistoryResult {
   isLoadingMore: boolean;
   hasMore: boolean;
   error: Error | null;
+  loadMoreError: Error | null;
+  retryInitial: () => void;
+  retryLoadMore: () => void;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   topSentinelRef: React.RefObject<HTMLDivElement | null>;
   bottomRef: React.RefObject<HTMLDivElement | null>;
@@ -24,14 +30,17 @@ interface UseChatHistoryResult {
   scrollToBottom: (smooth?: boolean) => void;
   newBelow: number;
   clearNewBelow: () => void;
+  /** Põe na tela uma mensagem que ESTE cliente acabou de gravar no banco. */
+  ingestMessage: (messageId: string) => Promise<void>;
   onRealtimeInsert: (messageId: string, atendimentoId: string) => void;
   onRealtimeUpdate: (messageId: string, atendimentoId: string) => void;
+  onRealtimeDelete: (messageId: string) => void;
 }
 
 const PAGE_SIZE = 50;
 const NEAR_BOTTOM_THRESHOLD_PX = 80;
 
-function dedupeAndSort(prev: InboxMessage[], incoming: InboxMessage[]): InboxMessage[] {
+export function dedupeAndSort(prev: InboxMessage[], incoming: InboxMessage[]): InboxMessage[] {
   if (incoming.length === 0) return prev;
   const map = new Map<string, InboxMessage>();
   for (const m of prev) map.set(m.id, m);
@@ -50,7 +59,9 @@ export function useChatHistory({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<Error | null>(null);
   const [newBelow, setNewBelow] = useState(0);
+  const [reloadGeneration, setReloadGeneration] = useState(0);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
@@ -64,6 +75,10 @@ export function useChatHistory({
   messagesRef.current = messages;
   const loadedIslandsRef = useRef<Set<string>>(new Set());
   const prependAdjustRef = useRef<{ prevHeight: number } | null>(null);
+  const loadMoreBlockedRef = useRef(false);
+  const historyGenerationRef = useRef(0);
+  const loadMoreRequestRef = useRef(0);
+  const loadMoreInFlightRef = useRef(false);
 
   const isNearBottom = (): boolean => {
     const el = scrollContainerRef.current;
@@ -78,19 +93,31 @@ export function useChatHistory({
   }, []);
 
   const clearNewBelow = useCallback(() => setNewBelow(0), []);
+  const retryInitial = useCallback(() => setReloadGeneration((generation) => generation + 1), []);
 
   // Carga inicial sempre que muda o conjunto de atendimentos.
   useEffect(() => {
+    const generation = ++historyGenerationRef.current;
+    loadMoreRequestRef.current += 1;
+    loadMoreInFlightRef.current = false;
+    setIsLoadingMore(false);
+    prependAdjustRef.current = null;
+
     if (!enabled || atendimentoIds.length === 0) {
       setMessages([]);
       setHasMore(false);
       setIsLoadingInitial(false);
+      setError(null);
+      setLoadMoreError(null);
+      loadMoreBlockedRef.current = false;
       loadedIslandsRef.current = new Set();
       return;
     }
     let cancelled = false;
     setIsLoadingInitial(true);
     setError(null);
+    setLoadMoreError(null);
+    loadMoreBlockedRef.current = false;
     setMessages([]);
     loadedIslandsRef.current = new Set();
     (async () => {
@@ -114,9 +141,14 @@ export function useChatHistory({
     })();
     return () => {
       cancelled = true;
+      if (historyGenerationRef.current === generation) {
+        historyGenerationRef.current += 1;
+        loadMoreRequestRef.current += 1;
+        loadMoreInFlightRef.current = false;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, enabled]);
+  }, [idsKey, enabled, reloadGeneration]);
 
   // Mantém posição visual ao prepend de página antiga.
   useLayoutEffect(() => {
@@ -132,28 +164,48 @@ export function useChatHistory({
     prependAdjustRef.current = null;
   }, [messages]);
 
-  const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMore) return;
-    const oldest = messagesRef.current[0]?.createdAt;
-    if (!oldest) return;
-    setIsLoadingMore(true);
-    try {
-      const el = scrollContainerRef.current;
-      prependAdjustRef.current = el ? { prevHeight: el.scrollHeight } : null;
-      const { messages: older, hasMore: more } = await listInboxMessagesPage({
-        atendimentoIds: idsRef.current,
-        beforeCreatedAt: oldest,
-        limit: PAGE_SIZE,
-      });
-      setMessages((prev) => dedupeAndSort(prev, older));
-      setHasMore(more);
-    } catch (e) {
-      prependAdjustRef.current = null;
-      setError(e as Error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [isLoadingMore, hasMore]);
+  const loadMore = useCallback(
+    async (force = false) => {
+      if (loadMoreBlockedRef.current && !force) return;
+      if (loadMoreInFlightRef.current || !hasMore) return;
+      const oldest = messagesRef.current[0]?.createdAt;
+      if (!oldest) return;
+
+      const generation = historyGenerationRef.current;
+      const requestId = ++loadMoreRequestRef.current;
+      const atendimentoIdsSnapshot = [...idsRef.current];
+      const requestIsCurrent = () =>
+        generation === historyGenerationRef.current && requestId === loadMoreRequestRef.current;
+
+      loadMoreInFlightRef.current = true;
+      setIsLoadingMore(true);
+      setLoadMoreError(null);
+      loadMoreBlockedRef.current = false;
+      try {
+        const el = scrollContainerRef.current;
+        prependAdjustRef.current = el ? { prevHeight: el.scrollHeight } : null;
+        const { messages: older, hasMore: more } = await listInboxMessagesPage({
+          atendimentoIds: atendimentoIdsSnapshot,
+          beforeCreatedAt: oldest,
+          limit: PAGE_SIZE,
+        });
+        if (!requestIsCurrent()) return;
+        setMessages((prev) => dedupeAndSort(prev, older));
+        setHasMore(more);
+      } catch (e) {
+        if (!requestIsCurrent()) return;
+        prependAdjustRef.current = null;
+        loadMoreBlockedRef.current = true;
+        setLoadMoreError(e as Error);
+      } finally {
+        if (requestIsCurrent()) {
+          loadMoreInFlightRef.current = false;
+          setIsLoadingMore(false);
+        }
+      }
+    },
+    [hasMore],
+  );
 
   // IntersectionObserver no topo.
   useEffect(() => {
@@ -194,12 +246,11 @@ export function useChatHistory({
     // Aguarda paint para garantir que o anchor existe.
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     const root = scrollContainerRef.current;
-    const anchor = root?.querySelector<HTMLElement>(
-      `[data-atendimento-anchor="${atendimentoId}"]`,
-    );
+    const anchor = root?.querySelector<HTMLElement>(`[data-atendimento-anchor="${atendimentoId}"]`);
     if (anchor && root) {
-      const offsetTop = anchor.offsetTop - root.offsetTop;
-      root.scrollTo({ top: offsetTop - 16, behavior: "smooth" });
+      // O cabeçalho da conversa flutua por cima do topo da lista (absolute),
+      // então a âncora precisa parar abaixo dele, não colada na borda.
+      root.scrollTo({ top: anchor.offsetTop - ALTURA_CABECALHO_PX, behavior: "smooth" });
     }
   }, []);
 
@@ -230,6 +281,40 @@ export function useChatHistory({
   );
 
   /**
+   * Põe na tela uma mensagem que ESTE cliente acabou de gravar no banco.
+   *
+   * Existe porque o envio dependia 100% do evento de realtime voltar: `doSend`
+   * inseria a linha e torcia para o INSERT chegar de volta. Quando não chegava
+   * — ou chegava e era barrado pelo portão de `atendimentoIds`, ou apagado pela
+   * sobrescrita da carga inicial — a mensagem só aparecia depois de recarregar,
+   * embora já estivesse salva. Aqui o remetente não espera notícia de si mesmo.
+   *
+   * Não repete a checagem de `atendimentoIds` do caminho de realtime: a
+   * mensagem é de quem está com a conversa aberta, por definição está em cena.
+   *
+   * O eco do realtime chega depois com o MESMO id; `dedupeAndSort` indexa por
+   * id, então ele substitui a linha em vez de duplicá-la — e o próprio
+   * `handleRealtimeInsert` já sai cedo quando o id está na lista.
+   */
+  const ingestMessage = useCallback(
+    async (messageId: string) => {
+      if (messagesRef.current.some((m) => m.id === messageId)) return;
+      try {
+        const m = await fetchMessageById(messageId);
+        if (!m) return;
+        setMessages((prev) => dedupeAndSort(prev, [m]));
+        // Sempre rola: é a mensagem de quem está digitando, não de terceiro.
+        requestAnimationFrame(() => scrollToBottom(true));
+      } catch {
+        // NUNCA propaga: quem chama está no try/catch do envio, e um erro aqui
+        // faria a tela acusar "não foi possível enviar" para uma mensagem que
+        // JÁ está gravada. Falhando aqui, sobra o eco do realtime.
+      }
+    },
+    [scrollToBottom],
+  );
+
+  /**
    * Atualiza mensagens já renderizadas quando o backend completa o download da mídia
    * e grava `media_metadata.storage_path`.
    */
@@ -245,12 +330,32 @@ export function useChatHistory({
     }
   }, []);
 
+  /**
+   * Remove da tela uma mensagem que saiu do banco.
+   *
+   * DELETE em `mensagens` é raro (o trigger block_mensagem_delete só libera para
+   * service_role), mas existe: ao editar, o eco da própria edição pode chegar
+   * pelo webhook antes do UPDATE e criar uma linha duplicada, que a edge function
+   * então remove. Sem este handler a bolha duplicada ficava na tela até a
+   * conversa ser recarregada do zero, porque INSERT já a tinha pintado.
+   *
+   * Não filtra por atendimento: o payload de DELETE do Postgres só traz a chave
+   * primária (replica identity default), então a checagem é "está na lista?".
+   */
+  const handleRealtimeDelete = useCallback((messageId: string) => {
+    if (!messagesRef.current.some((m) => m.id === messageId)) return;
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+  }, []);
+
   return {
     messages,
     isLoadingInitial,
     isLoadingMore,
     hasMore,
     error,
+    loadMoreError,
+    retryInitial,
+    retryLoadMore: () => void loadMore(true),
     scrollContainerRef,
     topSentinelRef,
     bottomRef,
@@ -258,7 +363,9 @@ export function useChatHistory({
     scrollToBottom,
     newBelow,
     clearNewBelow,
+    ingestMessage,
     onRealtimeInsert: handleRealtimeInsert,
     onRealtimeUpdate: handleRealtimeUpdate,
+    onRealtimeDelete: handleRealtimeDelete,
   };
 }

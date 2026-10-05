@@ -5,7 +5,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0
 import { log } from "../_shared/logger.ts";
 import { candidatasParaAdocao, type CandidataEco, type EcoRecebido } from "./eco-logic.ts";
 
-const FUNCAO = "webhook-zapi-receive";
+const FUNCAO_PADRAO = "webhook-zapi-receive";
 
 // Janela de busca: o eco chega em segundos; 10 min cobre com folga uma fila
 // lenta sem abrir espaço para casar com mensagem antiga.
@@ -27,15 +27,25 @@ export function aguardarAssentarEco(): Promise<void> {
 
 export interface AdotarEcoParams {
   supabase: SupabaseClient;
-  /** "mensagens" (chat individual) ou "grupo_mensagens". */
-  tabela: "mensagens" | "grupo_mensagens";
+  /** "mensagens" (chat individual), "grupo_mensagens" ou "docs_mensagens". */
+  tabela: "mensagens" | "grupo_mensagens" | "docs_mensagens";
   /** Coluna que guarda o id da uazapi na tabela acima. */
   colunaMessageId: "zapi_message_id" | "uazapi_message_id";
-  /** Escopo da busca: cliente (individual) ou grupo. */
-  escopo: { coluna: "client_id" | "grupo_id"; valor: string };
+  /** Escopo da busca: cliente (individual), grupo ou conversa do Docs. */
+  escopo: { coluna: "client_id" | "grupo_id" | "conversa_id"; valor: string };
   eco: EcoRecebido;
   /** Id da mensagem na uazapi, vindo do eco. */
   messageId: string;
+  /** Nome da função para o log. Padrão: webhook-zapi-receive. */
+  funcao?: string;
+  /** Janela de busca. Padrão: 10 min (Inbox). O Docs usa uma bem mais curta. */
+  janelaMs?: number;
+  /**
+   * Não adota envio que ficou "incerto" (uazapi sem resposta). O Docs liga
+   * isto: numa instância compartilhada, uma linha parada por minutos casaria
+   * com mídia sem legenda do outro sistema.
+   */
+  excluirIncertos?: boolean;
 }
 
 /**
@@ -47,7 +57,8 @@ export interface AdotarEcoParams {
  */
 export async function adotarEcoProprio(p: AdotarEcoParams): Promise<string | null> {
   const { supabase, tabela, colunaMessageId, escopo, eco, messageId } = p;
-  const desde = new Date(Date.now() - JANELA_MS).toISOString();
+  const FUNCAO = p.funcao ?? FUNCAO_PADRAO;
+  const desde = new Date(Date.now() - (p.janelaMs ?? JANELA_MS)).toISOString();
 
   const { data, error } = await supabase
     .from(tabela)
@@ -56,7 +67,9 @@ export async function adotarEcoProprio(p: AdotarEcoParams): Promise<string | nul
     .eq("direction", "outbound")
     .neq("sender_type", "externo")
     // 'falha' fora: envio que falhou não gera eco, e adotá-lo marcaria como
-    // enviada uma mensagem que o cliente nunca recebeu.
+    // enviada uma mensagem que o cliente nunca recebeu. O envio que ficou sem
+    // resposta da uazapi NÃO é 'falha' — fica em 'enviando' com carimbo
+    // (_shared/erro-envio.ts) exatamente para poder ser adotado aqui.
     .neq("status_envio", "falha")
     .is(colunaMessageId, null)
     .gte("created_at", desde)
@@ -76,14 +89,27 @@ export async function adotarEcoProprio(p: AdotarEcoParams): Promise<string | nul
     return null;
   }
 
-  const candidatas = candidatasParaAdocao((data ?? []) as CandidataEco[], eco);
+  const linhas = ((data ?? []) as CandidataEco[]).filter(
+    (c) => !p.excluirIncertos || !(c.media_metadata ?? {}).envio_incerto_em,
+  );
+  const candidatas = candidatasParaAdocao(linhas, eco);
 
   for (const c of candidatas) {
+    // O carimbo de envio incerto sai junto: a mensagem saiu, e deixá-lo para
+    // trás sujaria o metadata sem servir para nada.
+    const meta = { ...(c.media_metadata ?? {}) };
+    delete meta.envio_incerto_em;
+    delete meta.envio_incerto_motivo;
+
     // Condicional (`is null`): se outro eco concorrente adotou primeiro, esta
     // atualização não pega nada e seguimos para a próxima candidata.
     const { data: adotada } = await supabase
       .from(tabela)
-      .update({ [colunaMessageId]: messageId, status_envio: "enviado" })
+      .update({
+        [colunaMessageId]: messageId,
+        status_envio: "enviado",
+        media_metadata: Object.keys(meta).length > 0 ? meta : null,
+      })
       .eq("id", c.id)
       .is(colunaMessageId, null)
       .select("id")

@@ -10,12 +10,7 @@ import {
   Unplug,
   AlertTriangle,
 } from "lucide-react";
-import {
-  googleAuthUrl,
-  googleDisconnect,
-  googleStatus,
-  googleSync,
-} from "@/lib/contatos-queries";
+import { googleAuthUrl, googleDisconnect, googleStatus, googleSync } from "@/lib/contatos-queries";
 
 function formatarData(iso: string | null): string {
   if (!iso) return "nunca";
@@ -61,11 +56,7 @@ export function GoogleContatosTab() {
     if (g) {
       params.delete("google");
       const q = params.toString();
-      window.history.replaceState(
-        {},
-        "",
-        window.location.pathname + (q ? `?${q}` : ""),
-      );
+      window.history.replaceState({}, "", window.location.pathname + (q ? `?${q}` : ""));
     }
   }, [qc]);
 
@@ -75,8 +66,7 @@ export function GoogleContatosTab() {
       const url = await googleAuthUrl(back);
       window.location.href = url;
     },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Falha ao iniciar a conexão."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao iniciar a conexão."),
   });
 
   const syncM = useMutation({
@@ -109,14 +99,14 @@ export function GoogleContatosTab() {
   return (
     <div className="max-w-2xl">
       <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent">
           <BookUser className="h-5 w-5 text-primary" strokeWidth={1.75} />
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">Contatos do Google</h2>
           <p className="text-sm text-muted-foreground">
-            Conecte a conta Google da Almore para trazer os contatos salvos. O nome
-            salvo no contato aparece no Inbox no lugar do número.
+            Conecte a conta Google da Almore para trazer os contatos salvos. O nome salvo no contato
+            aparece no Inbox no lugar do número.
           </p>
         </div>
       </div>
@@ -132,12 +122,11 @@ export function GoogleContatosTab() {
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-            <div>
+            <div className="min-w-0">
               <h3 className="text-base font-semibold">Integração ainda não configurada</h3>
               <p className="mt-1 text-sm">
-                As credenciais do Google (Client ID e Client Secret) ainda não foram
-                cadastradas no servidor. Assim que forem, o botão “Conectar Google”
-                ficará disponível aqui.
+                As credenciais do Google (Client ID e Client Secret) ainda não foram cadastradas no
+                servidor. Assim que forem, o botão “Conectar Google” ficará disponível aqui.
               </p>
             </div>
           </div>
@@ -148,17 +137,20 @@ export function GoogleContatosTab() {
       {!statusQ.isLoading && !naoConfig && conectado && (
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-6 w-6 text-emerald-500" />
-            <div>
+            <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" />
+            <div className="min-w-0">
               <h3 className="text-base font-semibold text-foreground">Conectado</h3>
-              <p className="text-sm text-muted-foreground">
+              <p className="break-words text-sm text-muted-foreground">
                 {st?.email ? `${st.email} · ` : ""}
                 {st?.contacts_count ?? 0} contato(s)
               </p>
             </div>
           </div>
 
-          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          {/* Celular: 2 colunas de definição ficam apertadas em 360px
+              ("Última sincronização" + data já quase não cabe). 1 coluna
+              até sm:, 2 a partir daí. */}
+          <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs text-muted-foreground">Última sincronização</dt>
               <dd className="text-foreground">{formatarData(st?.last_sync_at ?? null)}</dd>
@@ -185,17 +177,20 @@ export function GoogleContatosTab() {
 
           {(st?.contacts_count ?? 0) === 0 && st?.last_sync_status !== "erro" && (
             <p className="mt-3 text-sm text-muted-foreground">
-              Nenhum contato ainda — se a lista de contatos do Google estiver vazia, isto é
-              normal. Assim que você adicionar contatos no Google, eles aparecem aqui sozinhos.
+              Nenhum contato ainda — se a lista de contatos do Google estiver vazia, isto é normal.
+              Assim que você adicionar contatos no Google, eles aparecem aqui sozinhos.
             </p>
           )}
 
-          <div className="mt-6 flex flex-wrap gap-2">
+          {/* Celular: botões empilham em largura cheia — "Atualizar agora" +
+              "Desconectar" lado a lado quase não sobrava espaço em telas
+              pequenas (320-360px). */}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <button
               type="button"
               onClick={() => syncM.mutate()}
               disabled={syncM.isPending}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
             >
               {syncM.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -208,7 +203,7 @@ export function GoogleContatosTab() {
               type="button"
               onClick={() => disconnectM.mutate()}
               disabled={disconnectM.isPending}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50 sm:w-auto"
             >
               {disconnectM.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -224,18 +219,16 @@ export function GoogleContatosTab() {
       {/* Desconectado (mas configurado) */}
       {!statusQ.isLoading && !naoConfig && !conectado && (
         <div className="rounded-2xl border border-border bg-card p-6">
-          <h3 className="text-base font-semibold text-foreground">
-            Conecte os contatos do Google
-          </h3>
+          <h3 className="text-base font-semibold text-foreground">Conecte os contatos do Google</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Você entra com a conta Google da Almore e autoriza a leitura dos contatos.
-            A partir daí, a lista sincroniza sozinha.
+            Você entra com a conta Google da Almore e autoriza a leitura dos contatos. A partir daí,
+            a lista sincroniza sozinha.
           </p>
           <button
             type="button"
             onClick={() => connectM.mutate()}
             disabled={connectM.isPending}
-            className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
           >
             {connectM.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />

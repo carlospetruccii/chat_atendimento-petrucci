@@ -18,7 +18,7 @@ export interface ResultadoPosEnvio {
 
 export async function gravarIdPosEnvio(p: {
   supabase: SupabaseClient;
-  tabela: "mensagens" | "grupo_mensagens";
+  tabela: "mensagens" | "grupo_mensagens" | "docs_mensagens";
   colunaMessageId: "zapi_message_id" | "uazapi_message_id";
   mensagemId: string;
   messageId: string | null;

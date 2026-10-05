@@ -206,7 +206,7 @@ export function OperacaoTab() {
       {/* Bloco 1 — Estado do bot */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <h3 className="text-base font-semibold text-foreground">Estado do bot</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Kill switch global. Quando desligado, toda a automação para imediatamente.
@@ -241,10 +241,9 @@ export function OperacaoTab() {
         <div className="mt-4 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
           <p className="font-medium text-foreground">O que acontece ao religar</p>
           <p className="mt-1">
-            Ao religar, o bot ignora as mensagens que chegaram enquanto estava
-            desligado. Esse estoque continua visível na inbox para atendimento
-            humano. Mensagens novas, recebidas após a religação, voltam a ser
-            triadas normalmente.
+            Ao religar, o bot ignora as mensagens que chegaram enquanto estava desligado. Esse
+            estoque continua visível na inbox para atendimento humano. Mensagens novas, recebidas
+            após a religação, voltam a ser triadas normalmente.
           </p>
           {cfg.bot_ativado_em && (
             <p className="mt-2 text-xs">
@@ -260,11 +259,9 @@ export function OperacaoTab() {
       {/* Bloco 1.5 — Modo emergência: pendentes abertos a todos */}
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold text-foreground">
-                Pendentes abertos a todos
-              </h3>
+              <h3 className="text-base font-semibold text-foreground">Pendentes abertos a todos</h3>
               {cfg.pendentes_abertos_a_todos && (
                 <Badge className="bg-amber-200 text-amber-900 hover:bg-amber-200">
                   modo emergência ativo
@@ -272,9 +269,9 @@ export function OperacaoTab() {
               )}
             </div>
             <p className="mt-1 text-sm text-amber-800">
-              Quando ligado, qualquer atendente vê todos os pendentes do sistema —
-              inclusive de outros departamentos e os sem departamento. Use enquanto
-              a triagem automática estiver desligada.
+              Quando ligado, qualquer atendente vê todos os pendentes do sistema — inclusive de
+              outros departamentos e os sem departamento. Use enquanto a triagem automática estiver
+              desligada.
             </p>
           </div>
           <Switch
@@ -295,16 +292,15 @@ export function OperacaoTab() {
       {/* Bloco 1.7 — Reiniciar triagem ao virar o dia */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h3 className="text-base font-semibold text-foreground">
               Reiniciar triagem ao virar o dia
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Quando ligado, se uma triagem ficou sem resposta e o cliente
-              voltar a mandar mensagem em outra data (fuso de São Paulo), o
-              atendimento antigo é encerrado automaticamente e a triagem
-              recomeça — bot dispara boas-vindas + pergunta de departamento de
-              novo. Não afeta atendimentos já em andamento.
+              Quando ligado, se uma triagem ficou sem resposta e o cliente voltar a mandar mensagem
+              em outra data (fuso de São Paulo), o atendimento antigo é encerrado automaticamente e
+              a triagem recomeça — bot dispara boas-vindas + pergunta de departamento de novo. Não
+              afeta atendimentos já em andamento.
             </p>
           </div>
           <Switch
@@ -319,14 +315,13 @@ export function OperacaoTab() {
       {/* Bloco 1.8 — Lembrete na triagem sem resposta */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h3 className="text-base font-semibold text-foreground">
               Lembrete na triagem sem resposta
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Quando ligado, se o cliente não responder a pergunta de
-              departamento dentro do tempo configurado, o bot envia
-              um único lembrete pedindo que responda. Só dispara em horário
+              Quando ligado, se o cliente não responder a pergunta de departamento dentro do tempo
+              configurado, o bot envia um único lembrete pedindo que responda. Só dispara em horário
               comercial. O texto fica em Configurações → Templates →{" "}
               <em>Lembrete na triagem sem resposta</em>.
             </p>
@@ -370,9 +365,7 @@ export function OperacaoTab() {
               parseInt(lembreteMin, 10) === cfg.triagem_lembrete_minutos
             }
           >
-            {saveLembreteMinMut.isPending && (
-              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-            )}
+            {saveLembreteMinMut.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
             Salvar tempo
           </Button>
         </div>
@@ -381,17 +374,16 @@ export function OperacaoTab() {
       {/* Bloco 1.9 — Aviso ao colaborador quando cai um pendente */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h3 className="text-base font-semibold text-foreground">
               Avisar colaboradores de novos pendentes
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Quando ligado, sempre que um cliente cai como pendente em um
-              departamento, o sistema manda uma mensagem no WhatsApp pessoal de
-              todos os colaboradores ativos daquele departamento avisando que há
-              cliente para atender. O administrador não recebe (ele já é avisado
-              quando o atendimento atrasa). O texto fica em Configurações →
-              Templates → <em>Aviso ao colaborador (novo pendente)</em>.
+              Quando ligado, sempre que um cliente cai como pendente em um departamento, o sistema
+              manda uma mensagem no WhatsApp pessoal de todos os colaboradores ativos daquele
+              departamento avisando que há cliente para atender. O administrador não recebe (ele já
+              é avisado quando o atendimento atrasa). O texto fica em Configurações → Templates →{" "}
+              <em>Aviso ao colaborador (novo pendente)</em>.
             </p>
           </div>
           <Switch
@@ -406,8 +398,7 @@ export function OperacaoTab() {
           <div className="mt-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
             <AlertTriangle className="h-5 w-5 shrink-0" strokeWidth={2} />
             <div className="font-medium">
-              Avisos pausados — o bot está desligado. Eles voltam assim que o bot
-              for religado.
+              Avisos pausados — o bot está desligado. Eles voltam assim que o bot for religado.
             </div>
           </div>
         )}
@@ -416,17 +407,16 @@ export function OperacaoTab() {
       {/* Bloco 1.95 — Encerramento automático por inatividade */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h3 className="text-base font-semibold text-foreground">
               Encerrar atendimentos parados por inatividade
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Quando ligado, todo atendimento reservado ou em andamento que ficar
-              o tempo configurado sem nenhuma mensagem (de lado nenhum) é
-              encerrado sozinho, em silêncio — o cliente não recebe aviso. Ajuste
-              o tempo em Configurações → Tempos →{" "}
-              <em>Encerrar atendimento parado por inatividade</em>. Desligado, o
-              atendimento só encerra quando o atendente encerra na mão.
+              Quando ligado, todo atendimento reservado ou em andamento que ficar o tempo
+              configurado sem nenhuma mensagem (de lado nenhum) é encerrado sozinho, em silêncio — o
+              cliente não recebe aviso. Ajuste o tempo em Configurações → Tempos →{" "}
+              <em>Encerrar atendimento parado por inatividade</em>. Desligado, o atendimento só
+              encerra quando o atendente encerra na mão.
             </p>
           </div>
           <Switch
@@ -441,8 +431,8 @@ export function OperacaoTab() {
           <div className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-muted p-4 text-sm text-muted-foreground">
             <XCircle className="h-5 w-5 shrink-0" strokeWidth={2} />
             <div className="font-medium">
-              Só encerramento manual — nenhum atendimento é fechado
-              automaticamente por falta de mensagem.
+              Só encerramento manual — nenhum atendimento é fechado automaticamente por falta de
+              mensagem.
             </div>
           </div>
         )}
@@ -456,10 +446,9 @@ export function OperacaoTab() {
               Ligar modo emergência?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Isso libera a leitura cruzada de <strong>pendentes</strong> entre
-              departamentos. Conversas sensíveis de outros departamentos
-              (Contábil, DP, etc.) ficarão visíveis para qualquer atendente até
-              alguém atendê-las. Mensagens de atendimentos já em andamento
+              Isso libera a leitura cruzada de <strong>pendentes</strong> entre departamentos.
+              Conversas sensíveis de outros departamentos (Contábil, DP, etc.) ficarão visíveis para
+              qualquer atendente até alguém atendê-las. Mensagens de atendimentos já em andamento
               continuam isoladas. Desligue assim que a triagem voltar.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -482,20 +471,21 @@ export function OperacaoTab() {
           Bot será religado automaticamente nesta data pelo cron de reativação.
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        {/* Celular: botão de data e ações de agendamento empilham em largura
+            cheia — os 260px fixos do botão de data já tomavam quase toda a
+            tela em 360px, sem sobrar espaço pros botões de ação ao lado. */}
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 className={cn(
-                  "w-[260px] justify-start text-left font-normal",
+                  "w-full justify-start text-left font-normal sm:w-[260px]",
                   !date && "text-muted-foreground",
                 )}
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {date
-                  ? format(date, "PPP", { locale: ptBR })
-                  : "Selecione uma data"}
+                {date ? format(date, "PPP", { locale: ptBR }) : "Selecione uma data"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -511,9 +501,8 @@ export function OperacaoTab() {
           </Popover>
 
           <Button
-            onClick={() =>
-              date && saveDateMut.mutate(format(date, "yyyy-MM-dd"))
-            }
+            className="w-full sm:w-auto"
+            onClick={() => date && saveDateMut.mutate(format(date, "yyyy-MM-dd"))}
             disabled={!date || saveDateMut.isPending}
           >
             {saveDateMut.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
@@ -523,6 +512,7 @@ export function OperacaoTab() {
           {cfg.bot_ativacao_programada && (
             <Button
               variant="outline"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setDate(undefined);
                 saveDateMut.mutate(null);

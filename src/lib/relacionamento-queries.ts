@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { DashboardRange } from "./dashboard-queries";
+import { SEM_FILTRO, type DashboardFiltros } from "./dashboard-filtros";
 import type { FaixaHistograma, Iniciativa, Transferencias } from "./relacionamento-format";
 
 /**
@@ -39,49 +40,15 @@ export interface Peregrinacao {
   quando: string;
 }
 
-export interface ContaReativa {
-  client_id: string;
-  cliente: string | null;
-  conversas: number;
-  pct_cliente: number | string;
-}
-
-export interface QuedaEngajamento {
-  client_id: string;
-  cliente: string | null;
-  agora: number;
-  antes: number;
-  delta_pct: number | string;
-  dias_sem_contato: number;
-}
-
-export interface Engajamento {
-  janela_dias: number;
-  /** true quando o RPC encurtou a régua por falta de histórico anterior. */
-  janela_reduzida: boolean;
-  baseline_min: number;
-  limite_queda_pct: number | string;
-  clientes_avaliados: number;
-  em_queda: number;
-  msgs_agora: number;
-  msgs_antes: number;
-  quedas: QuedaEngajamento[];
-}
-
 export interface TransferenciasCompletas extends Transferencias {
   distribuicao: FaixaHistograma[];
   peregrinacoes: Peregrinacao[];
 }
 
-export interface IniciativaCompleta extends Iniciativa {
-  contas_reativas: ContaReativa[];
-}
-
 export interface RelacionamentoData {
   primeira_resposta: PrimeiraResposta;
   transferencias: TransferenciasCompletas;
-  iniciativa: IniciativaCompleta;
-  engajamento: Engajamento;
+  iniciativa: Iniciativa;
 }
 
 function num(valor: unknown, padrao = 0): number {
@@ -112,7 +79,6 @@ export function normalizarRelacionamento(bruto: unknown): RelacionamentoData {
   const pr = objeto(raiz.primeira_resposta);
   const tr = objeto(raiz.transferencias);
   const ini = objeto(raiz.iniciativa);
-  const eng = objeto(raiz.engajamento);
 
   const pior = objeto(pr.pior);
   const temPior = typeof pior.atendimento_id === "string";
@@ -164,38 +130,22 @@ export function normalizarRelacionamento(bruto: unknown): RelacionamentoData {
       empresa_pelo_sistema: num(ini.empresa_pelo_sistema),
       empresa_fora_do_sistema: num(ini.empresa_fora_do_sistema),
       sem_mensagem: num(ini.sem_mensagem),
-      contas_reativas: lista<ContaReativa>(ini.contas_reativas).map((c) => ({
-        client_id: String(c?.client_id ?? ""),
-        cliente: typeof c?.cliente === "string" ? c.cliente : null,
-        conversas: num(c?.conversas),
-        pct_cliente: num(c?.pct_cliente),
-      })),
-    },
-    engajamento: {
-      janela_dias: num(eng.janela_dias, 30),
-      janela_reduzida: eng.janela_reduzida === true,
-      baseline_min: num(eng.baseline_min, 5),
-      limite_queda_pct: num(eng.limite_queda_pct, -50),
-      clientes_avaliados: num(eng.clientes_avaliados),
-      em_queda: num(eng.em_queda),
-      msgs_agora: num(eng.msgs_agora),
-      msgs_antes: num(eng.msgs_antes),
-      quedas: lista<QuedaEngajamento>(eng.quedas).map((q) => ({
-        client_id: String(q?.client_id ?? ""),
-        cliente: typeof q?.cliente === "string" ? q.cliente : null,
-        agora: num(q?.agora),
-        antes: num(q?.antes),
-        delta_pct: num(q?.delta_pct),
-        dias_sem_contato: num(q?.dias_sem_contato),
-      })),
     },
   };
 }
 
-export async function fetchRelacionamento(range: DashboardRange): Promise<RelacionamentoData> {
+export async function fetchRelacionamento(
+  range: DashboardRange,
+  filtros: DashboardFiltros = SEM_FILTRO,
+): Promise<RelacionamentoData> {
+  // Manda os 4 parâmetros SEMPRE, mesmo null: omitir cairia na versão antiga
+  // de 2 argumentos (ou em nenhuma, se só um vier). null = "todos".
+  // O cast é porque os tipos gerados declaram uuid como string não-nula.
   const { data, error } = await supabase.rpc("dashboard_relacionamento", {
     p_from: range.from,
     p_to: range.to,
+    p_department_id: filtros.departmentId as string,
+    p_user_id: filtros.userId as string,
   });
 
   if (error) throw error;

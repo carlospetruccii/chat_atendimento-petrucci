@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Mic, Send } from "lucide-react";
+import { ChevronLeft, Loader2, Mic, Send } from "lucide-react";
 import { toast } from "sonner";
 import {
   enviarMensagemInterna,
@@ -29,6 +29,9 @@ interface Props {
   conversa: ConversaInterna;
   meuUserId: string;
   formatTime: (iso: string | null) => string;
+  /** Volta para a lista no celular (o pai zera a seleção). Sem efeito no
+   * desktop, onde lista e conversa convivem lado a lado. */
+  onVoltar: () => void;
   /** Entrega ao pai o callback de INSERT do canal Realtime (que vive lá). */
   registrarRealtime: (cbs: { onInsert: (messageId: string, conversaId: string) => void }) => void;
 }
@@ -43,7 +46,13 @@ interface Props {
  * falando (grupo) ou histórico de ticket. Numa conversa entre duas pessoas o
  * contexto é a própria conversa.
  */
-export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarRealtime }: Props) {
+export function EquipeChatPanel({
+  conversa,
+  meuUserId,
+  formatTime,
+  onVoltar,
+  registrarRealtime,
+}: Props) {
   const queryClient = useQueryClient();
   const composerRef = useRef<RichMessageComposerHandle>(null);
   const [hasDraft, setHasDraft] = useState(false);
@@ -225,7 +234,17 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
   return (
     <>
       {/* Cabeçalho */}
-      <div className="flex items-center gap-3 border-b border-border bg-card px-6 py-3">
+      <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3 sm:gap-3 sm:px-6">
+        {/* Só existe no celular: sem ele quem abre uma conversa fica preso nela,
+            porque lista e conversa não convivem em telas estreitas. */}
+        <button
+          type="button"
+          onClick={onVoltar}
+          aria-label="Voltar para a lista de conversas"
+          className="touch-target-mobile -ml-1 flex shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-primary md:hidden"
+        >
+          <ChevronLeft className="h-5 w-5" strokeWidth={1.8} />
+        </button>
         <span className="relative shrink-0">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-sm font-medium text-primary">
             {iniciaisDoNome(conversa.outroNome)}
@@ -251,7 +270,10 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
       </div>
 
       {/* Mensagens */}
-      <div ref={chat.scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-4">
+      <div
+        ref={chat.scrollContainerRef}
+        className="scroll-contain flex-1 overflow-y-auto p-3 sm:p-6"
+      >
         <div ref={chat.topSentinelRef} />
         {chat.isLoadingMore && (
           <div className="flex justify-center py-2">
@@ -292,15 +314,20 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
                   item.colada ? "mt-1" : "mt-3"
                 }`}
               >
+                {/* min-w-0 (em vez de min-w-fit): a bolha pode encolher abaixo do
+                    conteúdo quando precisa, senão força rolagem horizontal no
+                    celular antes do texto ter a chance de quebrar linha.
+                    max-w-[min(85%,75ch)]: nunca mais larga que 85% da coluna
+                    (celular) nem mais larga que 75ch (desktop) — o que for menor. */}
                 <div
-                  className={`min-w-fit max-w-[75ch] rounded-lg px-3 py-2 text-sm shadow-sm ${
+                  className={`min-w-0 max-w-[min(85%,75ch)] rounded-lg px-3 py-2 text-sm shadow-sm ${
                     item.minha
                       ? "bg-[var(--chat-sent)] text-[var(--chat-sent-foreground)]"
                       : "bg-[var(--chat-received)] text-[var(--chat-received-foreground)]"
                   }`}
                 >
                   {m.tipo === "texto" ? (
-                    <p className="whitespace-pre-wrap break-words">
+                    <p className="whitespace-pre-wrap break-anywhere">
                       {formatWhatsAppText(m.content)}
                     </p>
                   ) : (
@@ -335,7 +362,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
       </div>
 
       {/* Composer */}
-      <div className="border-t border-border bg-card p-4">
+      <div className="px-4 pb-4 pt-2">
         {recorder.state !== "idle" || recordedAudio ? (
           <AudioRecorderBar
             state={recorder.state}
@@ -356,7 +383,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
             onTranscribe={handleTranscribeRecorded}
           />
         ) : (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+          <div className="flex items-center gap-2 rounded-3xl border border-border bg-background px-3 py-2 shadow-sm">
             <AttachMenu
               disabled={sending}
               onPick={handleAttachPick}
@@ -386,7 +413,7 @@ export function EquipeChatPanel({ conversa, meuUserId, formatTime, registrarReal
             <button
               onClick={handleSend}
               disabled={sending || !hasDraft}
-              className="rounded-md bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              className="touch-target-mobile inline-flex items-center justify-center rounded-full bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               aria-label="Enviar mensagem"
             >
               {sending ? (

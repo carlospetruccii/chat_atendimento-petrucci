@@ -54,14 +54,20 @@ import {
 } from "@/lib/pendentes-queries";
 import { MessageMedia } from "@/components/inbox-media/MessageMedia";
 import type { InboxMessage } from "@/lib/inbox-queries";
+import {
+  PendentesFilterSheet,
+  type WaitFilter,
+  type SortBy,
+} from "@/components/pendentes/PendentesFilterSheet";
+import { PendenteRowCard } from "@/components/pendentes/PendenteRowCard";
 
 export const Route = createFileRoute("/_app/pendentes")({
   component: PendentesPage,
 });
 
 type ViewMode = "grid" | "table";
-type WaitFilter = "all" | "lt30" | "30to120" | "gt120";
-type SortBy = "newest" | "longest" | "department";
+// WaitFilter e SortBy moraram para PendentesFilterSheet: a folha do celular
+// e esta rota precisam dos dois tipos exatamente iguais.
 
 function deptBadgeStyle(cor: string): React.CSSProperties {
   return { backgroundColor: `${cor}20`, color: cor };
@@ -217,19 +223,24 @@ function PendentesPage() {
 
   return (
     <>
-      {/* Cabeçalho */}
-      <div className="mb-6 flex items-center justify-between gap-4">
+      {/* Cabeçalho: no celular o alternador Grade/Tabela desce para a
+          própria linha — título + contador + os dois botões com texto não
+          cabem lado a lado em 360px sem espremer. */}
+      <div className="mb-4 flex flex-col gap-3 md:mb-6 md:flex-row md:items-center md:justify-between md:gap-4">
         <div className="flex items-baseline gap-3">
           <h1 className="text-xl font-semibold text-foreground">Pendentes</h1>
           <span className="text-sm text-muted-foreground">
             {filtered.length} {filtered.length === 1 ? "conversa" : "conversas"}
           </span>
         </div>
-        <div className="flex items-center rounded-md bg-[#F3F4F6] p-1">
+        {/* self-start só no celular: impede o pill esticar a largura toda no
+            flex-col. No desktop (md:self-auto) volta a herdar o
+            items-center original do container. */}
+        <div className="flex items-center self-start rounded-md bg-[#F3F4F6] p-1 md:self-auto">
           <button
             type="button"
             onClick={() => setView("grid")}
-            className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded px-3 py-2 text-xs font-medium transition-colors md:py-1.5 ${
               view === "grid" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
             aria-label="Visualização em grade"
@@ -240,7 +251,7 @@ function PendentesPage() {
           <button
             type="button"
             onClick={() => setView("table")}
-            className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded px-3 py-2 text-xs font-medium transition-colors md:py-1.5 ${
               view === "table" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
             aria-label="Visualização em tabela"
@@ -251,8 +262,23 @@ function PendentesPage() {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      {/* Filtros — celular: busca + botão "Filtros" que abre a folha
+          inferior com os 3 selects. */}
+      <PendentesFilterSheet
+        dept={dept}
+        onDeptChange={setDept}
+        departments={departments}
+        isSuperadmin={isSuperadmin}
+        wait={wait}
+        onWaitChange={setWait}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
+        search={search}
+        onSearchChange={setSearch}
+        resultCount={filtered.length}
+      />
+      {/* Filtros — desktop: barra horizontal original, inalterada. */}
+      <div className="mb-6 hidden flex-wrap items-center gap-3 md:flex">
         <div className="relative">
           <Select value={dept} onValueChange={setDept} disabled={!isSuperadmin}>
             <SelectTrigger className="w-[200px] bg-card">
@@ -384,7 +410,24 @@ function PendentesPage() {
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border border-border bg-card shadow-sm overflow-hidden animate-in fade-in duration-200">
+        <>
+        {/* Tabela → cartão no celular: 5 colunas com botões de ação não cabem
+            em 360px de forma legível. Cartão e tabela leem a mesma lista
+            `filtered` (já filtrada/ordenada) — só a marcação muda. */}
+        <div className="space-y-2 md:hidden">
+          {filtered.map((c) => (
+            <PendenteRowCard
+              key={c.id}
+              item={c}
+              canAssign={canAssign}
+              isAttending={claimMutation.isPending}
+              onAttend={() => handleAttend(c)}
+              onPreview={() => setPreviewTarget(c)}
+              onAssign={() => setAssignTarget(c)}
+            />
+          ))}
+        </div>
+        <div className="hidden rounded-lg border border-border bg-card shadow-sm overflow-hidden animate-in fade-in duration-200 md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -459,6 +502,7 @@ function PendentesPage() {
             </TableBody>
           </Table>
         </div>
+        </>
       )}
 
       <AssignModal
@@ -578,7 +622,7 @@ function PreviewBubble({ m }: { m: PreviewMessage }) {
             <p className="italic text-muted-foreground">(sem conteúdo)</p>
           )
         ) : (
-          <MessageMedia message={asInbox} />
+          <MessageMedia message={asInbox} escopo="individual" />
         )}
         <div className="mt-1 text-[10px] text-muted-foreground text-right">{time}</div>
       </div>

@@ -62,7 +62,9 @@ function AlmorePage() {
   const workspaces = workspacesQ.data ?? [];
 
   return (
-    <div className="min-h-screen bg-background px-4 py-10">
+    // min-h-dvh, nunca min-h-screen (100vh): no celular o 100vh conta a barra de
+    // endereço do navegador como se estivesse sempre visível.
+    <div className="min-h-dvh bg-background px-4 py-10">
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
           <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0" strokeWidth={1.8} />
@@ -88,7 +90,10 @@ function AlmorePage() {
 
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
           <h2 className="text-base font-semibold text-foreground">Criar novo espaço</h2>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {/* grid-cols-1 explícito: sem isso o "1 coluna no celular" funcionava por
+              acidente (grid sem grid-template-columns cai em 1 coluna implícita) —
+              deixar explícito documenta a intenção mobile-first. */}
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className="mb-1.5 block text-xs font-medium text-foreground">
                 Nome da empresa
@@ -145,7 +150,7 @@ function AlmorePage() {
             <button
               onClick={submit}
               disabled={createMut.isPending}
-              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="touch-target-mobile flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               {createMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Criar espaço
@@ -190,7 +195,7 @@ function AlmorePage() {
                   </div>
                   <a
                     href={`/almore-membros/${w.id}`}
-                    className="flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                    className="touch-target-mobile flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
                   >
                     <Users className="h-3.5 w-3.5" strokeWidth={1.7} /> Gerenciar membros
                   </a>

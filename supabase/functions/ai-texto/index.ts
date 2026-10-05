@@ -1,5 +1,5 @@
 // Edge Function: ai-texto
-// Assistente de escrita do composer (IA do Lovable — ai.gateway.lovable.dev).
+// Assistente de escrita do composer (IA direto na OpenAI).
 //
 // Contrato com o frontend (sempre responde 200 com { ok, texto?, erro? }
 // para o cliente não precisar tratar FunctionsHttpError):
@@ -14,7 +14,8 @@
 // Os dois passos são separados de propósito: juntar transcrição com reescrita
 // fazia a IA "melhorar" o texto e mudar o que o atendente quis dizer.
 //
-// Requer o secret LOVABLE_API_KEY (gerado pelo Lovable para o projeto).
+// Requer o secret API_KEY_OPENAI_TRANSCRIBE, usado nas duas chamadas à OpenAI
+// (transcrição em audio/transcriptions e correção/otimização em chat/completions).
 // JWT é validado pelo gateway do Supabase (verify_jwt padrão).
 
 const CORS_HEADERS = {
@@ -24,16 +25,12 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-const MODELO_CHAT = "google/gemini-3.6-flash";
-const MODELO_TRANSCRICAO = "openai/gpt-4o-transcribe";
+const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_TRANSCRICAO_URL = "https://api.openai.com/v1/audio/transcriptions";
+const MODELO_CHAT = "gpt-5-nano";
+const MODELO_TRANSCRICAO = "gpt-transcribe";
 const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
 const MAX_TEXTO_CHARS = 4000;
-
-// Anexar o áudio no 2º passo custa ~4/3 do tamanho em base64. A gravação do
-// atendente tem segundos; um arquivo grande viraria um pedido de dezenas de MB
-// que o gateway recusa. Acima deste corte a revisão é feita só com o texto.
-const MAX_AUDIO_INLINE_BYTES = 6 * 1024 * 1024;
 
 // Vocabulário do dia a dia da contabilidade: vai no campo `prompt` da
 // transcrição para o modelo não trocar sigla por palavra parecida.
@@ -67,10 +64,12 @@ Use *negrito* só em nomes de sistema/aplicativo, prazos e valores QUE JÁ ESTEJ
 // a pessoa quis dizer — e foi essa a queixa dos atendentes ("escreve errado e
 // não o que quero passar"). O polimento agora é do botão "Sugestão da IA", que
 // já existe e o atendente aciona quando quer. Aqui só se pontua.
-const PROMPT_TRANSCRICAO_FIEL = `Você é um transcritor profissional de português do Brasil. Recebe o áudio de um atendente ditando uma mensagem e a transcrição bruta desse mesmo áudio.
-Sua ÚNICA tarefa é devolver por escrito o que a pessoa falou. Você NÃO é redator, NÃO é revisor e NÃO melhora nada.
-
-O ÁUDIO é a fonte da verdade. A transcrição bruta serve só de referência para a grafia de números, valores, siglas e nomes próprios. Se as duas divergirem, vale o que você ouviu no áudio.
+//
+// Só recebe o texto bruto da transcrição (não o áudio): o gpt-transcribe já
+// grava com o glossário contábil no `prompt`, então revisar de novo ouvindo o
+// áudio deixou de valer o custo/latência extra do 2º passo.
+const PROMPT_TRANSCRICAO_FIEL = `Você é um revisor de transcrição de português do Brasil. Recebe a transcrição bruta de um áudio em que um atendente ditou uma mensagem.
+Sua ÚNICA tarefa é pontuar essa transcrição. Você NÃO é redator, NÃO é revisor de conteúdo e NÃO melhora nada.
 
 VOCÊ PODE, e apenas isto:
 - pontuar (ponto, vírgula, interrogação) e usar maiúsculas e acentos corretos
@@ -84,7 +83,7 @@ VOCÊ NÃO PODE, em nenhuma hipótese:
 - deixar o texto mais formal, mais educado ou mais profissional
 - quebrar a mensagem em blocos por assunto, criar lista, título ou marcador
 - usar *negrito*, _itálico_ ou qualquer marcação
-- acrescentar saudação, despedida, emoji ou qualquer informação que não foi falada
+- acrescentar saudação, despedida, emoji ou qualquer informação que não estava na transcrição
 - mudar a pessoa do verbo: "mando" não vira "enviaremos", "vou ver" não vira "verificaremos"
 - corrigir a gramática da pessoa se isso mudar as palavras que ela escolheu
 
@@ -92,7 +91,7 @@ Se a fala saiu desorganizada, ela sai desorganizada no texto. Isso é correto: q
 
 ${REGRA_FIDELIDADE}
 
-Responda APENAS com a transcrição, sem comentário nenhum.`;
+Responda APENAS com a transcrição pontuada, sem comentário nenhum.`;
 
 const PROMPT_OTIMIZACAO = `Você revisa mensagens que um atendente de suporte envia a clientes pelo WhatsApp, em português do Brasil.
 Reescreva a mensagem corrigindo ortografia e gramática e melhorando clareza e profissionalismo, mantendo o tom cordial e TODO o conteúdo e sentido original.
@@ -111,28 +110,23 @@ function resposta(body: Record<string, unknown>): Response {
   });
 }
 
-function erroGateway(status: number): string {
+function erroOpenAi(status: number): string {
   if (status === 429) return "Muitas solicitações de IA. Aguarde alguns segundos e tente de novo.";
-  if (status === 402) return "Créditos de IA esgotados no Lovable.";
+  if (status === 402) return "Créditos de IA esgotados na OpenAI.";
   return `Falha na IA (${status}).`;
 }
 
-// Carrega status + corpo do gateway junto da mensagem amigável. Sem isso não há
-// como saber se a revisão caiu por recusa do bloco de áudio (400/415) ou por
-// rate limit/crédito (429/402) — e os logs desta função não estão acessíveis.
-class ErroGateway extends Error {
+// Carrega status + corpo da OpenAI junto da mensagem amigável, para o
+// diagnóstico voltar no próprio corpo da resposta quando os logs da função
+// não estiverem acessíveis.
+class ErroOpenAi extends Error {
   constructor(
     readonly status: number,
     readonly detalhe: string,
   ) {
-    super(erroGateway(status));
-    this.name = "ErroGateway";
+    super(erroOpenAi(status));
+    this.name = "ErroOpenAi";
   }
-}
-
-interface AudioInline {
-  base64: string;
-  formato: string;
 }
 
 /** Extensão/formato do arquivo de áudio a partir do mime informado. */
@@ -149,46 +143,27 @@ function formatoDeAudio(mime: string): string {
   return extMap[(mime || "").split(";")[0]] ?? "webm";
 }
 
-function paraBase64(bytes: Uint8Array): string {
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(bin);
-}
-
-async function chatCompletion(
-  apiKey: string,
-  system: string,
-  user: string,
-  audio?: AudioInline,
-): Promise<string> {
-  // Com áudio anexado o modelo confere o sentido pela fala; sem ele o pedido
-  // é o mesmo de sempre (texto puro).
-  const content = audio
-    ? [
-        { type: "text", text: user },
-        { type: "input_audio", input_audio: { data: audio.base64, format: audio.formato } },
-      ]
-    : user;
-
-  const resp = await fetch(`${GATEWAY}/chat/completions`, {
+async function chatCompletion(apiKey: string, system: string, user: string): Promise<string> {
+  const resp = await fetch(OPENAI_CHAT_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: MODELO_CHAT,
+      // Correção de ortografia/pontuação não precisa de raciocínio — "minimal"
+      // evita gastar tokens (e latência) de reasoning à toa num modelo da
+      // família gpt-5.
+      reasoning_effort: "minimal",
       messages: [
         { role: "system", content: system },
-        { role: "user", content },
+        { role: "user", content: user },
       ],
     }),
-    signal: AbortSignal.timeout(audio ? 60_000 : 20_000),
+    signal: AbortSignal.timeout(20_000),
   });
   if (!resp.ok) {
     const detalhe = await resp.text().catch(() => "");
     console.error(`[ai-texto] chat ${resp.status}: ${detalhe.slice(0, 300)}`);
-    throw new ErroGateway(resp.status, detalhe.slice(0, 300));
+    throw new ErroOpenAi(resp.status, detalhe.slice(0, 300));
   }
   const data = await resp.json();
   const texto = data?.choices?.[0]?.message?.content?.trim();
@@ -211,7 +186,7 @@ async function transcrever(apiKey: string, file: File, cliente: string | null): 
   form.append("language", "pt");
   form.append("prompt", vocabulario);
 
-  const resp = await fetch(`${GATEWAY}/audio/transcriptions`, {
+  const resp = await fetch(OPENAI_TRANSCRICAO_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
@@ -220,7 +195,7 @@ async function transcrever(apiKey: string, file: File, cliente: string | null): 
   if (!resp.ok) {
     const detalhe = await resp.text().catch(() => "");
     console.error(`[ai-texto] transcricao ${resp.status}: ${detalhe.slice(0, 300)}`);
-    throw new Error(erroGateway(resp.status));
+    throw new ErroOpenAi(resp.status, detalhe.slice(0, 300));
   }
   const data = await resp.json();
   return (data?.text ?? "").trim();
@@ -234,10 +209,10 @@ Deno.serve(async (req) => {
     return resposta({ ok: false, erro: "Método não suportado." });
   }
 
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  const apiKey = Deno.env.get("API_KEY_OPENAI_TRANSCRIBE");
   if (!apiKey) {
-    console.error("[ai-texto] LOVABLE_API_KEY não configurada");
-    return resposta({ ok: false, erro: "IA não configurada (LOVABLE_API_KEY ausente)." });
+    console.error("[ai-texto] API_KEY_OPENAI_TRANSCRIBE não configurada");
+    return resposta({ ok: false, erro: "IA não configurada (API_KEY_OPENAI_TRANSCRIBE ausente)." });
   }
 
   try {
@@ -269,67 +244,26 @@ Deno.serve(async (req) => {
         return resposta({ ok: false, erro: "Não foi possível entender o áudio. Tente gravar de novo." });
       }
 
-      // Escada de degradação: (1) revisão ouvindo o áudio, (2) revisão só com o
-      // texto, (3) transcrição bruta. Nenhum degrau é pior que o anterior.
-      //
-      // `via` e `diag` vão na resposta porque a escada degrada em SILÊNCIO: se o
-      // gateway recusar o bloco de áudio, o atendente recebe texto normalmente e
-      // parece que funcionou, mas o conserto principal não aconteceu. Os logs
-      // desta função não estão acessíveis (o MCP falha e o CLI 2.107 não tem
-      // `functions logs`), então o diagnóstico volta pelo próprio corpo.
-      let audio: AudioInline | null = null;
-      let via = "audio";
-      let diag: string | undefined;
-
-      if (file.size <= MAX_AUDIO_INLINE_BYTES) {
-        try {
-          audio = {
-            base64: paraBase64(new Uint8Array(await file.arrayBuffer())),
-            formato: formatoDeAudio(file.type),
-          };
-        } catch (e) {
-          via = "texto";
-          diag = `falha ao preparar audio inline: ${e}`;
-          console.error(`[ai-texto] ${diag}`);
-        }
-      } else {
-        via = "texto";
-        diag = `audio de ${file.size} bytes acima do corte de ${MAX_AUDIO_INLINE_BYTES}`;
-        console.warn(`[ai-texto] ${diag}`);
-      }
-
+      // Se a pontuação falhar, devolve a transcrição bruta — nunca pior que
+      // não ter respondido nada. O detalhe do erro fica só no log (query_logs
+      // via MCP), nunca no corpo pro cliente — é payload cru da OpenAI.
       let texto = bruto;
+      let via = "pontuado";
       try {
-        texto = await chatCompletion(apiKey, PROMPT_TRANSCRICAO_FIEL, bruto, audio ?? undefined);
+        texto = await chatCompletion(apiKey, PROMPT_TRANSCRICAO_FIEL, bruto);
       } catch (e) {
-        const detalhe = e instanceof ErroGateway
-          ? `chat ${e.status}: ${e.detalhe}`
-          : String(e);
-        console.error(`[ai-texto] revisao com audio falhou: ${detalhe}`);
-        diag = detalhe;
-        if (audio) {
-          via = "texto-apos-recusa";
-          try {
-            texto = await chatCompletion(apiKey, PROMPT_TRANSCRICAO_FIEL, bruto);
-          } catch (e2) {
-            via = "bruto";
-            diag = `${detalhe} | so-texto tambem falhou: ${e2}`;
-            console.error(`[ai-texto] revisao so com texto falhou, usando bruto: ${e2}`);
-          }
-        } else {
-          via = "bruto";
-        }
+        via = "bruto";
+        const diag = e instanceof ErroOpenAi ? `chat ${e.status}: ${e.detalhe}` : String(e);
+        console.error(`[ai-texto] pontuacao falhou, usando bruto: ${diag}`);
       }
       return resposta({
         ok: true,
         texto,
         textoBruto: bruto,
         via,
-        formatoAudio: audio?.formato ?? formatoDeAudio(file.type),
         bytesAudio: file.size,
         modeloChat: MODELO_CHAT,
         modeloTranscricao: MODELO_TRANSCRICAO,
-        ...(diag ? { diag } : {}),
       });
     }
 
@@ -353,6 +287,10 @@ Deno.serve(async (req) => {
     }
     const msg = e instanceof Error ? e.message : "Erro inesperado na IA.";
     console.error(`[ai-texto] erro: ${msg}`);
-    return resposta({ ok: false, erro: msg });
+    // `codigo` deixa o frontend distinguir "sem crédito" (não deve enviar nada
+    // automaticamente) dos demais erros (rate limit, timeout etc.) sem
+    // depender de comparar a string da mensagem.
+    const codigo = e instanceof ErroOpenAi && e.status === 402 ? "sem_credito" : undefined;
+    return resposta({ ok: false, erro: msg, ...(codigo ? { codigo } : {}) });
   }
 });

@@ -95,6 +95,14 @@ export async function fetchSupervisao(): Promise<SupervisaoRow[]> {
   });
 }
 
+/** Ordem dos status nos seletores de filtro (tabela e folha do celular). */
+export const STATUS_OPTIONS: AtendimentoStatus[] = [
+  "em_triagem",
+  "pendente",
+  "em_atendimento",
+  "encerrado",
+];
+
 export const STATUS_LABEL: Record<AtendimentoStatus, string> = {
   em_triagem: "Em triagem",
   reservado: "Reservado",

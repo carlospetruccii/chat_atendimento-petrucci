@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchContatoNamesByNumbers } from "@/lib/contatos-queries";
+import { selecionarAtendimentoAnterior } from "@/lib/inbox-history-selection";
 import type { MarcaOtimizacaoIa } from "@/lib/otimizacao-ia";
 
 export type AtendimentoStatus =
@@ -51,6 +52,16 @@ export interface InboxMessage {
   otimizadoIa: boolean | null;
   /** O que a pessoa digitou antes da sugestão da IA (só quando otimizadoIa). */
   contentOriginal: string | null;
+  statusEnvio: "aguardando_envio" | "enviando" | "enviado" | "falha";
+  /** Apagada para todos no WhatsApp. Quando preenchido, content vem vazio. */
+  apagadaEm: string | null;
+  /** Última edição do texto. null = nunca editada. */
+  editadaEm: string | null;
+  /**
+   * A mensagem chegou ao WhatsApp e tem id lá. Booleano em vez do id: a tela só
+   * precisa saber se dá para agir sobre ela (ver @/lib/janelas-whatsapp).
+   */
+  temIdWhatsapp: boolean;
 }
 
 // Mantido para referência; usuários comuns filtram inline abaixo.
@@ -125,14 +136,14 @@ export async function listInboxConversations(
   const ids = rows.map((r) => r.id);
   const { data: lastMsgs, error: msgErr } = await supabase
     .from("mensagens")
-    .select("atendimento_id, content, tipo, direction, created_at")
+    .select("atendimento_id, content, tipo, direction, created_at, apagada_em")
     .in("atendimento_id", ids)
     .order("created_at", { ascending: false });
   if (msgErr) throw msgErr;
 
   const previewByAtendimento = new Map<
     string,
-    { content: string | null; tipo: string; direction: string }
+    { content: string | null; tipo: string; direction: string; apagadaEm: string | null }
   >();
   for (const m of lastMsgs ?? []) {
     if (!previewByAtendimento.has(m.atendimento_id)) {
@@ -140,6 +151,7 @@ export async function listInboxConversations(
         content: m.content,
         tipo: m.tipo,
         direction: m.direction,
+        apagadaEm: m.apagada_em,
       });
     }
   }
@@ -169,27 +181,29 @@ export async function listInboxConversations(
     const dept = r.department as { id: string; nome: string; cor: string } | null;
     const assigned = r.assigned as { id: string; nome: string } | null;
     const preview = previewByAtendimento.get(r.id);
-    const previewBody =
-      preview?.content ??
-      (preview?.tipo === "imagem"
-        ? "📷 Imagem"
-        : preview?.tipo === "audio"
-          ? "🎤 Áudio"
-          : preview?.tipo === "video"
-            ? "🎥 Vídeo"
-            : preview?.tipo === "documento"
-              ? "📎 Documento"
-              : preview?.tipo
-                ? `(${preview.tipo})`
-                : "");
+    // Mensagem apagada tem content vazio: sem este caso a última linha da
+    // conversa ficaria em branco na lista, como se nunca tivesse existido.
+    const previewBody = preview?.apagadaEm
+      ? "🚫 Mensagem apagada"
+      : (preview?.content ??
+        (preview?.tipo === "imagem"
+          ? "📷 Imagem"
+          : preview?.tipo === "audio"
+            ? "🎤 Áudio"
+            : preview?.tipo === "video"
+              ? "🎥 Vídeo"
+              : preview?.tipo === "documento"
+                ? "📎 Documento"
+                : preview?.tipo
+                  ? `(${preview.tipo})`
+                  : ""));
     const previewText =
       previewBody && preview?.direction === "outbound" ? `Você: ${previewBody}` : previewBody;
 
     return {
       id: r.id,
       clientId: client.id,
-      clientNome:
-        contatoNames.get(client.numero_whatsapp) ?? client.nome ?? client.numero_whatsapp,
+      clientNome: contatoNames.get(client.numero_whatsapp) ?? client.nome ?? client.numero_whatsapp,
       clientNumero: client.numero_whatsapp,
       clientFotoUrl: client.foto_url,
       status: r.status as AtendimentoStatus,
@@ -229,7 +243,7 @@ export async function searchClientIdsByMessageContent(term: string): Promise<Set
 }
 
 const MESSAGE_COLUMNS =
-  "id, atendimento_id, direction, sender_type, sent_by_user_id, tipo, content, media_url, media_metadata, reply_to_message_id, created_at, otimizado_ia, content_original, sent_by:users!mensagens_sent_by_user_id_fkey ( id, nome )";
+  "id, atendimento_id, direction, sender_type, sent_by_user_id, tipo, content, media_url, media_metadata, reply_to_message_id, created_at, otimizado_ia, content_original, status_envio, apagada_em, editada_em, zapi_message_id, sent_by:users!mensagens_sent_by_user_id_fkey ( id, nome )";
 
 type RawMessageRow = {
   id: string;
@@ -245,6 +259,10 @@ type RawMessageRow = {
   created_at: string;
   otimizado_ia: boolean | null;
   content_original: string | null;
+  status_envio: string;
+  apagada_em: string | null;
+  editada_em: string | null;
+  zapi_message_id: string | null;
   sent_by: { id: string; nome: string } | null;
 };
 
@@ -264,6 +282,11 @@ function mapMessage(m: RawMessageRow): InboxMessage {
     createdAt: m.created_at,
     otimizadoIa: m.otimizado_ia ?? null,
     contentOriginal: m.content_original ?? null,
+    statusEnvio: m.status_envio as InboxMessage["statusEnvio"],
+    apagadaEm: m.apagada_em ?? null,
+    editadaEm: m.editada_em ?? null,
+    // O id em si não sobe para a tela; só o fato de existir.
+    temIdWhatsapp: !!m.zapi_message_id,
   };
 }
 
@@ -280,7 +303,8 @@ export interface ClientAtendimentoSummary {
 
 /**
  * Atendimentos do cliente que entram no scroll contínuo da conversa atual.
- * - Atendente comum: atual + último encerrado do MESMO departamento (no máx. 2).
+ * - Atendente comum: atual + último encerrado do mesmo departamento OU do qual
+ *   participou (no máx. 2).
  * - Administrador / view_all_departments: TODOS os atendimentos do cliente.
  *
  * RLS faz o resto: queries que retornam linhas que o usuário não pode ver
@@ -291,11 +315,12 @@ export async function listClientAtendimentosVisiveis(params: {
   currentAtendimentoId: string;
   currentDepartmentId: string | null;
   canViewAll: boolean;
+  userId: string;
 }): Promise<ClientAtendimentoSummary[]> {
   const base = supabase
     .from("atendimentos")
     .select(
-      `id, status, current_department_id, created_at, closed_at, last_message_at,
+      `id, status, current_department_id, assigned_to, created_at, closed_at, last_message_at,
        department:departments!atendimentos_current_department_id_fkey ( id, nome, cor )`,
     )
     .eq("client_id", params.clientId);
@@ -303,32 +328,60 @@ export async function listClientAtendimentosVisiveis(params: {
   const { data, error } = params.canViewAll
     ? await base.order("created_at", { ascending: false }).limit(200)
     : await (async () => {
-        // Atual + último encerrado do mesmo depto.
+        // O atual sempre entra. Para o anterior, buscamos candidatos encerrados
+        // e escolhemos o mais recente do mesmo setor OU com participação direta.
         const atual = base
           .eq("id", params.currentAtendimentoId)
           .order("created_at", { ascending: false })
           .limit(1);
-        const [atualRes, anteriorRes] = await Promise.all([
+        const [atualRes, candidatosRes] = await Promise.all([
           atual,
-          params.currentDepartmentId
-            ? supabase
-                .from("atendimentos")
-                .select(
-                  `id, status, current_department_id, created_at, closed_at, last_message_at,
-                   department:departments!atendimentos_current_department_id_fkey ( id, nome, cor )`,
-                )
-                .eq("client_id", params.clientId)
-                .eq("current_department_id", params.currentDepartmentId)
-                .eq("status", "encerrado")
-                .neq("id", params.currentAtendimentoId)
-                .order("closed_at", { ascending: false, nullsFirst: false })
-                .limit(1)
-            : Promise.resolve({ data: [], error: null as null }),
+          supabase
+            .from("atendimentos")
+            .select(
+              `id, status, current_department_id, assigned_to, created_at, closed_at, last_message_at,
+               department:departments!atendimentos_current_department_id_fkey ( id, nome, cor )`,
+            )
+            .eq("client_id", params.clientId)
+            .eq("status", "encerrado")
+            .neq("id", params.currentAtendimentoId)
+            .order("closed_at", { ascending: false, nullsFirst: false })
+            .limit(200),
         ]);
         if (atualRes.error) return { data: null, error: atualRes.error };
-        if (anteriorRes.error) return { data: null, error: anteriorRes.error };
+        if (candidatosRes.error) return { data: null, error: candidatosRes.error };
+
+        const candidatos = candidatosRes.data ?? [];
+        const ids = candidatos.map((candidate) => candidate.id);
+        const participacoes = new Set<string>();
+        if (ids.length > 0) {
+          const { data: eventos, error: eventosError } = await supabase
+            .from("timeline_events")
+            .select("atendimento_id")
+            .in("atendimento_id", ids)
+            .or(`actor_user_id.eq.${params.userId},target_user_id.eq.${params.userId}`);
+          if (eventosError) return { data: null, error: eventosError };
+          for (const evento of eventos ?? []) participacoes.add(evento.atendimento_id);
+        }
+
+        const anterior = selecionarAtendimentoAnterior({
+          userId: params.userId,
+          currentDepartmentId: params.currentDepartmentId,
+          candidates: candidatos.map((candidate) => ({
+            id: candidate.id,
+            currentDepartmentId: candidate.current_department_id,
+            createdAt: candidate.created_at,
+            closedAt: candidate.closed_at,
+            assignedToUserId: candidate.assigned_to,
+            participantUserIds: participacoes.has(candidate.id) ? [params.userId] : [],
+          })),
+        });
+
         return {
-          data: [...(atualRes.data ?? []), ...(anteriorRes.data ?? [])],
+          data: [
+            ...(atualRes.data ?? []),
+            ...candidatos.filter((candidate) => candidate.id === anterior?.id),
+          ],
           error: null,
         };
       })();
@@ -511,21 +564,27 @@ export async function sendInboxMessage(params: {
   replyToMessageId?: string | null;
   /** Marca de autoria do texto — ver `marcarOtimizacaoIa`. */
   marca: MarcaOtimizacaoIa;
-}): Promise<void> {
-  const { error } = await supabase.from("mensagens").insert({
-    atendimento_id: params.atendimentoId,
-    client_id: params.clientId,
-    department_id: params.departmentId,
-    direction: "outbound",
-    sender_type: "atendente",
-    sent_by_user_id: params.userId,
-    tipo: "texto",
-    content: params.content,
-    status_envio: "aguardando_envio",
-    reply_to_message_id: params.replyToMessageId ?? null,
-    otimizado_ia: params.marca.otimizadoIa,
-    content_original: params.marca.contentOriginal,
-  });
+}): Promise<string> {
+  const { data, error } = await supabase
+    .from("mensagens")
+    .insert({
+      atendimento_id: params.atendimentoId,
+      client_id: params.clientId,
+      department_id: params.departmentId,
+      direction: "outbound",
+      sender_type: "atendente",
+      sent_by_user_id: params.userId,
+      tipo: "texto",
+      content: params.content,
+      status_envio: "aguardando_envio",
+      reply_to_message_id: params.replyToMessageId ?? null,
+      otimizado_ia: params.marca.otimizadoIa,
+      content_original: params.marca.contentOriginal,
+    })
+    // Devolve o id para a tela conseguir pintar a bolha na hora, sem depender
+    // de o evento de realtime voltar (ver `ingestMessage` em useChatHistory).
+    .select("id")
+    .single();
   if (error) throw error;
 
   // Dispara a edge function que cuida do envio Z-API
@@ -536,6 +595,7 @@ export async function sendInboxMessage(params: {
     // Não derruba a UI: a mensagem já está no banco e o cron de retry tentará reenviar.
     console.warn("[inbox] send-whatsapp-message falhou:", fnErr.message);
   }
+  return data.id;
 }
 
 /**
@@ -574,10 +634,7 @@ export async function marcarAtendimentoLido(atendimentoId: string): Promise<void
  * o repasse é real e vigente antes de disparar a uazapi. Colaborador sem
  * WhatsApp cadastrado simplesmente não recebe (a função responde ok/skip).
  */
-export async function notificarRepasse(
-  atendimentoId: string,
-  toUserId: string,
-): Promise<void> {
+export async function notificarRepasse(atendimentoId: string, toUserId: string): Promise<void> {
   const { error } = await supabase.functions.invoke("notificar-repasse", {
     body: { atendimento_id: atendimentoId, to_user_id: toUserId },
   });
@@ -596,17 +653,14 @@ export async function sendInboxAudio(params: {
   mimeType: string;
   durationSeconds: number;
   replyToMessageId?: string | null;
-}): Promise<void> {
+}): Promise<string | null> {
   // Converte blob → base64 (sem o prefixo data:..;base64,)
   const arrayBuf = await params.blob.arrayBuffer();
   const bytes = new Uint8Array(arrayBuf);
   let binary = "";
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(
-      null,
-      Array.from(bytes.subarray(i, i + chunk)),
-    );
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
   }
   const base64 = btoa(binary);
 
@@ -623,6 +677,7 @@ export async function sendInboxAudio(params: {
   if (data && typeof data === "object" && (data as { ok?: boolean }).ok === false) {
     throw new Error((data as { erro?: string }).erro ?? "Falha no envio do áudio");
   }
+  return (data as { mensagem_id?: string } | null)?.mensagem_id ?? null;
 }
 
 /**
@@ -635,16 +690,13 @@ export async function sendInboxMedia(params: {
   file: File;
   caption?: string;
   replyToMessageId?: string | null;
-}): Promise<void> {
+}): Promise<string | null> {
   const arrayBuf = await params.file.arrayBuffer();
   const bytes = new Uint8Array(arrayBuf);
   let binary = "";
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(
-      null,
-      Array.from(bytes.subarray(i, i + chunk)),
-    );
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
   }
   const base64 = btoa(binary);
 
@@ -663,6 +715,7 @@ export async function sendInboxMedia(params: {
   if (data && typeof data === "object" && (data as { ok?: boolean }).ok === false) {
     throw new Error((data as { erro?: string }).erro ?? "Falha no envio da mídia");
   }
+  return (data as { mensagem_id?: string } | null)?.mensagem_id ?? null;
 }
 /** Iniciais do nome para o avatar. */
 export function initialsOf(name: string): string {

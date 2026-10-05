@@ -97,10 +97,10 @@ export function ConexaoWhatsAppTab() {
   return (
     <div className="max-w-2xl">
       <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent">
           <Smartphone className="h-5 w-5 text-primary" strokeWidth={1.75} />
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">Conexão do WhatsApp</h2>
           <p className="text-sm text-muted-foreground">
             Conecte o número da Almore escaneando o QR code com o celular.
@@ -130,21 +130,24 @@ export function ConexaoWhatsAppTab() {
       {!statusQ.isLoading && !naoConfig && conectado && (
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-6 w-6 text-emerald-500" />
-            <div>
+            <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" />
+            <div className="min-w-0">
               <h3 className="text-base font-semibold text-foreground">Conectado</h3>
-              <p className="text-sm text-muted-foreground">
+              <p className="break-words text-sm text-muted-foreground">
                 {statusQ.data?.profileName ? `${statusQ.data.profileName} · ` : ""}
                 {numero ? `+${numero}` : "número ativo"}
               </p>
             </div>
           </div>
-          <div className="mt-6 flex gap-2">
+          {/* Celular: botões empilham em largura cheia (mesmo raciocínio da
+              aba Contatos do Google — sem flex-wrap aqui, "Desconectar" +
+              "Atualizar" lado a lado estourava em telas de 320-360px). */}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
               onClick={() => disconnectM.mutate()}
               disabled={disconnectM.isPending}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50 sm:w-auto"
             >
               {disconnectM.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -156,7 +159,7 @@ export function ConexaoWhatsAppTab() {
             <button
               type="button"
               onClick={() => statusQ.refetch()}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent sm:w-auto"
             >
               <RefreshCw className="h-4 w-4" /> Atualizar
             </button>
@@ -168,8 +171,8 @@ export function ConexaoWhatsAppTab() {
       {!statusQ.isLoading && !naoConfig && !conectado && (
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="flex items-center gap-3">
-            <WifiOff className="h-6 w-6 text-muted-foreground" />
-            <div>
+            <WifiOff className="h-6 w-6 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
               <h3 className="text-base font-semibold text-foreground">Desconectado</h3>
               <p className="text-sm text-muted-foreground">
                 Escaneie o QR code para conectar o número da Almore.
@@ -179,8 +182,17 @@ export function ConexaoWhatsAppTab() {
 
           {qrSrc ? (
             <div className="mt-6 flex flex-col items-center">
-              <div className="rounded-xl border border-border bg-white p-3">
-                <img src={qrSrc} alt="QR code para conectar o WhatsApp" className="h-64 w-64" />
+              {/* h-64 w-64 fixo (256px) estourava a largura da tela em
+                  aparelhos pequenos (ex.: 320px) — a moldura branca some por
+                  baixo do QR sem sobrar margem nenhuma. w-full + max-w-64
+                  deixa o QR encolher até caber e aspect-square garante que
+                  ele continue quadrado em qualquer largura. */}
+              <div className="w-full max-w-64 rounded-xl border border-border bg-white p-3">
+                <img
+                  src={qrSrc}
+                  alt="QR code para conectar o WhatsApp"
+                  className="aspect-square h-auto w-full"
+                />
               </div>
               <ol className="mt-4 max-w-sm list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
                 <li>Abra o WhatsApp no celular da Almore.</li>
@@ -201,7 +213,7 @@ export function ConexaoWhatsAppTab() {
                 type="button"
                 onClick={() => connectM.mutate()}
                 disabled={connectM.isPending}
-                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50 sm:w-auto"
               >
                 {connectM.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -217,7 +229,7 @@ export function ConexaoWhatsAppTab() {
                 type="button"
                 onClick={() => connectM.mutate()}
                 disabled={connectM.isPending}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
               >
                 {connectM.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

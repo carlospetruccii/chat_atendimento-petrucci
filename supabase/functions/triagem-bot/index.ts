@@ -359,16 +359,31 @@ async function inboundsDesdeUltimaProcessada(
   return (data ?? []) as InboundMsg[];
 }
 
-async function marcarInboundProcessada(atendimentoId: string, msgId: string): Promise<void> {
+// Toda escrita do bot no atendimento só vale enquanto ele AINDA está em
+// triagem. Desde que "Atribuir a mim" e "Repassar" passaram a funcionar durante
+// a triagem (migration atribuir_repassar_durante_triagem), um humano pode
+// assumir a conversa no meio de uma rodada do bot — e sem este filtro a rodada
+// terminaria sobrescrevendo status/assigned_to que a pessoa acabou de definir.
+// Nas rodadas seguintes o atendimento nem chega aqui: a query já filtra
+// status = 'em_triagem'.
+async function atualizarSeEmTriagem(
+  atendimentoId: string, patch: Record<string, unknown>,
+): Promise<void> {
   await getSupabaseAdmin().from("atendimentos")
-    .update({ triagem_last_processed_msg_id: msgId }).eq("id", atendimentoId);
+    .update(patch)
+    .eq("id", atendimentoId)
+    .eq("status", "em_triagem");
+}
+
+async function marcarInboundProcessada(atendimentoId: string, msgId: string): Promise<void> {
+  await atualizarSeEmTriagem(atendimentoId, { triagem_last_processed_msg_id: msgId });
 }
 
 async function encerrarPorLoopSuspeito(at: Atendimento): Promise<void> {
-  await getSupabaseAdmin().from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     status: "encerrado", closed_at: new Date().toISOString(),
     close_reason: "manual_supervisor", triagem_estagio: "concluida",
-  }).eq("id", at.id);
+  });
   log({ funcao: FUNCAO, evento: "triagem_loop_suspeito", status: "erro",
     atendimento_id: at.id, erro_msg: `tentativas >= ${LOOP_HARD_LIMIT}`,
     extra: { tentativas: at.triagem_tentativas } });
@@ -404,8 +419,25 @@ async function corrigirLinhaDoEco(
   });
 }
 
+// Espelho do atualizarSeEmTriagem para o que sai no WhatsApp: entre a leitura
+// do lote (até 50 atendimentos por rodada, cada um com chamadas de rede pelo
+// caminho) e o envio pode passar bastante tempo — o suficiente para alguém
+// clicar em "Atribuir a mim"/"Repassar". Sem esta checagem a frase seguinte do
+// bot ("Seu atendimento foi encaminhado para...") atropelaria o que a pessoa
+// acabou de escrever para o cliente. Erro de leitura devolve false: o bot cala
+// a boca e tenta de novo na próxima rodada, que é o lado seguro.
+async function aindaEmTriagem(atendimentoId: string): Promise<boolean> {
+  const { data } = await getSupabaseAdmin().from("atendimentos")
+    .select("id").eq("id", atendimentoId).eq("status", "em_triagem").maybeSingle();
+  return data !== null;
+}
+
 async function enviarEPersistir(at: Atendimento, telefone: string, texto: string): Promise<boolean> {
   const supabase = getSupabaseAdmin();
+  if (!(await aindaEmTriagem(at.id))) {
+    log({ funcao: FUNCAO, evento: "envio_cancelado_humano_assumiu", status: "ok", atendimento_id: at.id });
+    return false;
+  }
   let zapiMsgId: string | null = null;
   try {
     const resp = await enviarTexto({ telefone: telefoneZapi(telefone), mensagem: texto }) as Record<string, unknown> | null;
@@ -460,9 +492,15 @@ async function enviarListaEPersistir(
   buttonLabel: string,
   opcoes: OpcaoLista[],
 ): Promise<boolean> {
-  // Fallback: poucas/muitas opções → manda texto plano antigo.
+  // Fallback: poucas/muitas opções → manda texto plano antigo (que já checa
+  // se a conversa continua com o bot).
   if (opcoes.length < 2 || opcoes.length > LIST_MAX_OPCOES) {
     return await enviarEPersistir(at, telefone, textoFallback);
+  }
+
+  if (!(await aindaEmTriagem(at.id))) {
+    log({ funcao: FUNCAO, evento: "envio_cancelado_humano_assumiu", status: "ok", atendimento_id: at.id });
+    return false;
   }
 
   const supabase = getSupabaseAdmin();
@@ -582,7 +620,7 @@ async function aplicarContinuidadeSeAplicavel(at: Atendimento, inbound: InboundM
   }
 
   const nowIso = new Date().toISOString();
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     status: "reservado",
     assigned_to: userId,
     current_department_id: deptId,
@@ -590,7 +628,7 @@ async function aplicarContinuidadeSeAplicavel(at: Atendimento, inbound: InboundM
     assigned_at: nowIso,
     triagem_finished_at: nowIso,
     triagem_last_processed_msg_id: inbound.id,
-  }).eq("id", at.id);
+  });
 
   // Carimba mensagens da triagem (department_id NULL).
   await supabase.from("mensagens").update({ department_id: deptId })
@@ -608,16 +646,15 @@ async function aplicarContinuidadeSeAplicavel(at: Atendimento, inbound: InboundM
 async function encaminharPendentesGeral(
   at: Atendimento, telefone: string, templates: TemplatesMap, inboundId: string,
 ): Promise<void> {
-  const supabase = getSupabaseAdmin();
   const boas = await escolherTexto(templates, "triagem_boas_vindas", telefone);
   if (boas) await enviarEPersistir(at, telefone, boas);
   await enviarConfirmacao(at, telefone, templates, "nosso atendimento");
 
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     triagem_estagio: "concluida",
     triagem_finished_at: new Date().toISOString(),
     triagem_last_processed_msg_id: inboundId,
-  }).eq("id", at.id);
+  });
 
   log({ funcao: FUNCAO, evento: "triagem_pendentes_geral", status: "ok",
     atendimento_id: at.id, extra: { motivo: "sem_departamentos" } });
@@ -629,7 +666,6 @@ async function processarAguardandoInicio(
   templates: TemplatesMap, deps: Departamento[],
 ): Promise<void> {
   const cron = iniciarCronometro();
-  const supabase = getSupabaseAdmin();
 
   // Fluxo interno (Lista de Sessões): saudação personalizada + escolha de setor.
   if (at.is_sessao) return await processarSessaoInicio(at, inbound, templates, deps);
@@ -677,11 +713,11 @@ async function processarAguardandoInicio(
     if (!(await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver setores", opcoesDeDepartamentos(deps)))) return;
   }
 
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     triagem_estagio: "aguardando_departamento",
     triagem_tentativas: 0,
     triagem_last_processed_msg_id: inbound.id,
-  }).eq("id", at.id);
+  });
 
   log({ funcao: FUNCAO, evento: "boas_vindas_enviadas", status: "ok",
     atendimento_id: at.id, duracao_ms: cron() });
@@ -757,9 +793,9 @@ async function processarAguardandoDepartamento(
     await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver setores", opcoesDeDepartamentos(deps));
   }
 
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     triagem_tentativas: novasTent, triagem_last_processed_msg_id: ultimoIdLote,
-  }).eq("id", at.id);
+  });
 
   log({ funcao: FUNCAO, evento: "departamento_nao_identificado", status: "ok",
     atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
@@ -805,7 +841,7 @@ async function finalizarTriagem(
     update.status = "pendente";
     update.assigned_to = null;
   }
-  await supabase.from("atendimentos").update(update).eq("id", at.id);
+  await atualizarSeEmTriagem(at.id, update);
 
   log({ funcao: FUNCAO, evento: "triagem_concluida", status: "ok",
     atendimento_id: at.id,
@@ -826,7 +862,6 @@ async function enviarMenuColaboradores(
   at: Atendimento, telefone: string, deptId: string,
   templates: TemplatesMap, inboundId: string,
 ): Promise<void> {
-  const supabase = getSupabaseAdmin();
   const cols = await carregarColaboradores(deptId);
   const deptNomeStr = await nomeDept(deptId);
 
@@ -855,12 +890,12 @@ async function enviarMenuColaboradores(
   const fallback = aplicarTemplate(pergunta, vars);
   if (!(await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver pessoas", opcoesDeColaboradores(cols)))) return;
 
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     current_department_id: deptId,
     triagem_estagio: "aguardando_colaborador",
     triagem_tentativas: 0,
     triagem_last_processed_msg_id: inboundId,
-  }).eq("id", at.id);
+  });
 
   log({ funcao: FUNCAO, evento: "sessao_menu_colaboradores", status: "ok",
     atendimento_id: at.id, extra: { dept_id: deptId, colaboradores: cols.length } });
@@ -877,8 +912,14 @@ async function finalizarSessao(
   await supabase.from("mensagens").update({ department_id: deptId })
     .eq("atendimento_id", at.id).is("department_id", null);
 
+  // A confirmação sai ANTES da reserva: enviarEPersistir só fala enquanto o
+  // atendimento está em triagem, e a reserva já o tira desse estado. Mesma
+  // ordem que o fluxo de cliente (enviarConfirmacao → finalizarTriagem).
+  const tpl = await escolherTexto(templates, "sessao_confirmacao", telefone);
+  if (tpl) await enviarEPersistir(at, telefone, aplicarTemplate(tpl, { colaborador: col.nome }));
+
   const nowIso = new Date().toISOString();
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     current_department_id: deptId,
     assigned_to: col.id,
     status: "reservado",
@@ -886,10 +927,7 @@ async function finalizarSessao(
     triagem_estagio: "concluida",
     triagem_finished_at: nowIso,
     triagem_last_processed_msg_id: inboundId,
-  }).eq("id", at.id);
-
-  const tpl = await escolherTexto(templates, "sessao_confirmacao", telefone);
-  if (tpl) await enviarEPersistir(at, telefone, aplicarTemplate(tpl, { colaborador: col.nome }));
+  });
 
   log({ funcao: FUNCAO, evento: "sessao_concluida", status: "ok",
     atendimento_id: at.id, extra: { dept_id: deptId, assigned_to: col.id } });
@@ -901,7 +939,6 @@ async function processarSessaoInicio(
   templates: TemplatesMap, deps: Departamento[],
 ): Promise<void> {
   const cron = iniciarCronometro();
-  const supabase = getSupabaseAdmin();
 
   const telefone = await getTelefone(at.client_id);
   if (!telefone) return;
@@ -940,11 +977,11 @@ async function processarSessaoInicio(
     if (!(await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver setores", opcoesDeDepartamentos(deps)))) return;
   }
 
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     triagem_estagio: "aguardando_departamento",
     triagem_tentativas: 0,
     triagem_last_processed_msg_id: inbound.id,
-  }).eq("id", at.id);
+  });
 
   log({ funcao: FUNCAO, evento: "sessao_boas_vindas_enviadas", status: "ok",
     atendimento_id: at.id, duracao_ms: cron() });
@@ -1009,9 +1046,9 @@ async function processarSessaoDepartamento(
     await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver setores", opcoesDeDepartamentos(deps));
   }
 
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     triagem_tentativas: novasTent, triagem_last_processed_msg_id: ultimoIdLote,
-  }).eq("id", at.id);
+  });
 
   log({ funcao: FUNCAO, evento: "sessao_departamento_nao_identificado", status: "ok",
     atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
@@ -1028,7 +1065,7 @@ async function processarAguardandoColaborador(
   const deptId = at.current_department_id;
   if (!deptId) {
     // Estado inconsistente (colaborador sem departamento) → volta ao início.
-    await supabase.from("atendimentos").update({ triagem_estagio: "aguardando_inicio" }).eq("id", at.id);
+    await atualizarSeEmTriagem(at.id, { triagem_estagio: "aguardando_inicio" });
     return;
   }
   const cols = await carregarColaboradores(deptId);
@@ -1087,9 +1124,9 @@ async function processarAguardandoColaborador(
     await enviarListaEPersistir(at, telefone, corpo, fallback, "Ver pessoas", opcoesDeColaboradores(cols));
   }
 
-  await supabase.from("atendimentos").update({
+  await atualizarSeEmTriagem(at.id, {
     triagem_tentativas: novasTent, triagem_last_processed_msg_id: ultimoIdLote,
-  }).eq("id", at.id);
+  });
 
   log({ funcao: FUNCAO, evento: "sessao_colaborador_nao_identificado", status: "ok",
     atendimento_id: at.id, duracao_ms: cron(), extra: { tentativas: novasTent } });
@@ -1125,10 +1162,10 @@ async function varrerAbandono(cfg: Config): Promise<number> {
   let n = 0;
   for (const a of lista) {
     const silencioMin = Math.round((Date.now() - new Date(a.last_message_at).getTime()) / 60_000);
-    await supabase.from("atendimentos").update({
+    await atualizarSeEmTriagem(a.id, {
       status: "encerrado", closed_at: new Date().toISOString(),
       close_reason: "automatico_inatividade", triagem_estagio: "concluida",
-    }).eq("id", a.id);
+    });
     log({ funcao: FUNCAO, evento: "triagem_abandonada", status: "ok",
       atendimento_id: a.id, extra: { tempo_silencio_min: silencioMin } });
     n++;
@@ -1205,9 +1242,7 @@ async function varrerLembretes(cfg: Config): Promise<number> {
     };
     const ok = await enviarEPersistir(fakeAt, telefone, tpl);
     if (!ok) continue;
-    await supabase.from("atendimentos")
-      .update({ triagem_lembrete_enviado_at: new Date().toISOString() })
-      .eq("id", a.id);
+    await atualizarSeEmTriagem(a.id, { triagem_lembrete_enviado_at: new Date().toISOString() });
     log({ funcao: FUNCAO, evento: "lembrete_enviado", status: "ok",
       atendimento_id: a.id,
       extra: { silencio_min: Math.round((Date.now() - new Date(a.last_message_at).getTime()) / 60_000) } });

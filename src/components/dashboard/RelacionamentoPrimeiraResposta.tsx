@@ -1,37 +1,33 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { HeroNumero, LinhaBarra, ListaVazia, VizCard } from "./viz";
-import { formatarMinutos, pctCauda } from "@/lib/relacionamento-format";
+import { formatarMinutos, resumoEspera } from "@/lib/relacionamento-format";
+import type { TomEspera } from "@/lib/relacionamento-format";
 import type { PrimeiraResposta } from "@/lib/relacionamento-queries";
 
-/**
- * Quantas faixas finais do histograma contam como "cauda". O RPC devolve 8
- * faixas em ordem crescente; as 3 últimas são 1–2h, 2–4h e 4h+. Marcar por
- * índice em vez de por rótulo evita acoplar o front ao texto das faixas.
- */
-const FAIXAS_DE_CAUDA = 3;
+const COR_POR_TOM: Record<TomEspera, string> = {
+  rapido: "var(--viz-rapido)",
+  ok: "var(--viz-neutro)",
+  lento: "var(--viz-alerta)",
+};
 
 export function RelacionamentoPrimeiraResposta({ dados }: { dados: PrimeiraResposta }) {
-  const { histograma } = dados;
-  const maximo = histograma.reduce((acc, f) => Math.max(acc, f.total), 0);
-  const inicioCauda = Math.max(histograma.length - FAIXAS_DE_CAUDA, 0);
-  const rotuloInicioCauda = histograma[inicioCauda]?.faixa ?? "";
-  const pctNaCauda = pctCauda(histograma, rotuloInicioCauda);
-
-  const temAmostra = dados.total > 0;
+  const { linhas, total, pctAte15min } = resumoEspera(dados.histograma);
+  const maximo = linhas.reduce((acc, l) => Math.max(acc, l.total), 0);
+  const temAmostra = total > 0;
 
   return (
     <VizCard
       titulo="Primeira resposta"
-      descricao="Em minutos de expediente, olhando a cauda — não a média."
+      descricao="Quanto o cliente esperou pela primeira resposta, em horário de expediente. Só entra conversa que o cliente puxou."
       rodape={
         dados.pior ? (
           <span>
-            Pior episódio:{" "}
+            Quem mais esperou:{" "}
             <strong className="font-medium text-foreground">
               {dados.pior.cliente ?? "cliente sem nome"}
-            </strong>{" "}
-            esperou{" "}
+            </strong>
+            ,{" "}
             <strong className="font-medium text-destructive">
               {formatarMinutos(dados.pior.min)}
             </strong>
@@ -44,14 +40,20 @@ export function RelacionamentoPrimeiraResposta({ dados }: { dados: PrimeiraRespo
         )
       }
     >
+      {/* O número grande é a mediana, chamada aqui de "tempo típico": uma
+          espera de 4h entre 20 respostas rápidas move a média e não move a
+          mediana. A média aparece logo abaixo, e o texto explica por que as
+          duas diferem — senão parece contradição com o KPI do topo, que é a
+          média em tempo de relógio. */}
       <HeroNumero
-        valor={formatarMinutos(dados.p95_min)}
-        unidade="p95"
+        valor={temAmostra ? formatarMinutos(dados.p50_min) : "—"}
+        unidade="tempo típico"
         contexto={
           temAmostra ? (
             <>
-              Mediana {formatarMinutos(dados.p50_min)} · média {formatarMinutos(dados.media_min)}.{" "}
-              {dados.total} respondidos
+              Metade das conversas foi respondida mais rápido que isso. A média é{" "}
+              {formatarMinutos(dados.media_min)}, maior porque poucos casos demorados puxam ela pra
+              cima; 95% em até {formatarMinutos(dados.p95_min)}. {total} respondidos
               {dados.sem_resposta > 0 ? (
                 <>
                   {" e "}
@@ -69,25 +71,27 @@ export function RelacionamentoPrimeiraResposta({ dados }: { dados: PrimeiraRespo
       <div className="mt-5 flex flex-1 flex-col">
         {temAmostra ? (
           <>
-            <div className="flex flex-col gap-[6px]">
-              {histograma.map((faixa, i) => {
-                const naCauda = i >= inicioCauda;
-                return (
-                  <LinhaBarra
-                    key={faixa.faixa}
-                    rotulo={faixa.faixa}
-                    valor={faixa.total}
-                    maximo={maximo}
-                    cor={naCauda ? "var(--viz-cauda)" : "var(--viz-rapido)"}
-                    anotacao={i === inicioCauda ? "cauda" : undefined}
-                    reservarAnotacao
-                  />
-                );
-              })}
+            <div className="flex flex-col gap-2">
+              {linhas.map((l) => (
+                <div key={l.faixa} className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <LinhaBarra
+                      rotulo={l.faixa}
+                      valor={l.total}
+                      maximo={maximo}
+                      cor={COR_POR_TOM[l.tom]}
+                      larguraRotulo="72px"
+                    />
+                  </div>
+                  <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                    {l.pct}%
+                  </span>
+                </div>
+              ))}
             </div>
             <p className="mt-4 text-xs text-muted-foreground">
-              <strong className="font-medium text-[var(--viz-cauda)]">{pctNaCauda}%</strong> das
-              respostas passaram de uma hora de expediente.
+              <strong className="font-medium text-[var(--viz-rapido)]">{pctAte15min}%</strong> foram
+              respondidos em até 15 minutos.
             </p>
           </>
         ) : (

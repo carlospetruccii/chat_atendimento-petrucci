@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchContatoNamesByNumbers } from "@/lib/contatos-queries";
+import { blobParaBase64, codigoDoErro } from "@/lib/edge-functions";
 import type { MensagemRenderizavel } from "@/lib/mensagem-shape";
 
 /**
@@ -308,17 +309,6 @@ export async function sendGrupoTexto(params: {
   });
 }
 
-/** Blob → base64 sem o prefixo data:. Em blocos para não estourar a pilha. */
-async function blobParaBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
-  }
-  return btoa(binary);
-}
-
 export async function sendGrupoMedia(params: {
   grupoId: string;
   tipo: "image" | "video" | "document";
@@ -459,18 +449,6 @@ export async function sincronizarGrupos(): Promise<ResultadoSincronizacao> {
   };
   if (r.ok === false) throw new Error(mensagemDeErroSync(r.erro));
   return { total: r.total ?? 0, novos: r.novos ?? 0, desativados: r.desativados ?? 0 };
-}
-
-/** Lê o campo `erro` do corpo de uma resposta não-2xx de Edge Function. */
-async function codigoDoErro(error: unknown): Promise<string | undefined> {
-  const resposta = (error as { context?: unknown })?.context;
-  if (!(resposta instanceof Response)) return undefined;
-  try {
-    const corpo = (await resposta.clone().json()) as { erro?: string };
-    return typeof corpo.erro === "string" ? corpo.erro : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 // Cor e rótulo do autor são apresentação, não consulta: ficam em

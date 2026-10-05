@@ -1,16 +1,9 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import {
-  MessageCircle,
-  Clock,
-  Eye,
-  BarChart,
-  Settings,
-  BookUser,
-  LogOut,
-  type LucideIcon,
-} from "lucide-react";
-import { useCurrentUser, type CurrentUserProfile } from "@/hooks/useCurrentUser";
+import { LogOut } from "lucide-react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useNavBadges } from "@/hooks/useNavBadges";
+import { visibleItems, menuItems } from "@/lib/nav-items";
+import { AdicionarContatoButton } from "@/components/AdicionarContatoButton";
 import { NovoAtendimentoButton } from "@/components/NovoAtendimentoButton";
 import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,40 +16,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-type MenuGate = undefined | { superadminOnly: true } | { anyOf: string[] };
-
-type MenuItem = {
-  title: string;
-  url: string;
-  icon: LucideIcon;
-  gate?: MenuGate;
-  badgeKey?: string;
-};
-
-const menuItems: MenuItem[] = [
-  {
-    title: "Dashboard",
-    url: "/dashboard",
-    icon: BarChart,
-    gate: { anyOf: ["view_all_departments"] },
-  },
-  { title: "Inbox", url: "/inbox", icon: MessageCircle, badgeKey: "inbox" },
-  { title: "Pendentes", url: "/pendentes", icon: Clock, badgeKey: "pendentes" },
-  { title: "Contatos", url: "/contatos", icon: BookUser },
-  { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
-  { title: "Configurações", url: "/configuracoes", icon: Settings, gate: { superadminOnly: true } },
-];
-
-function canSee(item: MenuItem, user: CurrentUserProfile | null): boolean {
-  if (!item.gate) return true;
-  if (!user) return false;
-  if ("superadminOnly" in item.gate) return user.isSuperadmin;
-  if ("anyOf" in item.gate) {
-    return user.isSuperadmin || item.gate.anyOf.some((f) => user.permissions.includes(f));
-  }
-  return false;
-}
 
 function initials(name: string): string {
   return name
@@ -79,61 +38,22 @@ export function AppSidebar() {
     navigate({ to: "/login" });
   }
 
-  const pendentesCountQ = useQuery({
-    queryKey: ["pendentes-count"],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("atendimentos")
-        .select("*", { head: true, count: "exact" })
-        .in("status", ["pendente", "em_triagem"])
-        .is("assigned_to", null);
-      if (error) throw error;
-      return count ?? 0;
-    },
-    refetchInterval: 30_000,
-  });
-  const pendentesCount = pendentesCountQ.data ?? 0;
-
-  // O badge do Inbox soma as três abas (Chat + Grupos + Equipe), que é o que o
-  // usuário vê ao entrar na tela. São três RPCs porque grupo e conversa interna
-  // moram em tabelas separadas.
-  const inboxUnreadQ = useQuery({
-    queryKey: ["inbox-unread-total"],
-    queryFn: async () => {
-      const [individual, grupos, equipe] = await Promise.all([
-        supabase.rpc("get_my_inbox_unread_total"),
-        supabase.rpc("get_my_grupos_unread_total"),
-        supabase.rpc("get_my_internas_unread_total"),
-      ]);
-      if (individual.error) throw individual.error;
-      if (grupos.error) throw grupos.error;
-      if (equipe.error) throw equipe.error;
-      return (individual.data ?? 0) + (grupos.data ?? 0) + (equipe.data ?? 0);
-    },
-    enabled: !!user,
-    refetchInterval: 30_000,
-  });
-  const inboxUnreadCount = inboxUnreadQ.data ?? 0;
-
-  const badgeCounts: Record<string, number> = {
-    pendentes: pendentesCount,
-    inbox: inboxUnreadCount,
-  };
+  const badges = useNavBadges();
 
   const showPlaceholders = loading && !user;
-  const visible = showPlaceholders ? menuItems : menuItems.filter((item) => canSee(item, user));
+  const visible = showPlaceholders ? menuItems : visibleItems(user);
 
   return (
     <TooltipProvider delayDuration={200}>
       <aside
-        className="flex h-full w-[70px] shrink-0 flex-col items-center justify-between border-r border-sidebar-border bg-sidebar py-3"
+        className="hidden h-full w-[70px] shrink-0 flex-col items-center justify-between border-r border-sidebar-border bg-sidebar py-3 md:flex"
         aria-label="Navegação principal"
       >
         <nav className="flex flex-col items-center gap-1">
           {visible.map((item) => {
             const active = pathname.startsWith(item.url);
             const Icon = item.icon;
-            const badgeCount = item.badgeKey ? (badgeCounts[item.badgeKey] ?? 0) : 0;
+            const badgeCount = item.badgeKey ? badges[item.badgeKey] : 0;
             const showBadge = badgeCount > 0;
             return (
               <Tooltip key={item.url}>
@@ -162,9 +82,10 @@ export function AppSidebar() {
         </nav>
 
         <div className="flex flex-col items-center gap-3">
+          <AdicionarContatoButton />
           <NovoAtendimentoButton />
 
-          {/* Separa navegação (acima) de ação + identidade (abaixo). */}
+          {/* Separa navegação (acima) de ações + identidade (abaixo). */}
           <div className="h-px w-6 bg-sidebar-border" aria-hidden />
 
           <DropdownMenu>

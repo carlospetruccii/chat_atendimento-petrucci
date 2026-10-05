@@ -65,12 +65,12 @@ export function AudioRecorderBar({
   if (recorded) {
     const ocupado = sending || transcribing;
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+      <div className="flex items-center gap-2 rounded-3xl border border-border bg-background px-3 py-2 shadow-sm">
         <button
           type="button"
           onClick={onDelete}
           disabled={ocupado}
-          className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+          className="touch-target-mobile inline-flex shrink-0 items-center justify-center text-muted-foreground hover:text-destructive disabled:opacity-50"
           aria-label="Apagar áudio"
         >
           <Trash2 className="h-5 w-5" strokeWidth={1.5} />
@@ -83,26 +83,30 @@ export function AudioRecorderBar({
             className="h-9 flex-1 min-w-0"
           />
         )}
-        <span className="text-xs text-muted-foreground font-mono tabular-nums">
+        <span className="shrink-0 text-xs text-muted-foreground font-mono tabular-nums">
           {fmt(recorded.durationSeconds)}
         </span>
         <button
           type="button"
           onClick={onTranscribe}
           disabled={ocupado}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+          // Rótulo some no celular: entre apagar, o player de áudio (que
+          // precisa de espaço mínimo para os controles nativos) e enviar, o
+          // texto "Transcrever" era o que sobrava para cortar numa tela de
+          // 360px. O ícone + aria-label/title seguram o significado.
+          className="touch-target-mobile flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
           aria-label="Transcrever em texto"
           title="A IA transcreve e corrige o que você falou; o texto vai para o campo de mensagem."
         >
           {transcribing ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Transcrevendo…
+              <span className="hidden sm:inline">Transcrevendo…</span>
             </>
           ) : (
             <>
               <Sparkles className="h-4 w-4" strokeWidth={1.8} />
-              Transcrever
+              <span className="hidden sm:inline">Transcrever</span>
             </>
           )}
         </button>
@@ -110,7 +114,7 @@ export function AudioRecorderBar({
           type="button"
           onClick={onSend}
           disabled={ocupado}
-          className="shrink-0 rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          className="touch-target-mobile inline-flex shrink-0 items-center justify-center rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
           aria-label="Enviar áudio"
           title="Envia a gravação como mensagem de voz."
         >
@@ -130,12 +134,12 @@ export function AudioRecorderBar({
   const isEncoding = state === "encoding";
 
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
+    <div className="flex items-center gap-3 rounded-3xl border border-border bg-background px-3 py-2 shadow-sm">
       <button
         type="button"
         onClick={onCancel}
         disabled={isEncoding}
-        className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+        className="touch-target-mobile inline-flex shrink-0 items-center justify-center text-muted-foreground hover:text-destructive disabled:opacity-50"
         aria-label="Cancelar gravação"
       >
         <Trash2 className="h-5 w-5" strokeWidth={1.5} />
@@ -165,7 +169,7 @@ export function AudioRecorderBar({
         <button
           type="button"
           onClick={onPause}
-          className="text-muted-foreground hover:text-foreground"
+          className="touch-target-mobile inline-flex shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
           aria-label="Pausar gravação"
         >
           <Pause className="h-5 w-5" strokeWidth={1.5} />
@@ -175,7 +179,7 @@ export function AudioRecorderBar({
         <button
           type="button"
           onClick={onResume}
-          className="text-muted-foreground hover:text-foreground"
+          className="touch-target-mobile inline-flex shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
           aria-label="Retomar gravação"
         >
           <Play className="h-5 w-5" strokeWidth={1.5} />
@@ -186,7 +190,7 @@ export function AudioRecorderBar({
         type="button"
         onClick={onStop}
         disabled={isEncoding || durationSeconds < 1}
-        className="rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+        className="touch-target-mobile inline-flex shrink-0 items-center justify-center rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
         aria-label="Parar gravação"
       >
         {isEncoding ? (

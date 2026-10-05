@@ -15,6 +15,12 @@ import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { buscarNomeContato } from "../_shared/uazapi-client.ts";
 import { ehEnvioInterno } from "../_shared/envio-interno.ts";
+import {
+  conflitoDeIdentidadeCliente,
+  numeroCanonicoWhatsapp,
+  selecionarRegistroPorNumeroWhatsapp,
+  variantesNumeroWhatsappBR,
+} from "../_shared/telefone-whatsapp.ts";
 import { fotoDoChat } from "../_shared/foto-perfil.ts";
 import { atualizarFotoEmSegundoPlano } from "../_shared/foto-perfil-sync.ts";
 import { baixarESalvarMidia } from "../_shared/midia-mensagem.ts";
@@ -36,7 +42,7 @@ import {
   resolverModo,
 } from "./logic.ts";
 import { normalizarJidGrupo } from "./grupos-logic.ts";
-import { registrarMensagemGrupo } from "./grupos.ts";
+import { COMPANY_ID_INSTANCIA, registrarMensagemGrupo } from "./grupos.ts";
 
 const FUNCAO = "webhook-zapi-receive";
 
@@ -59,6 +65,79 @@ function mapStatusWhatsapp(s: string | undefined | null): StatusWhatsapp | null 
   if (u.includes("SENT")) return "enviado";
   if (u.includes("FAIL") || u.includes("ERROR")) return "falha_whatsapp";
   return null;
+}
+
+/**
+ * Marca como apagada a mensagem (de atendimento ou de grupo) que o WhatsApp
+ * acabou de revogar, e esvazia o conteúdo.
+ *
+ * IDEMPOTENTE por necessidade, não por elegância: quando o apagar partiu do
+ * nosso sistema, a linha já está carimbada quando este evento chega — e o
+ * trigger de imutabilidade recusa reescrever apagada_em. Por isso a leitura vem
+ * antes, e a linha já apagada é simplesmente ignorada.
+ *
+ * `storage_path` sai do metadata para nenhuma tela do sistema conseguir
+ * renderizar o que o cliente não vê mais. O arquivo em si fica no bucket
+ * privado: aqui não há usuário pedindo, e apagar arquivo em caminho de webhook
+ * é risco sem ganho.
+ */
+async function carimbarApagada(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  id: string,
+): Promise<{ apagadas: number; ja_apagadas: number; orfaos: number }> {
+  const agora = new Date().toISOString();
+
+  const { data: msg } = await supabase
+    .from("mensagens")
+    .select("id, apagada_em, media_metadata, content")
+    .eq("zapi_message_id", id)
+    .maybeSingle();
+
+  if (msg) {
+    if (msg.apagada_em) return { apagadas: 0, ja_apagadas: 1, orfaos: 0 };
+    const meta = (msg.media_metadata ?? {}) as Record<string, unknown>;
+    const { storage_path: _fora, ...resto } = meta;
+    const { error } = await supabase
+      .from("mensagens")
+      .update({
+        apagada_em: agora,
+        content: null,
+        media_url: null,
+        // Mesma trilha do apagar feito pelo sistema (mensagem-acao): sem isto o
+        // texto que o cliente apagou sumia sem registro.
+        conteudo_anterior: msg.content,
+        media_metadata: { ...resto, apagada: true },
+      })
+      .eq("id", msg.id)
+      .is("apagada_em", null);
+    if (error) {
+      log({
+        funcao: FUNCAO,
+        evento: "carimbo_apagada_erro",
+        status: "erro",
+        mensagem_id: msg.id,
+        erro_msg: error.message,
+      });
+      return { apagadas: 0, ja_apagadas: 0, orfaos: 0 };
+    }
+    return { apagadas: 1, ja_apagadas: 0, orfaos: 0 };
+  }
+
+  const { data: msgGrupo } = await supabase
+    .from("grupo_mensagens")
+    .select("id, apagada_em")
+    .eq("uazapi_message_id", id)
+    .maybeSingle();
+
+  if (!msgGrupo) return { apagadas: 0, ja_apagadas: 0, orfaos: 1 };
+  if (msgGrupo.apagada_em) return { apagadas: 0, ja_apagadas: 1, orfaos: 0 };
+
+  await supabase
+    .from("grupo_mensagens")
+    .update({ apagada_em: agora, content: null, media_url: null })
+    .eq("id", msgGrupo.id)
+    .is("apagada_em", null);
+  return { apagadas: 1, ja_apagadas: 0, orfaos: 0 };
 }
 
 const STATUS_INSTAVEL_ATENDIMENTO = ["em_triagem", "reservado", "pendente", "em_atendimento"];
@@ -159,7 +238,12 @@ type ResolverErro =
 async function resolverClienteIdent(
   data: Record<string, unknown>,
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  opts: { permitirCriar: boolean; senderName: string | null; preferChatid?: boolean },
+  opts: {
+    companyId: string;
+    permitirCriar: boolean;
+    senderName: string | null;
+    preferChatid?: boolean;
+  },
 ): Promise<ClienteResolvido | ResolverErro> {
   const chatid = (data.chatid as string | undefined) ?? null;
   // Em mensagens fromMe (enviadas pelo celular da empresa) o REMETENTE é a
@@ -177,20 +261,83 @@ async function resolverClienteIdent(
     const numero = normalizarNumero(senderPn ?? chatid);
     if (!numero) return { erro: "sem_telefone" };
 
-    const { data: c } = await supabase
+    // O LID é a identidade mais forte do chat. Quando ele vem junto do número,
+    // resolve primeiro por ele para não separar o histórico se o WhatsApp
+    // alternar a forma brasileira com/sem o nono dígito.
+    let clientePorLid: {
+      id: string;
+      nome: string | null;
+      numero_whatsapp: string;
+    } | null = null;
+    if (chatLidNorm) {
+      const { data: cLid, error: errLid } = await supabase
+        .from("clients")
+        .select("id, nome, numero_whatsapp")
+        .eq("company_id", opts.companyId)
+        .eq("chat_lid", chatLidNorm)
+        .maybeSingle();
+      if (errLid) return { erro: "criar_erro", detalhe: errLid.message };
+      clientePorLid = cLid;
+    }
+
+    const { data: candidatos, error: errCandidatos } = await supabase
       .from("clients")
-      .select("id, nome, chat_lid")
-      .eq("numero_whatsapp", numero)
-      .maybeSingle();
+      .select("id, nome, chat_lid, numero_whatsapp")
+      .eq("company_id", opts.companyId)
+      .in("numero_whatsapp", variantesNumeroWhatsappBR(numero));
+    if (errCandidatos) {
+      return { erro: "criar_erro", detalhe: errCandidatos.message };
+    }
+
+    const c = selecionarRegistroPorNumeroWhatsapp(candidatos ?? [], numero);
+
+    if (clientePorLid && chatLidNorm) {
+      // Duplicado legado (mesmo número nas duas formas BR, só uma com LID) não
+      // é conflito: o LID vence e a conversa segue numa linha só.
+      if (conflitoDeIdentidadeCliente(clientePorLid, c, numero, chatLidNorm)) {
+        return { erro: "criar_erro", detalhe: "conflito_identidade_cliente" };
+      }
+      if (!clientePorLid.nome && opts.senderName) {
+        await supabase
+          .from("clients")
+          .update({ nome: opts.senderName })
+          .eq("id", clientePorLid.id)
+          .eq("company_id", opts.companyId);
+      }
+      return { id: clientePorLid.id, nome: clientePorLid.nome, via: "lid" };
+    }
 
     if (c) {
+      // Números equivalentes com LIDs diferentes não são unidos: o LID indica
+      // que seriam contas de WhatsApp distintas e misturar mensagens seria pior
+      // do que manter os registros separados.
+      if (chatLidNorm && c.chat_lid && c.chat_lid !== chatLidNorm) {
+        return { erro: "criar_erro", detalhe: "conflito_chat_lid" };
+      }
       if (chatLidNorm && !c.chat_lid) {
-        const { error } = await supabase
+        const { data: vinculado, error } = await supabase
           .from("clients")
           .update({ chat_lid: chatLidNorm })
           .eq("id", c.id)
-          .is("chat_lid", null);
-        if (!error) {
+          .eq("company_id", opts.companyId)
+          .is("chat_lid", null)
+          .select("id")
+          .maybeSingle();
+        if (error) return { erro: "criar_erro", detalhe: error.message };
+        if (!vinculado) {
+          const { data: atual, error: errAtual } = await supabase
+            .from("clients")
+            .select("chat_lid")
+            .eq("id", c.id)
+            .eq("company_id", opts.companyId)
+            .maybeSingle();
+          if (errAtual || atual?.chat_lid !== chatLidNorm) {
+            return {
+              erro: "criar_erro",
+              detalhe: errAtual?.message ?? "conflito_chat_lid",
+            };
+          }
+        } else {
           log({
             funcao: FUNCAO,
             evento: "chat_lid_populado",
@@ -201,19 +348,37 @@ async function resolverClienteIdent(
         }
       }
       if (!c.nome && opts.senderName) {
-        await supabase.from("clients").update({ nome: opts.senderName }).eq("id", c.id);
+        await supabase
+          .from("clients")
+          .update({ nome: opts.senderName })
+          .eq("id", c.id)
+          .eq("company_id", opts.companyId);
       }
       return { id: c.id, nome: c.nome, via: "e164" };
     }
 
     if (!opts.permitirCriar) return { erro: "lid_desconhecido", via_tentada: "e164" };
 
+    const numeroCanonico = numeroCanonicoWhatsapp(numero) ?? numero;
     const { data: novo, error } = await supabase
       .from("clients")
-      .insert({ numero_whatsapp: numero, nome: opts.senderName, chat_lid: chatLidNorm })
+      .insert({
+        company_id: opts.companyId,
+        numero_whatsapp: numeroCanonico,
+        nome: opts.senderName,
+        chat_lid: chatLidNorm,
+      })
       .select("id, nome")
       .single();
-    if (error || !novo) return { erro: "criar_erro", detalhe: error?.message };
+    if (error || !novo) {
+      if (error?.code === "23505") {
+        return await resolverClienteIdent(data, supabase, {
+          ...opts,
+          permitirCriar: false,
+        });
+      }
+      return { erro: "criar_erro", detalhe: error?.message };
+    }
     return { id: novo.id, nome: novo.nome, via: "e164" };
   }
 
@@ -225,6 +390,7 @@ async function resolverClienteIdent(
   const { data: c } = await supabase
     .from("clients")
     .select("id, nome")
+    .eq("company_id", opts.companyId)
     .eq("chat_lid", lid)
     .maybeSingle();
   if (c) return { id: c.id, nome: c.nome, via: "lid" };
@@ -618,6 +784,22 @@ Deno.serve(async (req: Request) => {
 
     // 3a) Status de mensagem outbound (delivered/read/...).
     if (ehEventoStatus) {
+      // "Apagada para todos" chega como messages_update com status Deleted —
+      // tanto quando NÓS apagamos (mensagem-acao) quanto quando o CLIENTE apaga
+      // uma mensagem dele. Sem este desvio o status caía em mapStatusWhatsapp,
+      // voltava null e o evento morria em "status_ignorado": a mensagem seguia
+      // na tela como se nada tivesse acontecido.
+      if (statusRaw && /DELET|REVOK/i.test(statusRaw) && zapiMessageId) {
+        const apagadas = await carimbarApagada(supabase, zapiMessageId);
+        log({
+          funcao: FUNCAO,
+          evento: "mensagem_apagada_por_webhook",
+          status: "ok",
+          extra: { zapi_message_id: zapiMessageId, ...apagadas },
+        });
+        return jsonResponse({ ok: true, ...apagadas });
+      }
+
       const novoStatus = mapStatusWhatsapp(statusRaw);
       const ids: string[] = zapiMessageId ? [zapiMessageId] : [];
 
@@ -775,6 +957,7 @@ Deno.serve(async (req: Request) => {
       // empresa. permitirCriar: se você iniciou uma conversa nova pelo celular
       // com alguém que ainda não é cliente, criamos o cliente aqui (com o nome).
       const resolved = await resolverClienteIdent(payload, supabase, {
+        companyId: COMPANY_ID_INSTANCIA,
         permitirCriar: true,
         senderName: nomeContato,
         preferChatid: true,
@@ -803,10 +986,13 @@ Deno.serve(async (req: Request) => {
             },
           });
         } else {
+          // `criar_erro` (inclui os conflitos de identidade) é falha de
+          // resolução, não evento ignorado: logar como "ok" foi o que deixou a
+          // perda de mensagens invisível por dois dias.
           log({
             funcao: FUNCAO,
-            evento: "evento_ignorado",
-            status: "ok",
+            evento: "criar_cliente_erro",
+            status: "erro",
             extra: { motivo: "from_me_resolver_erro", detalhe: resolved.detalhe ?? null },
           });
         }
@@ -1035,9 +1221,42 @@ Deno.serve(async (req: Request) => {
 
       // `origem` distingue as duas fontes de mensagem externa: celular da
       // empresa x outro sistema usando a mesma instância uazapi.
+      //
+      // TRI-ESTADO de propósito. Desde 18/08/2026 este campo deixou de ser
+      // rótulo e virou AUTORIZAÇÃO: mensagem-acao só apaga para todos o que
+      // está marcado 'celular'. Com o antigo `wasSentByApi ? ... : "celular"`,
+      // bastava a uazapi parar de mandar o campo (mudança de contrato, tipo de
+      // mensagem novo) para todo documento do outro sistema entrar como
+      // apagável — fail-open exatamente no ponto que a feature promete
+      // proteger. Agora só afirmamos 'celular' quando a uazapi diz
+      // explicitamente que NÃO foi pela API; ausente vira 'desconhecida', que a
+      // regra trata como bloqueada (ver _shared/janelas-whatsapp.ts).
+      const brutoSentByApi = payload.wasSentByApi;
+      const origemExt = brutoSentByApi === true
+        ? "api_externa"
+        : brutoSentByApi === false
+        ? "celular"
+        : "desconhecida";
+
+      // Se este log aparecer, o apagar-para-todos parou de alcançar o que sai
+      // do celular da empresa — e o motivo é contrato da uazapi, não bug nosso.
+      // Sem ele, a feature morreria em silêncio.
+      if (origemExt === "desconhecida") {
+        log({
+          funcao: FUNCAO,
+          evento: "was_sent_by_api_ausente",
+          status: "erro",
+          extra: {
+            event: eventStr,
+            message_type: (payload.messageType as string | undefined) ?? null,
+            tipo_recebido: typeof brutoSentByApi,
+          },
+        });
+      }
+
       const metaExt = {
         ...(parsedExt.media_metadata ?? {}),
-        origem: wasSentByApi ? "api_externa" : "celular",
+        origem: origemExt,
       };
 
       // Hora real da mensagem no WhatsApp, não a do INSERT: o eco pode demorar
@@ -1166,6 +1385,7 @@ Deno.serve(async (req: Request) => {
     const senderName = (payload.senderName as string | undefined) ?? null;
 
     const resolvedIn = await resolverClienteIdent(payload, supabase, {
+      companyId: COMPANY_ID_INSTANCIA,
       permitirCriar: true,
       senderName,
     });

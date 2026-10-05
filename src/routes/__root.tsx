@@ -14,7 +14,7 @@ import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
         <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
@@ -39,7 +39,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           This page didn't load
@@ -73,7 +73,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      // viewport-fit=cover: sem ele env(safe-area-inset-*) é sempre 0 e o app
+      //   passa por baixo do notch e da barra de gestos do iPhone.
+      // interactive-widget=resizes-content: o teclado ENCOLHE o layout em vez de
+      //   deslizar por cima — é o que mantém o compositor do chat visível.
+      // Sem maximum-scale/user-scalable: travar o zoom por pinça quebra
+      //   acessibilidade. O zoom indesejado ao focar input é resolvido no CSS
+      //   (fonte 16px no celular), não amarrando o viewport.
+      {
+        name: "viewport",
+        content:
+          "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content",
+      },
+      // Pinta a barra de status do celular na cor da página. Um valor só porque
+      // useTheme() força tema claro (a classe .dark nunca é aplicada).
+      { name: "theme-color", content: "#f5f4ef" },
+      { name: "mobile-web-app-capable", content: "yes" },
       { title: "Chat Almore" },
       { name: "description", content: "Builds a basic, empty landing page skeleton for rapid web development, now with Supabase integration." },
       { property: "og:title", content: "Chat Almore" },

@@ -32,7 +32,7 @@ export function VizCard({ titulo, descricao, children, rodape, className }: VizC
         className,
       )}
     >
-      <header className="px-6 pt-5">
+      <header className="px-4 pt-5 sm:px-6">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {titulo}
         </h3>
@@ -42,10 +42,10 @@ export function VizCard({ titulo, descricao, children, rodape, className }: VizC
       {/* flex-col aqui é o que permite um bloco filho crescer com flex-1 e
           centrar o próprio estado vazio. Sem isso, num card curto ao lado de um
           alto, a folga toda se acumula acima do rodapé. */}
-      <div className="flex flex-1 flex-col px-6 py-4">{children}</div>
+      <div className="flex flex-1 flex-col px-4 py-4 sm:px-6">{children}</div>
 
       {rodape ? (
-        <footer className="border-t border-border bg-[var(--layer-3)] px-6 py-3 text-xs text-muted-foreground">
+        <footer className="border-t border-border bg-[var(--layer-3)] px-4 py-3 text-xs text-muted-foreground sm:px-6">
           {rodape}
         </footer>
       ) : null}
@@ -55,7 +55,7 @@ export function VizCard({ titulo, descricao, children, rodape, className }: VizC
 
 interface HeroNumeroProps {
   valor: string;
-  /** Etiqueta curta ao lado do número: "p95", "reativo". */
+  /** Etiqueta curta ao lado do número: "reativo", "trocas por conversa". */
   unidade?: string;
   /** Linha de contexto abaixo — o comparativo que impede a leitura errada. */
   contexto?: React.ReactNode;
@@ -71,7 +71,10 @@ export function HeroNumero({ valor, unidade, contexto, tom = "normal" }: HeroNum
 
   return (
     <div>
-      <div className="flex items-baseline gap-2">
+      {/* flex-wrap: rede de segurança pra unidade longa ("clientes falando
+          menos") ao lado do número de 40px num card estreito — não quebra o
+          caso comum (cabe numa linha), só evita estourar o raro. */}
+      <div className="flex flex-wrap items-baseline gap-2">
         {/* Sem tabular-nums: em tamanho display, dígitos de largura fixa deixam
             o número frouxo. Alinhamento vertical não é problema aqui. */}
         <span
@@ -99,7 +102,7 @@ interface LinhaBarraProps {
   /** Maior valor do conjunto — define a escala compartilhada das linhas. */
   maximo: number;
   cor: string;
-  /** Marca discreta à direita, tipo "cauda". */
+  /** Marca discreta à direita, tipo "dói". */
   anotacao?: string;
   /**
    * Reserva a coluna da anotação em TODAS as linhas da lista. Precisa ser
@@ -145,7 +148,11 @@ export function LinhaBarra({
         {valor}
       </span>
       {reservarAnotacao ? (
-        <span className="w-[46px] shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+        // Some abaixo de sm: no celular essa coluna comia ~58px (largura +
+        // gap) que a barra precisa mais, e a anotação ("dói") é só reforço visual
+        // — o mesmo dado já aparece por extenso no rodapé do card. O rótulo
+        // de VALOR (span acima) nunca some: esse sim é obrigatório.
+        <span className="hidden w-[46px] shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/70 sm:block">
           {anotacao ?? ""}
         </span>
       ) : null}

@@ -74,7 +74,7 @@ export function EmojiPicker({ disabled, onPick }: Props) {
         <button
           type="button"
           disabled={disabled}
-          className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          className="touch-target-mobile inline-flex shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
           aria-label="Inserir emoji"
           title="Emoji"
         >
@@ -84,7 +84,11 @@ export function EmojiPicker({ disabled, onPick }: Props) {
       <PopoverContent
         align="start"
         side="top"
-        className="w-[320px] p-2"
+        // Largura fixa de 320px furava a tela em celulares de 360px (a mais
+        // estreita, o painel + margens já não sobravam 320px). `min()` deixa o
+        // Popover ocupar até 320px, mas nunca mais que a viewport menos 2rem
+        // de respiro — a grade de 8 colunas se ajusta sozinha ao que sobrar.
+        className="w-[min(320px,calc(100vw-2rem))] p-2"
         // Sem isto o popover se fecha sozinho no primeiro emoji: `insertText`
         // devolve o foco ao composer, que está fora deste conteúdo.
         onFocusOutside={(event) => event.preventDefault()}

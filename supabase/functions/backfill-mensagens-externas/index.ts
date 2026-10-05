@@ -7,12 +7,19 @@
 //
 // Como funciona: para cada cliente com atendimento na janela, lê o histórico do
 // chat na uazapi (`POST /message/find`), descarta o que já existe (pelo
-// `zapi_message_id`) e grava o que falta como `sender_type='externo'` — com
+// `zapi_message_id`) e grava o que falta — com
 // `created_at` = hora REAL da mensagem no WhatsApp, para ela aparecer no lugar
 // certo da conversa, e não no fim.
 //
+// Também recupera mensagens RECEBIDAS (`incluir_inbound: true`). Elas sempre
+// foram gravadas pelo webhook, MENOS quando ele errava ao resolver o cliente —
+// foi o que aconteceu com um número que tinha registro duplicado nas duas formas
+// brasileiras (com/sem nono dígito): o webhook devolvia
+// `conflito_identidade_cliente` e descartava a mensagem em silêncio.
+//
 // Contrato:
-//   POST { dias?, limite_clientes?, offset?, dry_run? }  (Authorization: JWT de superadmin)
+//   POST { dias?, limite_clientes?, offset?, dry_run?, incluir_inbound?, client_id? }
+//   (Authorization: JWT de superadmin)
 //   → { ok, dry_run, clientes_analisados, proximo_offset, tem_mais, encontradas,
 //       inseridas, puladas, erros, detalhes[] }
 //
@@ -32,7 +39,12 @@ import {
   parseMensagem,
   TIPOS_COM_DOWNLOAD,
 } from "../_shared/mensagem-uazapi.ts";
-import { idsPossiveis, inteiroNoIntervalo } from "./logic.ts";
+import {
+  idsPossiveis,
+  inteiroNoIntervalo,
+  papelDaMensagemBackfill,
+  usaJanelaDuplicata,
+} from "./logic.ts";
 
 const FUNCAO = "backfill-mensagens-externas";
 
@@ -54,6 +66,7 @@ const CONCORRENCIA = 3;
 // Duas mensagens outbound do mesmo cliente, mesmo tipo, dentro desta janela são
 // tratadas como a MESMA (proteção contra formato de id divergente).
 const JANELA_DUPLICATA_MS = 60 * 1000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -77,6 +90,10 @@ interface Payload {
   dry_run?: boolean;
   /** Inclui números que também são de colaborador (traz aviso interno junto). */
   incluir_colaboradores?: boolean;
+  /** Recupera também as mensagens RECEBIDAS do cliente, não só as que saíram. */
+  incluir_inbound?: boolean;
+  /** Limita a um único cliente — use sempre que estiver consertando um caso. */
+  client_id?: string;
 }
 
 interface ClienteAlvo {
@@ -91,7 +108,13 @@ interface ResultadoCliente {
   puladas: number;
   erro?: string;
   /** Só em dry_run: o que entraria. Mensagem não pode ser apagada depois. */
-  amostra?: { quando: string; tipo: string; arquivo: string | null; previa: string | null }[];
+  amostra?: {
+    quando: string;
+    direcao: "inbound" | "outbound";
+    tipo: string;
+    arquivo: string | null;
+    previa: string | null;
+  }[];
 }
 
 /** Clientes com atendimento na janela — só eles têm conversa onde encaixar. */
@@ -185,6 +208,7 @@ async function processarCliente(
   cliente: ClienteAlvo,
   desdeMs: number,
   dryRun: boolean,
+  incluirInbound: boolean,
 ): Promise<ResultadoCliente> {
   const r: ResultadoCliente = { client_id: cliente.id, encontradas: 0, inseridas: 0, puladas: 0 };
 
@@ -199,10 +223,11 @@ async function processarCliente(
     return r;
   }
 
-  // Só interessa o que SAIU do nosso número (fromMe) dentro da janela: é isso
-  // que o webhook descartava. Mensagem do cliente (inbound) sempre foi gravada.
+  // O que SAIU do nosso número (fromMe) é o caso original: o webhook descartava
+  // esses eventos. A mensagem recebida só entra sob pedido explícito, para
+  // consertar um cliente cujo inbound o webhook errou ao resolver.
   const candidatas = mensagens.filter((m) => {
-    if (m.fromMe !== true) return false;
+    if (m.fromMe !== true && !incluirInbound) return false;
     const iso = dataDaMensagem(m);
     if (!iso) return false;
     return Date.parse(iso) >= desdeMs;
@@ -249,24 +274,28 @@ async function processarCliente(
       continue;
     }
 
-    // Segunda rede contra duplicata: se já existe mensagem outbound do mesmo
-    // cliente, mesmo tipo, no mesmo instante, é a MESMA mensagem gravada com
-    // outro formato de id. Preferimos pular do que duplicar a conversa.
-    const janelaIni = new Date(Date.parse(quando) - JANELA_DUPLICATA_MS).toISOString();
-    const janelaFim = new Date(Date.parse(quando) + JANELA_DUPLICATA_MS).toISOString();
-    const { data: parecida } = await supabase
-      .from("mensagens")
-      .select("id")
-      .eq("client_id", cliente.id)
-      .eq("direction", "outbound")
-      .eq("tipo", parsed.tipo)
-      .gte("created_at", janelaIni)
-      .lte("created_at", janelaFim)
-      .limit(1)
-      .maybeSingle();
-    if (parecida?.id) {
-      r.puladas++;
-      continue;
+    const papel = papelDaMensagemBackfill(msg.fromMe === true);
+
+    // Segunda rede contra duplicata: se já existe mensagem do mesmo cliente, na
+    // mesma direção, mesmo tipo, no mesmo instante, é a MESMA mensagem gravada
+    // com outro formato de id. Preferimos pular do que duplicar a conversa.
+    if (usaJanelaDuplicata(papel.direction)) {
+      const janelaIni = new Date(Date.parse(quando) - JANELA_DUPLICATA_MS).toISOString();
+      const janelaFim = new Date(Date.parse(quando) + JANELA_DUPLICATA_MS).toISOString();
+      const { data: parecida } = await supabase
+        .from("mensagens")
+        .select("id")
+        .eq("client_id", cliente.id)
+        .eq("direction", papel.direction)
+        .eq("tipo", parsed.tipo)
+        .gte("created_at", janelaIni)
+        .lte("created_at", janelaFim)
+        .limit(1)
+        .maybeSingle();
+      if (parecida?.id) {
+        r.puladas++;
+        continue;
+      }
     }
 
     const atend = await atendimentoParaMomento(supabase, cliente.id, quando);
@@ -281,6 +310,7 @@ async function processarCliente(
       // impede DELETE, então não há como desfazer um backfill errado.
       (r.amostra ??= []).push({
         quando,
+        direcao: papel.direction,
         tipo: parsed.tipo,
         arquivo: (parsed.media_metadata?.file_name as string | undefined) ?? null,
         previa: parsed.content ? parsed.content.slice(0, 60) : null,
@@ -288,15 +318,19 @@ async function processarCliente(
       continue;
     }
 
-    const meta = { ...(parsed.media_metadata ?? {}), origem: "api_externa", backfill: true };
+    // `origem: api_externa` marca o que SAIU por fora do Chat — é o que
+    // autoriza apagar para todos. Mensagem recebida não leva essa marca.
+    const meta = papel.direction === "outbound"
+      ? { ...(parsed.media_metadata ?? {}), origem: "api_externa", backfill: true }
+      : { ...(parsed.media_metadata ?? {}), backfill: true };
     const { data: nova, error: errIns } = await supabase
       .from("mensagens")
       .insert({
         atendimento_id: atend.id,
         client_id: cliente.id,
         department_id: atend.current_department_id,
-        direction: "outbound",
-        sender_type: "externo",
+        direction: papel.direction,
+        sender_type: papel.sender_type,
         sent_by_user_id: null,
         tipo: parsed.tipo,
         content: parsed.content,
@@ -304,7 +338,7 @@ async function processarCliente(
         media_metadata: meta,
         zapi_message_id: uazapiId,
         status_envio: "enviado",
-        status_whatsapp: "enviado",
+        status_whatsapp: papel.status_whatsapp,
         created_at: quando,
       })
       .select("id")
@@ -397,19 +431,32 @@ Deno.serve(async (req: Request) => {
   // dry_run é o PADRÃO: rodar sem querer não escreve nada.
   const dryRun = payload.dry_run !== false;
   const incluirColaboradores = payload.incluir_colaboradores === true;
+  const incluirInbound = payload.incluir_inbound === true;
+  // client_id malformado NÃO pode virar "roda em todo mundo": quem passa esse
+  // campo está consertando UM caso, e o silêncio aqui rodaria o backfill no
+  // lote inteiro. Falha explícita.
+  const clienteUnico = payload.client_id === undefined || payload.client_id === null
+    ? null
+    : typeof payload.client_id === "string" && UUID_RE.test(payload.client_id)
+    ? payload.client_id
+    : undefined;
+  if (clienteUnico === undefined) {
+    return jsonResponse({ ok: false, erro: "client_id_invalido" }, 400);
+  }
 
   const desdeMs = Date.now() - dias * 24 * 60 * 60 * 1000;
   const desde = new Date(desdeMs).toISOString();
 
   try {
-    const todos = await clientesComAtendimento(supabase, desde, incluirColaboradores);
+    const encontrados = await clientesComAtendimento(supabase, desde, incluirColaboradores);
+    const todos = clienteUnico ? encontrados.filter((c) => c.id === clienteUnico) : encontrados;
     const lote = todos.slice(offset, offset + limiteClientes);
 
     const resultados: ResultadoCliente[] = [];
     for (let i = 0; i < lote.length; i += CONCORRENCIA) {
       const fatia = lote.slice(i, i + CONCORRENCIA);
       const parciais = await Promise.all(
-        fatia.map((c) => processarCliente(supabase, c, desdeMs, dryRun)),
+        fatia.map((c) => processarCliente(supabase, c, desdeMs, dryRun, incluirInbound)),
       );
       resultados.push(...parciais);
     }
@@ -423,6 +470,8 @@ Deno.serve(async (req: Request) => {
       dry_run: dryRun,
       dias,
       incluir_colaboradores: incluirColaboradores,
+      incluir_inbound: incluirInbound,
+      client_id: clienteUnico,
       clientes_analisados: lote.length,
       clientes_no_periodo: todos.length,
       proximo_offset: offset + lote.length,

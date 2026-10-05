@@ -147,9 +147,12 @@ export function GruposPane({ meuUserId, formatTime, tabs }: Props) {
   }, [queryClient]);
 
   return (
-    <>
+    // No celular a coluna visível é decidida por `data-pane`: com grupo aberto
+    // aparece a conversa, sem grupo aparece a lista. No desktop as duas convivem
+    // lado a lado (padrão lista ↔ detalhe do BRIEF-MOBILE.md).
+    <div className="flex h-full w-full" data-pane={selectedId ? "detalhe" : "lista"}>
       {/* Lista */}
-      <div className="w-[360px] shrink-0 border-r border-border bg-card overflow-y-auto">
+      <div className="w-full shrink-0 overflow-y-auto border-r border-border bg-card scroll-contain md:w-[360px] [[data-pane=detalhe]_&]:hidden md:[[data-pane=detalhe]_&]:block">
         <div className="p-4 border-b border-border space-y-2">
           {tabs}
           <input
@@ -157,7 +160,7 @@ export function GruposPane({ meuUserId, formatTime, tabs }: Props) {
             onChange={(e) => setFilter(e.target.value)}
             type="text"
             placeholder="Buscar grupos..."
-            className="w-full rounded-2xl border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-2xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 md:py-2"
           />
           {/* A sincronização não tem botão: roda sozinha. Só damos o sinal de
               que está acontecendo, para a lista não parecer travada. */}
@@ -182,7 +185,7 @@ export function GruposPane({ meuUserId, formatTime, tabs }: Props) {
       </div>
 
       {/* Conversa */}
-      <div className="relative flex flex-1 flex-col bg-background">
+      <div className="relative flex w-full min-w-0 flex-1 flex-col bg-background [[data-pane=lista]_&]:hidden md:[[data-pane=lista]_&]:flex">
         {!current ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="text-center">
@@ -196,12 +199,13 @@ export function GruposPane({ meuUserId, formatTime, tabs }: Props) {
             grupo={current}
             meuUserId={meuUserId}
             formatTime={formatTime}
+            onVoltar={() => setSelectedId(null)}
             registrarRealtime={(cbs) => {
               chatCbsRef.current = cbs;
             }}
           />
         )}
       </div>
-    </>
+    </div>
   );
 }

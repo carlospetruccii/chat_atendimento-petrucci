@@ -82,7 +82,9 @@ export function GruposList({
         <li key={g.id}>
           <button
             onClick={() => onSelect(g.id)}
-            className={`relative w-full text-left px-4 py-3 border-b border-border hover:bg-muted transition-colors ${
+            // min-h-16 (64px): alvo confortável para o dedo. O conteúdo (avatar +
+            // 3 linhas) já costuma passar disso, mas nomes curtos sem badges não.
+            className={`relative min-h-16 w-full text-left px-4 py-3 border-b border-border hover:bg-muted transition-colors ${
               selectedId === g.id
                 ? "bg-[color-mix(in_oklab,var(--wa-green)_12%,transparent)] before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary"
                 : ""

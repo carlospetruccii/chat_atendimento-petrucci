@@ -1,7 +1,7 @@
 import { FotoPerfil } from "@/components/FotoPerfil";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Loader2, Mic, Reply, Send, Users } from "lucide-react";
+import { AlertCircle, ChevronLeft, Loader2, Mic, Reply, Send, Users } from "lucide-react";
 import { GrupoParticipantesSheet } from "@/components/inbox-grupos/GrupoParticipantesSheet";
 import { toast } from "sonner";
 import { formatWhatsAppText } from "@/lib/whatsapp-format";
@@ -36,6 +36,9 @@ interface Props {
   grupo: Grupo;
   meuUserId: string;
   formatTime: (iso: string | null) => string;
+  /** Volta para a lista no celular (o pai zera a seleção). Sem efeito no
+   * desktop, onde lista e conversa convivem lado a lado. */
+  onVoltar: () => void;
   /** Registra os callbacks de realtime do chat aberto (o canal vive na rota). */
   registrarRealtime: (cbs: {
     onInsert: (messageId: string, grupoId: string) => void;
@@ -49,7 +52,13 @@ interface Props {
  * imagem, scroll infinito, tempo real, não lidas — e nada do fluxo de
  * atendimento: sem bot, triagem, departamento, repasse ou encerramento.
  */
-export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime }: Props) {
+export function GrupoChatPanel({
+  grupo,
+  meuUserId,
+  formatTime,
+  onVoltar,
+  registrarRealtime,
+}: Props) {
   const queryClient = useQueryClient();
   const composerRef = useRef<RichMessageComposerHandle>(null);
   const [hasDraft, setHasDraft] = useState(false);
@@ -270,12 +279,22 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
   return (
     <>
       {/* Cabeçalho */}
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-card px-6 py-3">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          {/* Só existe no celular: sem ele quem abre um grupo fica preso na
+              conversa, porque lista e conversa não convivem em telas estreitas. */}
+          <button
+            type="button"
+            onClick={onVoltar}
+            aria-label="Voltar para a lista de grupos"
+            className="touch-target-mobile -ml-1 flex shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-primary md:hidden"
+          >
+            <ChevronLeft className="h-5 w-5" strokeWidth={1.8} />
+          </button>
           <FotoPerfil
             url={grupo.fotoUrl}
             fallback={<Users className="h-4 w-4" strokeWidth={1.8} />}
-            className="h-9 w-9"
+            className="h-9 w-9 shrink-0"
           />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -297,7 +316,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
           onClick={() => setParticipantesOpen(true)}
           title="Ver participantes"
           aria-label="Ver participantes"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+          className="touch-target-mobile flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
         >
           <Users className="h-4 w-4" strokeWidth={1.8} />
         </button>
@@ -313,7 +332,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
       {/* Mensagens */}
       <div
         ref={chat.scrollContainerRef}
-        className="relative flex-1 overflow-y-auto p-6 bg-[var(--chat-bg)]"
+        className="scroll-contain relative flex-1 overflow-y-auto bg-[var(--chat-bg)] p-3 sm:p-6"
       >
         <div ref={chat.topSentinelRef} aria-hidden className="h-px" />
 
@@ -362,9 +381,12 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
               ? "text-[var(--chat-sent-foreground)]/70"
               : "text-muted-foreground";
 
+            // min-w-0 (em vez de min-w-fit): a bolha pode encolher abaixo do
+            // conteúdo quando precisa. Sem isso ela força rolagem horizontal no
+            // celular antes de dar ao texto a chance de quebrar linha.
             const bubbleClass = isSticker
               ? "max-w-[70%]"
-              : `min-w-fit max-w-[75ch] rounded-lg px-3 py-2 text-sm shadow-sm ${bubbleColor}`;
+              : `min-w-0 max-w-[75ch] rounded-lg px-3 py-2 text-sm shadow-sm ${bubbleColor}`;
 
             // Em grupo o nome do autor é essencial: várias pessoas falando.
             // Cor estável por participante (derivada do número), estilo WhatsApp.
@@ -386,8 +408,11 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
                 }`}
               >
                 {item.mostrarAutor && (
+                  // min-w-0 + truncate: o nome do participante pode chegar sem
+                  // espaços (pushname comprido do WhatsApp) e, sem isso, esticava
+                  // a bolha para fora da tela no celular em vez de cortar com "...".
                   <span
-                    className="text-[11px] font-medium mb-0.5 px-1"
+                    className="mb-0.5 min-w-0 max-w-[85%] truncate px-1 text-[11px] font-medium"
                     style={corAutor ? { color: corAutor } : undefined}
                   >
                     {autor}
@@ -414,11 +439,11 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
                       />
                     )}
                     {m.tipo === "texto" ? (
-                      <p className="whitespace-pre-wrap break-words">
+                      <p className="whitespace-pre-wrap break-anywhere">
                         {formatWhatsAppText(m.content)}
                       </p>
                     ) : (
-                      <MessageMedia message={m} />
+                      <MessageMedia message={m} escopo="grupo" />
                     )}
                     {isExterno && (
                       <p className={`text-[10px] italic ${metaColor} mt-1`}>
@@ -438,10 +463,13 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
                     )}
                   </div>
                   {!somenteLeitura && (
+                    // No celular não existe "passar o mouse": o botão fica
+                    // sempre visível (com alvo de toque maior). No desktop volta
+                    // a só aparecer com hover, como antes.
                     <button
                       type="button"
                       onClick={() => setReplyTo(m)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="touch-target-mobile inline-flex shrink-0 items-center justify-center rounded-full p-1.5 text-muted-foreground opacity-100 transition-opacity hover:bg-muted hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
                       aria-label="Responder mensagem"
                       title="Responder"
                     >
@@ -471,7 +499,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
 
       {/* Composer */}
       {somenteLeitura ? (
-        <div className="flex items-center gap-2 border-t border-[var(--warning-border)] bg-[var(--warning-bg)] px-6 py-3 text-sm text-[var(--warning-foreground)]">
+        <div className="flex items-center gap-2 border-t border-[var(--warning-border)] bg-[var(--warning-bg)] px-4 py-3 text-sm text-[var(--warning-foreground)] sm:px-6">
           <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
           <span>
             Este grupo permite mensagens apenas de administradores e nosso número não é
@@ -479,7 +507,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
           </span>
         </div>
       ) : (
-        <div className="border-t border-border bg-card p-4 space-y-2">
+        <div className="bg-[var(--chat-bg)] px-4 pb-4 pt-2 space-y-2">
           {replyTo && recorder.state === "idle" && !recordedAudio && (
             <QuotedMessagePreview
               variant="compact"
@@ -508,7 +536,7 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
               onTranscribe={handleTranscribeRecorded}
             />
           ) : (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+            <div className="flex items-center gap-2 rounded-3xl border border-border bg-background px-3 py-2 shadow-sm">
               <AttachMenu
                 disabled={sending}
                 onPick={handleAttachPick}
@@ -538,7 +566,8 @@ export function GrupoChatPanel({ grupo, meuUserId, formatTime, registrarRealtime
               <button
                 onClick={handleSend}
                 disabled={sending || !hasDraft}
-                className="rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                aria-label="Enviar mensagem"
+                className="touch-target-mobile inline-flex items-center justify-center rounded-full bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {sending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

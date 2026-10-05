@@ -21,6 +21,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { atualizacaoAposErroEnvio } from "../_shared/erro-envio.ts";
 import { gravarIdPosEnvio } from "../_shared/pos-envio.ts";
 import {
   enviarMidia,
@@ -96,23 +97,6 @@ function semUrls(texto: string): string {
   return texto.replace(/https?:\/\/\S+/gi, "[url]");
 }
 
-function motivoLegivel(err: unknown): string {
-  if (err instanceof ZapiError) {
-    if (err.status === 429) return "WhatsApp indisponível (limite de requisições)";
-    if (err.status === 401 || err.status === 403) {
-      return "WhatsApp recusou a credencial (verifique a conexão)";
-    }
-    if (err.status >= 500) return "WhatsApp indisponível";
-    try {
-      const j = JSON.parse(err.body) as { error?: string; message?: string };
-      const msg = j.error ?? j.message;
-      if (typeof msg === "string" && msg) return msg.slice(0, 140);
-    } catch { /* corpo não-JSON */ }
-    return `Erro no envio (HTTP ${err.status})`;
-  }
-  if (err instanceof Error) return err.message.slice(0, 140);
-  return "Falha desconhecida no envio";
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
@@ -343,25 +327,22 @@ Deno.serve(async (req: Request) => {
         duracao_ms: t(),
       });
     } catch (err) {
-      const motivo = motivoLegivel(err);
+      // Só a versão sanitizada é persistida: a linha é legível por todos os
+      // membros e o corpo de erro da uazapi pode ecoar a URL assinada que
+      // enviamos.
+      const upd = atualizacaoAposErroEnvio(err, mediaMetadata, { sanitizarMotivo: semUrls });
       await supabase
         .from("grupo_mensagens")
-        .update({
-          status_envio: "falha",
-          // Só a versão sanitizada é persistida: a linha é legível por todos os
-          // membros e o corpo de erro da uazapi pode ecoar a URL assinada que
-          // enviamos. O motivo completo fica apenas no log.
-          media_metadata: { ...(mediaMetadata ?? {}), erro_motivo: semUrls(motivo) },
-        })
+        .update(upd)
         .eq("id", mensagemId);
 
       log({
         funcao: FUNCAO,
-        evento: "envio_falha",
-        status: "erro",
+        evento: upd.status_envio === "falha" ? "envio_falha" : "envio_incerto",
+        status: upd.status_envio === "falha" ? "erro" : "ok",
         mensagem_id: mensagemId,
         duracao_ms: t(),
-        erro_msg: motivo,
+        erro_msg: (upd.media_metadata.erro_motivo ?? upd.media_metadata.envio_incerto_motivo) as string,
         extra: { uazapi_status: err instanceof ZapiError ? err.status : null },
       });
     }

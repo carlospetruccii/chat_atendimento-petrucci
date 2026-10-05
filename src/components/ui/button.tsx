@@ -17,11 +17,16 @@ const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // Toda altura sobe um degrau no celular e volta ao valor de desktop no
+      // `sm:`. Motivo: 36px (h-9) e 32px (h-8) erram muito no polegar — o alvo
+      // confortável é ~44px, e ficar abaixo disso num app usado o dia inteiro
+      // em pé, com uma mão, custa toque errado atrás de toque errado.
+      // O desenho do desktop fica idêntico ao de antes.
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
-        icon: "h-9 w-9",
+        default: "h-11 px-4 py-2 sm:h-9",
+        sm: "h-10 rounded-md px-3 text-xs sm:h-8",
+        lg: "h-12 rounded-md px-8 sm:h-10",
+        icon: "h-11 w-11 sm:h-9 sm:w-9",
       },
     },
     defaultVariants: {

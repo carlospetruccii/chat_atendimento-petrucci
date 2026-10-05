@@ -2,7 +2,13 @@
 // Repesca mensagens outbound em status_envio='falha' e tenta reenviar via Z-API.
 // Backoff por tentativa (0=imediato, 1=>=5min, 2=>=15min). Limite 50 por execução.
 // Após 3 tentativas: desiste, atendente humano precisa intervir.
+//
+// Antes disso, varre os envios INCERTOS: quando a uazapi não responde, quem
+// envia deixa a linha em 'enviando' com `envio_incerto_em` em vez de 'falha',
+// porque a mensagem pode ter saído (ver _shared/erro-envio.ts). Passada a
+// janela sem o eco adotar a linha, aí sim é falha e entra no retry normal.
 
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
@@ -10,8 +16,8 @@ import {
   enviarMidia,
   enviarTexto,
   type TipoMidia,
-  ZapiError,
 } from "../_shared/uazapi-client.ts";
+import { atualizacaoAposErroEnvio, JANELA_ENVIO_INCERTO_MS } from "../_shared/erro-envio.ts";
 
 const FUNCAO = "cron-retry-mensagens-falha";
 const LIMITE_POR_EXECUCAO = 50;
@@ -24,43 +30,94 @@ const MAPA_TIPO_ZAPI: Record<string, TipoMidia> = {
   documento: "document",
 };
 
-function motivoLegivel(err: unknown): string {
-  if (err instanceof ZapiError) {
-    if (err.status === 429) return "WhatsApp indisponível (limite de requisições)";
-    if (err.status === 401 || err.status === 403) return "WhatsApp recusou a credencial (verifique a conexão)";
-    if (err.status === 404) return "Recurso não encontrado no WhatsApp";
-    if (err.status >= 500) return "WhatsApp indisponível";
-    try {
-      const j = JSON.parse(err.body) as { error?: string; message?: string };
-      const msg = j.error ?? j.message;
-      if (msg && typeof msg === "string") return msg.slice(0, 140);
-    } catch { /* ignora */ }
-    if (err.status === 400) return "Dados inválidos para envio (verifique número/mídia)";
-    return `Erro no envio (HTTP ${err.status})`;
-  }
-  if (err instanceof Error) {
-    if (err.name === "TimeoutError" || /timeout/i.test(err.message)) {
-      return "Tempo esgotado ao enviar";
+
+/**
+ * Promove a 'falha' os envios incertos cuja janela de eco acabou.
+ *
+ * `zapi_message_id is null` é a prova de que nenhum eco adotou a linha: se o
+ * eco tivesse chegado, ela já estaria 'enviado' com o id da uazapi.
+ *
+ * Grupos e Docs entram na varredura para não ficarem presos em "enviando" —
+ * lá não há retry automático, a promoção só destrava a linha para a atendente
+ * reenviar.
+ */
+async function promoverIncertosExpirados(
+  supabase: SupabaseClient,
+  cutoffIso: string,
+): Promise<{ mensagens: number; grupos: number; docs: number }> {
+  const contagem = { mensagens: 0, grupos: 0, docs: 0 };
+
+  for (const tabela of ["mensagens", "grupo_mensagens", "docs_mensagens"] as const) {
+    const coluna = tabela === "mensagens" ? "zapi_message_id" : "uazapi_message_id";
+    const { data, error } = await supabase
+      .from(tabela)
+      .update({ status_envio: "falha" })
+      .eq("status_envio", "enviando")
+      .is(coluna, null)
+      .not("media_metadata->>envio_incerto_em", "is", null)
+      .lt("media_metadata->>envio_incerto_em", cutoffIso)
+      .select("id");
+
+    if (error) {
+      log({
+        funcao: FUNCAO,
+        evento: "promover_incertos_erro",
+        status: "erro",
+        erro_msg: error.message,
+        extra: { tabela },
+      });
+      continue;
     }
-    return err.message.slice(0, 140);
+
+    const n = (data ?? []).length;
+    if (tabela === "mensagens") contagem.mensagens = n;
+    else if (tabela === "grupo_mensagens") contagem.grupos = n;
+    else contagem.docs = n;
+
+    if (n > 0) {
+      log({
+        funcao: FUNCAO,
+        evento: "incertos_promovidos_falha",
+        status: "ok",
+        extra: { tabela, total: n, ids: (data ?? []).map((r) => r.id).join(",") },
+      });
+    }
   }
-  return "Falha desconhecida no envio";
+
+  return contagem;
 }
 
 Deno.serve(async (_req: Request) => {
   const cron = iniciarCronometro();
   const supabase = getSupabaseAdmin();
 
-  // a) Kill switch
+  // a) Envios incertos que passaram da janela sem o eco chegar: viram falha de
+  //    verdade e, se o bot estiver ativo, entram no retry desta mesma execução.
+  //    Roda ANTES do kill switch: promover não envia nada, só para de mentir
+  //    "enviando" para a atendente enquanto os envios estão desligados.
+  const agora = Date.now();
+  const cutoffIncerto = new Date(agora - JANELA_ENVIO_INCERTO_MS).toISOString();
+  const promovidos = await promoverIncertosExpirados(supabase, cutoffIncerto);
+
+  // b) Kill switch
   if (!(await botEstaAtivo())) {
-    log({ funcao: FUNCAO, evento: "retry_pulado_kill_switch", status: "ok", duracao_ms: cron() });
-    return new Response(JSON.stringify({ ok: true, pulado: "kill_switch" }), {
+    log({
+      funcao: FUNCAO,
+      evento: "retry_pulado_kill_switch",
+      status: "ok",
+      duracao_ms: cron(),
+      extra: {
+        promovidos_mensagens: promovidos.mensagens,
+        promovidos_grupos: promovidos.grupos,
+        promovidos_docs: promovidos.docs,
+      },
+    });
+    return new Response(JSON.stringify({ ok: true, pulado: "kill_switch", promovidos }), {
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  // b) Buscar candidatos com backoff via OR
-  const agora = Date.now();
+  // c) Buscar candidatos com backoff via OR
   const cutoff5m = new Date(agora - 5 * 60_000).toISOString();
   const cutoff15m = new Date(agora - 15 * 60_000).toISOString();
 
@@ -153,9 +210,11 @@ Deno.serve(async (_req: Request) => {
       const zapiId = (resp as { messageId?: string; id?: string } | null)?.messageId
         ?? (resp as { id?: string } | null)?.id ?? null;
 
-      // Limpa erro_motivo do media_metadata
+      // Limpa os rastros do erro: a mensagem saiu.
       const novoMeta = { ...mediaMetadata };
       delete novoMeta.erro_motivo;
+      delete novoMeta.envio_incerto_em;
+      delete novoMeta.envio_incerto_motivo;
       const metaFinal = Object.keys(novoMeta).length > 0 ? novoMeta : null;
 
       await supabase.from("mensagens").update({
@@ -172,19 +231,21 @@ Deno.serve(async (_req: Request) => {
         extra: { tentativa: tentativaNum },
       });
     } catch (err) {
-      const motivo = motivoLegivel(err);
-      const novoMeta = { ...mediaMetadata, erro_motivo: motivo };
+      const upd = atualizacaoAposErroEnvio(err, mediaMetadata);
+      const motivo =
+        (upd.media_metadata.erro_motivo ?? upd.media_metadata.envio_incerto_motivo) as string;
       await supabase.from("mensagens").update({
-        status_envio: "falha",
+        ...upd,
         tentativas_envio: tentativaNum,
-        media_metadata: novoMeta,
       }).eq("id", mensagemId);
 
       falhas++;
       log({
-        funcao: FUNCAO, evento: "retry_falha", status: "erro",
+        funcao: FUNCAO,
+        evento: upd.status_envio === "falha" ? "retry_falha" : "retry_incerto",
+        status: upd.status_envio === "falha" ? "erro" : "ok",
         mensagem_id: mensagemId, duracao_ms: t(),
-        extra: { tentativa: tentativaNum, erro_motivo: motivo },
+        extra: { tentativa: tentativaNum, erro_motivo: motivo, status_envio: upd.status_envio },
         erro_msg: motivo,
       });
     }
@@ -193,10 +254,17 @@ Deno.serve(async (_req: Request) => {
   log({
     funcao: FUNCAO, evento: "retry_concluido", status: "ok",
     duracao_ms: cron(),
-    extra: { sucessos, falhas, total: lista.length },
+    extra: {
+      sucessos,
+      falhas,
+      total: lista.length,
+      promovidos_mensagens: promovidos.mensagens,
+      promovidos_grupos: promovidos.grupos,
+      promovidos_docs: promovidos.docs,
+    },
   });
 
-  return new Response(JSON.stringify({ ok: true, sucessos, falhas, total: lista.length }), {
+  return new Response(JSON.stringify({ ok: true, sucessos, falhas, total: lista.length, promovidos }), {
     headers: { "Content-Type": "application/json" },
   });
 });

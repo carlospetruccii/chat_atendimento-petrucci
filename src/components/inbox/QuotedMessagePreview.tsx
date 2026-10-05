@@ -3,6 +3,10 @@ import type { MensagemRenderizavel } from "@/lib/mensagem-shape";
 
 export function previewLabel(m: MensagemRenderizavel | null | undefined): string {
   if (!m) return "Mensagem";
+  // Antes desta guarda, citar uma mensagem já apagada caía no fallback "Mensagem"
+  // (o content foi esvaziado) e parecia um texto vazio qualquer — em vez de
+  // deixar claro que aquele conteúdo não existe mais.
+  if (m.apagadaEm) return "🚫 Mensagem apagada";
   switch (m.tipo) {
     case "texto":
       return m.content?.trim() || "Mensagem";

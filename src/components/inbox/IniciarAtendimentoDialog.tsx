@@ -10,6 +10,7 @@ import {
   formatTelefoneBR,
   type ClienteAutocompleteRow,
 } from "@/lib/clientes-queries";
+import { avisoCadastro } from "@/lib/cadastro-aviso";
 
 interface Props {
   open: boolean;
@@ -152,7 +153,7 @@ export function IniciarAtendimentoDialog({
       });
       setShowNovo(false);
       setBusca("");
-      toast.success(resp.criado ? "Cliente cadastrado" : "Cliente atualizado");
+      toast.success(avisoCadastro(resp, "Cliente"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao cadastrar cliente");
     } finally {
@@ -222,14 +223,18 @@ export function IniciarAtendimentoDialog({
       onClick={() => !iniciando && onOpenChange(false)}
     >
       <div
-        className="w-full max-w-lg rounded-lg bg-card p-6 shadow-lg max-h-[90vh] overflow-y-auto"
+        // dvh, não vh: com o teclado do celular aberto (campo de busca/nome/
+        // telefone), `vh` continua contando a tela inteira e o rodapé com os
+        // botões "Cancelar"/"Iniciar atendimento" saía de vista.
+        className="w-full max-w-lg rounded-lg bg-card p-4 shadow-lg max-h-[90dvh] overflow-y-auto scroll-contain sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
           <h4 className="text-base font-semibold text-foreground">Iniciar atendimento</h4>
           <button
             onClick={() => onOpenChange(false)}
-            className="text-muted-foreground hover:text-foreground"
+            aria-label="Fechar"
+            className="touch-target-mobile -mr-2 -mt-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>

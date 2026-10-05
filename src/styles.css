@@ -137,20 +137,15 @@
    * luminosidade, piso de croma, separação para daltonismo e contraste).
    * NÃO troque por olhômetro: rode o validador de novo.
    *
-   * viz-rapido / viz-cauda: par categórico do histograma de 1ª resposta.
+   * viz-rapido / viz-alerta: par categórico (rápido × demorou) da 1ª resposta.
    *   ΔE 12.2 (deutan) / 26.8 (visão normal) — passa.
    *   viz-rapido fica em 2,82:1 contra a superfície do card, abaixo de 3:1,
    *   então as barras são OBRIGADAS a carregar rótulo de valor visível.
-   * viz-queda-1..3: rampa ordinal (um matiz, L monotônica) da severidade da
-   *   queda de engajamento. Sempre acompanhada do percentual em texto.
    * ----------------------------------------------------------------- */
   --viz-rapido: oklch(0.65 0.13 168);
-  --viz-cauda: oklch(0.65 0.18 50);
+  --viz-alerta: oklch(0.65 0.18 50);
   --viz-neutro: oklch(0.58 0.01 240);
   --viz-grid: oklch(0.9 0.005 230);
-  --viz-queda-1: oklch(0.72 0.1 27);
-  --viz-queda-2: oklch(0.64 0.16 27);
-  --viz-queda-3: oklch(0.55 0.21 27);
 }
 
 /* =================================================================
@@ -228,12 +223,9 @@
    * seção usa passos próprios. Ambos os conjuntos passam o validador contra
    * a superfície --layer-2 do respectivo tema. */
   --viz-rapido: oklch(0.66 0.14 168);
-  --viz-cauda: oklch(0.66 0.18 45);
+  --viz-alerta: oklch(0.66 0.18 45);
   --viz-neutro: oklch(0.58 0.01 220);
   --viz-grid: oklch(0.36 0.012 220);
-  --viz-queda-1: oklch(0.52 0.1 27);
-  --viz-queda-2: oklch(0.62 0.16 27);
-  --viz-queda-3: oklch(0.72 0.2 27);
 }
 
 @layer base {
@@ -384,3 +376,135 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 
+
+/* =================================================================
+ * CAMADA MOBILE — fundação para uso no celular
+ *
+ * Regras que valem para o app inteiro e não pertencem a nenhuma tela.
+ * Tudo aqui resolve um problema concreto de navegador móvel, não é enfeite.
+ * ================================================================= */
+
+:root {
+  /* Altura da barra de navegação inferior do celular (só existe < md).
+   * Fica em variável porque três coisas precisam do mesmo número: a própria
+   * barra, o padding-bottom do conteúdo e o offset dos elementos fixos
+   * (compositor do chat, botões flutuantes). */
+  --mobile-nav-h: 3.5rem;
+
+  /* Recorte inferior do aparelho (barra de gestos do iPhone / Android). Zero em
+   * qualquer lugar que não seja iOS/Android com viewport-fit=cover — então é
+   * seguro somar sempre. Só o inferior está aqui porque só ele é usado: a barra
+   * de navegação e a barra de zoom da imagem. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Espaço total a reservar no rodapé quando a barra inferior está montada. */
+  --mobile-nav-total: calc(var(--mobile-nav-h) + var(--safe-bottom));
+}
+
+@layer base {
+  html {
+    /* iOS infla o texto sozinho ao girar para paisagem. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    /* Mata o "pull to refresh" e o efeito elástico que arrastam o app inteiro
+     * quando o usuário rola uma lista de conversas até o fim. */
+    overscroll-behavior-y: none;
+  }
+
+  /* O retângulo cinza que o Android pinta em cima de qualquer toque. */
+  a,
+  button,
+  [role="button"],
+  [role="tab"],
+  label,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+    /* Remove o atraso de ~300ms que o navegador espera para ver se o toque
+     * vira um duplo-toque de zoom. */
+    touch-action: manipulation;
+  }
+}
+
+/* -----------------------------------------------------------------
+ * iOS: qualquer campo com fonte < 16px faz o Safari dar zoom ao focar,
+ * e o zoom NÃO volta sozinho — o usuário fica com o app torto.
+ * A correção é subir a fonte só no celular; no desktop segue text-sm.
+ * (Não usamos maximum-scale=1 no viewport: isso quebra o zoom por pinça,
+ * que é recurso de acessibilidade.)
+ * ----------------------------------------------------------------- */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px;
+  }
+}
+
+@layer utilities {
+  /* --- Recorte do aparelho --- */
+  .pb-safe {
+    padding-bottom: var(--safe-bottom);
+  }
+
+  /* --- Alvos de toque ---
+   * 44px é o mínimo praticável com o polegar (WCAG 2.2 pede 24px; 44 é o que de
+   * fato acerta). Vale só no celular: no desktop o mouse acerta 32px e esticar
+   * tudo engorda o desenho sem ganho. */
+  @media (max-width: 767px) {
+    .touch-target-mobile {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  /* --- Rolagem --- */
+  /* Lista/chat: o scroll para na borda do container em vez de continuar na
+   * página atrás dele. Sem isso, rolar o fim do chat arrasta a tela toda. */
+  .scroll-contain {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Carrossel horizontal com parada por item (kanban, chips de filtro). */
+  .snap-x-mandatory {
+    scroll-snap-type: x mandatory;
+  }
+  .snap-start-always {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+  /* Barra de rolagem some, o gesto continua funcionando. Só para faixas
+   * horizontais onde a barra rouba altura preciosa. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* --- Texto --- */
+  /* URL longa e ID sem espaço não podem esticar a bolha do chat além da tela. */
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+/* -----------------------------------------------------------------
+ * Respeita quem desligou animação no sistema. O app tem entrada de
+ * mensagem, fade de rota e transições de painel; no celular isso pesa mais.
+ * ----------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

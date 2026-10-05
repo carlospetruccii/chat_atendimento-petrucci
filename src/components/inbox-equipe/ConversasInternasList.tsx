@@ -61,7 +61,9 @@ export function ConversasInternasList({
         <li key={c.id}>
           <button
             onClick={() => onSelect(c.id)}
-            className={`relative w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted ${
+            // min-h-16 (64px): alvo confortável para o dedo, mesmo critério da
+            // lista de grupos.
+            className={`relative min-h-16 w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted ${
               selectedId === c.id
                 ? "bg-[color-mix(in_oklab,var(--wa-green)_12%,transparent)] before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary"
                 : ""

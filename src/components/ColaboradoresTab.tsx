@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, UserX, UserCheck, UsersRound, Search, X, Loader2, Phone } from "lucide-react";
+import { Pencil, UserX, UserCheck, UsersRound, Search, Loader2, Phone } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -12,6 +12,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import {
   alterarPapelColaborador,
@@ -24,6 +31,7 @@ import {
   updateColaborador,
 } from "@/lib/configuracoes-queries";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { filtrarColaboradores } from "@/lib/colaboradores-filter";
 import { normalizarE164, formatarNumero } from "@/lib/phone";
 
 function initials(n: string) {
@@ -47,6 +55,7 @@ const STATUS_STYLE: Record<ColaboradorRow["status"], { label: string; bg: string
 };
 
 type PapelForm = "administrador" | "colaborador";
+type FiltroStatus = "Todos" | "ativo" | "indisponivel";
 
 interface FormState {
   nome: string;
@@ -65,6 +74,12 @@ const PAPEL_LABEL: Record<"dono" | "administrador" | "colaborador", string> = {
   colaborador: "Colaborador",
 };
 
+const EMPTY_COLABORADORES: ColaboradorRow[] = [];
+
+function isFiltroStatus(value: string): value is FiltroStatus {
+  return value === "Todos" || value === "ativo" || value === "indisponivel";
+}
+
 export function ColaboradoresTab() {
   const qc = useQueryClient();
   const { user: me } = useCurrentUser();
@@ -72,7 +87,7 @@ export function ColaboradoresTab() {
   const colaboradoresQ = useQuery({ queryKey: ["colaboradores"], queryFn: fetchColaboradores });
   const deptsQ = useQuery({ queryKey: ["departments"], queryFn: fetchDepartments });
 
-  const colaboradores = colaboradoresQ.data ?? [];
+  const colaboradores = colaboradoresQ.data ?? EMPTY_COLABORADORES;
   const depts = (deptsQ.data ?? []).filter((d) => d.id !== TRIAGEM_DEPT_ID && d.ativo);
 
   // Só o dono pode promover/rebaixar (bate com a RLS de company_members).
@@ -84,7 +99,8 @@ export function ColaboradoresTab() {
 
   const [search, setSearch] = useState("");
   const [filterDept, setFilterDept] = useState("Todos");
-  const [filterStatus, setFilterStatus] = useState("Todos");
+  const [filterStatus, setFilterStatus] = useState<FiltroStatus>("Todos");
+  const [mostrarInativos, setMostrarInativos] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ColaboradorRow | null>(null);
@@ -101,16 +117,16 @@ export function ColaboradoresTab() {
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [confirmTarget, setConfirmTarget] = useState<ColaboradorRow | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return colaboradores.filter((c) => {
-      if (q && !c.nome.toLowerCase().includes(q) && !(c.email ?? "").toLowerCase().includes(q))
-        return false;
-      if (filterDept !== "Todos" && c.department_id !== filterDept) return false;
-      if (filterStatus !== "Todos" && c.status !== filterStatus) return false;
-      return true;
-    });
-  }, [colaboradores, search, filterDept, filterStatus]);
+  const filtered = useMemo(
+    () =>
+      filtrarColaboradores(colaboradores, {
+        busca: search,
+        departamentoId: filterDept,
+        status: filterStatus,
+        mostrarInativos,
+      }),
+    [colaboradores, search, filterDept, filterStatus, mostrarInativos],
+  );
 
   function openNew() {
     setEditing(null);
@@ -262,8 +278,11 @@ export function ColaboradoresTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      {/* Celular: título e botão empilham (o botão "+ Novo colaborador" ao
+          lado do parágrafo descritivo sobrava pouco espaço pro texto em
+          360px). Do sm: pra cima volta ao layout lado a lado original. */}
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-base font-semibold text-foreground">Colaboradores</h3>
             <span className="text-xs text-muted-foreground">
@@ -276,14 +295,14 @@ export function ColaboradoresTab() {
         </div>
         <button
           onClick={openNew}
-          className="flex shrink-0 items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          className="flex w-full shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
         >
           + Novo colaborador
         </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-full max-w-[320px]">
+        <div className="relative w-full sm:max-w-[320px]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={search}
@@ -295,7 +314,7 @@ export function ColaboradoresTab() {
         <select
           value={filterDept}
           onChange={(e) => setFilterDept(e.target.value)}
-          className="rounded-2xl border border-border bg-card px-3 py-2 text-sm"
+          className="w-full rounded-2xl border border-border bg-card px-3 py-2 text-sm sm:w-auto"
         >
           <option value="Todos">Todos os departamentos</option>
           {depts.map((d) => (
@@ -306,14 +325,28 @@ export function ColaboradoresTab() {
         </select>
         <select
           value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="rounded-2xl border border-border bg-card px-3 py-2 text-sm"
+          onChange={(e) => {
+            const status = e.target.value;
+            if (isFiltroStatus(status)) setFilterStatus(status);
+          }}
+          className="w-full rounded-2xl border border-border bg-card px-3 py-2 text-sm sm:w-auto"
         >
           <option value="Todos">Todos os status</option>
           <option value="ativo">Ativos</option>
           <option value="indisponivel">Indisponíveis</option>
-          <option value="inativo">Inativos</option>
         </select>
+        <button
+          type="button"
+          onClick={() => setMostrarInativos((mostrar) => !mostrar)}
+          aria-pressed={mostrarInativos}
+          className={`w-full rounded-2xl border px-3 py-2 text-sm font-medium sm:w-auto ${
+            mostrarInativos
+              ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+              : "border-border bg-card text-foreground hover:bg-muted"
+          }`}
+        >
+          Inativos
+        </button>
       </div>
 
       {colaboradoresQ.isLoading ? (
@@ -423,208 +456,201 @@ export function ColaboradoresTab() {
         </div>
       )}
 
-      {modalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => !saving && setModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-[480px] rounded-lg bg-card p-6 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between">
-              <h4 className="text-base font-semibold text-foreground">
-                {editing ? "Editar colaborador" : "Novo colaborador"}
-              </h4>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Era um overlay/painel montado à mão (fixed + max-w fixo, sem max-h
+          nem rolagem própria) — um formulário deste tamanho em tela baixa
+          (celular deitado, teclado aberto) ficava sem como chegar no botão
+          Salvar. Migrado para o Dialog da fundação, que já resolve isso
+          (w-[calc(100%-2rem)], max-h-[calc(100dvh-2rem)], overflow-y-auto,
+          padding p-4 sm:p-6) — não repetimos essas classes aqui.
+          onOpenChange só fecha fora de um salvamento em andamento: antes o
+          botão "×" fechava mesmo salvando (só o backdrop e o Cancelar eram
+          bloqueados); aqui os três caminhos de fechar passam pelo mesmo
+          guard, o que é estritamente mais seguro. */}
+      <Dialog open={modalOpen} onOpenChange={(open) => !open && !saving && setModalOpen(false)}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Editar colaborador" : "Novo colaborador"}</DialogTitle>
+          </DialogHeader>
 
-            <div className="mt-5 space-y-4">
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">
+                Nome completo
+              </label>
+              <input
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                  errors.nome ? "border-destructive" : "border-border"
+                }`}
+              />
+              {errors.nome && <p className="mt-1 text-xs text-destructive">{errors.nome}</p>}
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">E-mail</label>
+              <input
+                type="email"
+                value={form.email}
+                disabled={!!editing}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className={`w-full rounded-md border bg-background px-3 py-2 text-sm disabled:bg-muted disabled:text-muted-foreground ${
+                  errors.email ? "border-destructive" : "border-border"
+                }`}
+              />
+              {editing && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  E-mail vinculado ao login e não pode ser alterado.
+                </p>
+              )}
+              {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">
+                WhatsApp pessoal
+              </label>
+              <input
+                type="tel"
+                value={form.whatsapp}
+                onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+                placeholder="(11) 91234-5678"
+                className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                  errors.whatsapp ? "border-destructive" : "border-border"
+                }`}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Recebe um aviso no WhatsApp quando um atendimento for repassado a esta pessoa.
+                Opcional.
+              </p>
+              {errors.whatsapp && (
+                <p className="mt-1 text-xs text-destructive">{errors.whatsapp}</p>
+              )}
+            </div>
+            {!editing && (
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-foreground">
-                  Nome completo
+                  Senha temporária
                 </label>
                 <input
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                  type="text"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                    errors.nome ? "border-destructive" : "border-border"
-                  }`}
-                />
-                {errors.nome && <p className="mt-1 text-xs text-destructive">{errors.nome}</p>}
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">E-mail</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  disabled={!!editing}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm disabled:bg-muted disabled:text-muted-foreground ${
-                    errors.email ? "border-destructive" : "border-border"
-                  }`}
-                />
-                {editing && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    E-mail vinculado ao login e não pode ser alterado.
-                  </p>
-                )}
-                {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">
-                  WhatsApp pessoal
-                </label>
-                <input
-                  type="tel"
-                  value={form.whatsapp}
-                  onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
-                  placeholder="(11) 91234-5678"
-                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                    errors.whatsapp ? "border-destructive" : "border-border"
+                    errors.password ? "border-destructive" : "border-border"
                   }`}
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Recebe um aviso no WhatsApp quando um atendimento for repassado a esta pessoa.
-                  Opcional.
+                  A pessoa será obrigada a trocá-la no primeiro acesso.
                 </p>
-                {errors.whatsapp && (
-                  <p className="mt-1 text-xs text-destructive">{errors.whatsapp}</p>
+                {errors.password && (
+                  <p className="mt-1 text-xs text-destructive">{errors.password}</p>
                 )}
               </div>
-              {!editing && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-foreground">
-                    Senha temporária
-                  </label>
-                  <input
-                    type="text"
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                      errors.password ? "border-destructive" : "border-border"
-                    }`}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    A pessoa será obrigada a trocá-la no primeiro acesso.
-                  </p>
-                  {errors.password && (
-                    <p className="mt-1 text-xs text-destructive">{errors.password}</p>
-                  )}
-                </div>
-              )}
-              {(!editing || canEditRole) && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-foreground">Papel</label>
-                  <select
-                    value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value as PapelForm })}
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="colaborador">Colaborador (atendente de um departamento)</option>
-                    <option value="administrador">Administrador (acesso total)</option>
-                  </select>
-                  {editing && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Alterar o papel muda o acesso da pessoa ao sistema.
-                    </p>
-                  )}
-                </div>
-              )}
+            )}
+            {(!editing || canEditRole) && (
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">
-                  Departamento{form.role === "administrador" && " (opcional)"}
-                </label>
+                <label className="mb-1.5 block text-xs font-medium text-foreground">Papel</label>
                 <select
-                  value={form.department_id}
-                  onChange={(e) => setForm({ ...form, department_id: e.target.value })}
-                  disabled={!!editing && form.role === "administrador" && !canEditRole}
-                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                    errors.department_id ? "border-destructive" : "border-border"
-                  }`}
+                  value={form.role}
+                  onChange={(e) => setForm({ ...form, role: e.target.value as PapelForm })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 >
-                  <option value="">{form.role === "administrador" ? "Nenhum" : "Selecione..."}</option>
-                  {depts.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.nome}
-                    </option>
-                  ))}
+                  <option value="colaborador">Colaborador (atendente de um departamento)</option>
+                  <option value="administrador">Administrador (acesso total)</option>
                 </select>
-                {errors.department_id && (
-                  <p className="mt-1 text-xs text-destructive">{errors.department_id}</p>
-                )}
-                {form.role === "administrador" && (
+                {editing && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Administrador continua vendo tudo. Atribuir um departamento só
-                    faz esta pessoa passar a receber os avisos de novo pendente
-                    daquele setor.
-                    {!!editing && !canEditRole && " Só o dono pode alterar."}
+                    Alterar o papel muda o acesso da pessoa ao sistema.
                   </p>
                 )}
               </div>
-
-              {editing && (
-                <>
-                  <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Ativo</p>
-                      <p className="text-xs text-muted-foreground">
-                        Pode acessar o sistema e receber atendimentos.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={form.ativo}
-                      disabled={!!isSelfSuper}
-                      onCheckedChange={(v) => setForm({ ...form, ativo: v })}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Disponível</p>
-                      <p className="text-xs text-muted-foreground">
-                        Recebe novos atendimentos quando online.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={form.disponivel}
-                      disabled={!!isSelfSuper}
-                      onCheckedChange={(v) => setForm({ ...form, disponivel: v })}
-                    />
-                  </div>
-                  {isSelfSuper && (
-                    <p className="text-xs text-muted-foreground">
-                      Superadmin não pode se desativar.
-                    </p>
-                  )}
-                </>
+            )}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">
+                Departamento{form.role === "administrador" && " (opcional)"}
+              </label>
+              <select
+                value={form.department_id}
+                onChange={(e) => setForm({ ...form, department_id: e.target.value })}
+                disabled={!!editing && form.role === "administrador" && !canEditRole}
+                className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                  errors.department_id ? "border-destructive" : "border-border"
+                }`}
+              >
+                <option value="">
+                  {form.role === "administrador" ? "Nenhum" : "Selecione..."}
+                </option>
+                {depts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                  </option>
+                ))}
+              </select>
+              {errors.department_id && (
+                <p className="mt-1 text-xs text-destructive">{errors.department_id}</p>
+              )}
+              {form.role === "administrador" && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Administrador continua vendo tudo. Atribuir um departamento só faz esta pessoa
+                  passar a receber os avisos de novo pendente daquele setor.
+                  {!!editing && !canEditRole && " Só o dono pode alterar."}
+                </p>
               )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={saving}
-                className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={save}
-                disabled={saving}
-                className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Salvar
-              </button>
-            </div>
+            {editing && (
+              <>
+                <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Ativo</p>
+                    <p className="text-xs text-muted-foreground">
+                      Pode acessar o sistema e receber atendimentos.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.ativo}
+                    disabled={!!isSelfSuper}
+                    onCheckedChange={(v) => setForm({ ...form, ativo: v })}
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Disponível</p>
+                    <p className="text-xs text-muted-foreground">
+                      Recebe novos atendimentos quando online.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.disponivel}
+                    disabled={!!isSelfSuper}
+                    onCheckedChange={(v) => setForm({ ...form, disponivel: v })}
+                  />
+                </div>
+                {isSelfSuper && (
+                  <p className="text-xs text-muted-foreground">Superadmin não pode se desativar.</p>
+                )}
+              </>
+            )}
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <button
+              onClick={() => setModalOpen(false)}
+              disabled={saving}
+              className="w-full justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted sm:w-auto"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
+            >
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Salvar
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!confirmTarget} onOpenChange={(open) => !open && setConfirmTarget(null)}>
         <AlertDialogContent>

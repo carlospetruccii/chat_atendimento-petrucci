@@ -3,6 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Eye, KanbanSquare, Rows3, Search, SearchX, X } from "lucide-react";
 import { SupervisaoKanban } from "@/components/supervisao/SupervisaoKanban";
+import { SupervisaoRowCard } from "@/components/supervisao/SupervisaoRowCard";
+import {
+  SupervisaoFilterSheet,
+  type PeriodPreset,
+  type StatusFilter,
+  type AgentFilter,
+} from "@/components/supervisao/SupervisaoFilterSheet";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -26,27 +33,19 @@ import {
 import {
   fetchSupervisao,
   STATUS_LABEL,
+  STATUS_OPTIONS,
   STATUS_BADGE,
   formatDateShort,
   formatTimeShort,
 } from "@/lib/supervisao-queries";
-import type { AtendimentoStatus } from "@/lib/inbox-queries";
 
 export const Route = createFileRoute("/_app/supervisao")({
   staticData: { title: "Supervisão" },
   component: SupervisaoGuard,
 });
 
-type PeriodPreset = "hoje" | "7d" | "30d" | "custom";
-type StatusFilter = "all" | AtendimentoStatus;
-type AgentFilter = "all" | "none" | string;
-
-const STATUS_OPTIONS: AtendimentoStatus[] = [
-  "em_triagem",
-  "reservado",
-  "em_atendimento",
-  "encerrado",
-];
+// Tipos e a lista de status do filtro moraram para SupervisaoFilterSheet:
+// a folha do celular e esta rota precisam dos dois exatamente iguais.
 
 function deptStyle(cor: string): React.CSSProperties {
   return { backgroundColor: `${cor}20`, color: cor };
@@ -176,7 +175,10 @@ function SupervisaoPage() {
 
   return (
     <>
-      <div className="mb-5 flex items-start justify-between gap-3">
+      {/* Cabeçalho: no celular o alternador desce para uma linha própria e a
+          descrição some — com o título, o alternador e os filtros embaixo,
+          não sobra altura para uma linha só decorativa. */}
+      <div className="mb-4 flex flex-col gap-3 md:mb-5 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex items-baseline gap-3">
             <h1 className="text-xl font-semibold text-foreground">Supervisão</h1>
@@ -184,14 +186,14 @@ function SupervisaoPage() {
               {sorted.length} {sorted.length === 1 ? "conversa" : "conversas"}
             </span>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 hidden text-sm text-muted-foreground md:block">
             Visão completa de todos os atendimentos, em todos os departamentos.
           </p>
         </div>
-        <div className="inline-flex rounded-md border border-border bg-card p-0.5">
+        <div className="inline-flex self-start rounded-md border border-border bg-card p-0.5">
           <button
             onClick={() => setViewPersist("tabela")}
-            className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs ${
+            className={`flex items-center gap-1.5 rounded px-2.5 py-2 text-xs md:py-1 ${
               view === "tabela" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -199,7 +201,7 @@ function SupervisaoPage() {
           </button>
           <button
             onClick={() => setViewPersist("kanban")}
-            className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs ${
+            className={`flex items-center gap-1.5 rounded px-2.5 py-2 text-xs md:py-1 ${
               view === "kanban" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -207,8 +209,31 @@ function SupervisaoPage() {
           </button>
         </div>
       </div>
-      {/* Filtros */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      {/* Filtros — celular: busca + botão "Filtros" que abre a folha inferior
+          com os 4 selects. Os mesmos estados (period, department, agent...)
+          alimentam as duas marcações; só a barra desktop fica escondida. */}
+      <SupervisaoFilterSheet
+        period={period}
+        onPeriodChange={setPeriod}
+        customFrom={customFrom}
+        onCustomFromChange={setCustomFrom}
+        customTo={customTo}
+        onCustomToChange={setCustomTo}
+        department={department}
+        onDepartmentChange={setDepartment}
+        departments={departments}
+        agent={agent}
+        onAgentChange={setAgent}
+        agents={agents}
+        status={status}
+        onStatusChange={setStatus}
+        query={query}
+        onQueryChange={setQuery}
+        resultCount={sorted.length}
+        onClear={clearFilters}
+      />
+      {/* Filtros — desktop: barra horizontal original, inalterada. */}
+      <div className="mb-4 hidden flex-wrap items-center gap-2 md:flex">
         <div className="flex items-center gap-2">
           <Select value={period} onValueChange={(v) => setPeriod(v as PeriodPreset)}>
             <SelectTrigger className="h-9 w-[170px]">
@@ -316,8 +341,13 @@ function SupervisaoPage() {
         )
       ) : (
       <>
-      {/* Tabela */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      {/* Tabela → cartão no celular: 7 colunas não cabem em 360px sem obrigar
+          a arrastar a tela. Cartão e tabela leem a mesma `pageRows` (já
+          filtrada/ordenada/paginada) — só a marcação muda. A borda/sombra que
+          "emoldura" a tabela no desktop some no celular porque cada cartão
+          já tem a própria borda; empilhados dentro de outra borda ficaria
+          "caixa dentro de caixa". */}
+      <div className="overflow-hidden md:rounded-2xl md:border md:border-border md:bg-card md:shadow-sm">
         {isLoading ? (
           <div className="p-6 space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -335,7 +365,13 @@ function SupervisaoPage() {
             </p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <>
+          <div className="space-y-2 md:hidden">
+            {pageRows.map((r) => (
+              <SupervisaoRowCard key={r.id} row={r} onOpen={() => openInSupervision(r.id)} />
+            ))}
+          </div>
+          <table className="hidden w-full text-sm md:table">
             <thead className="bg-muted">
               <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Cliente</th>
@@ -425,6 +461,7 @@ function SupervisaoPage() {
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
       {/* Paginação */}
@@ -434,18 +471,22 @@ function SupervisaoPage() {
             {(currentPage - 1) * pageSize + 1}-
             {Math.min(currentPage * pageSize, sorted.length)} de {sorted.length}
           </span>
-          <div className="flex items-center gap-1">
+          {/* touch-target-mobile: 24px de alvo (p-1 + ícone 16px) erra o dedo;
+              44px só entra abaixo de 768px, o desktop fica do jeito que era. */}
+          <div className="flex items-center gap-2 md:gap-1">
             <button
               disabled={currentPage === 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded p-1 hover:bg-muted disabled:opacity-40"
+              className="touch-target-mobile flex items-center justify-center rounded p-1 hover:bg-muted disabled:opacity-40"
+              aria-label="Página anterior"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <button
               disabled={currentPage === totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="rounded p-1 hover:bg-muted disabled:opacity-40"
+              className="touch-target-mobile flex items-center justify-center rounded p-1 hover:bg-muted disabled:opacity-40"
+              aria-label="Próxima página"
             >
               <ChevronRight className="h-4 w-4" />
             </button>

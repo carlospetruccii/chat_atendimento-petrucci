@@ -25,6 +25,7 @@ import {
   PASTE_COMMAND,
   type EditorState,
 } from "lexical";
+import { useHasSoftKeyboard } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import {
   unescapeWhatsappMarkdown,
@@ -100,10 +101,16 @@ function ImperativeHandlePlugin({
 
 function EnterSendPlugin({ onEnterSend }: { onEnterSend: () => void }): null {
   const [editor] = useLexicalComposerContext();
+  const hasSoftKeyboard = useHasSoftKeyboard();
   const onEnterSendRef = useRef(onEnterSend);
   onEnterSendRef.current = onEnterSend;
 
   useEffect(() => {
+    // No celular o Enter do teclado de tela é a tecla de pular linha, e não há
+    // Shift+Enter: se ele enviasse, ninguém conseguiria escrever um segundo
+    // parágrafo. Ali o envio é só pelo botão.
+    if (hasSoftKeyboard) return;
+
     return editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
@@ -114,7 +121,7 @@ function EnterSendPlugin({ onEnterSend }: { onEnterSend: () => void }): null {
       },
       COMMAND_PRIORITY_HIGH,
     );
-  }, [editor]);
+  }, [editor, hasSoftKeyboard]);
 
   return null;
 }
@@ -198,6 +205,9 @@ export const RichMessageComposer = forwardRef<RichMessageComposerHandle, RichMes
           // e sugere correção no clique direito, como o Gboard).
           spellCheck
           lang="pt-BR"
+          // Pede ao teclado de tela a tecla de "pular linha" em vez de
+          // "enviar" — o envio mora no botão ao lado.
+          enterKeyHint="enter"
           aria-placeholder={placeholder}
           placeholder={
             <div className="pointer-events-none absolute inset-0 text-sm text-muted-foreground">
@@ -215,7 +225,11 @@ export const RichMessageComposer = forwardRef<RichMessageComposerHandle, RichMes
 
     return (
       <LexicalComposer initialConfig={initialConfig}>
-        <div className="relative flex-1">
+        {/* min-w-0: sem isso colar uma URL longa sem espaços no campo empurra
+            a barra do compositor inteira (anexo/emoji/mic/enviar) para fora da
+            tela no celular — o item flex se recusa a encolher abaixo do
+            "conteúdo mínimo" por padrão, mesmo com `break-words` no editor. */}
+        <div className="relative min-w-0 flex-1">
           <PlainTextPlugin
             contentEditable={contentEditableEl}
             ErrorBoundary={LexicalErrorBoundary}

@@ -27,7 +27,7 @@ export function InboxTabs({ aba, chatUnread, gruposUnread, equipeUnread, onChang
     <div
       role="tablist"
       aria-label="Tipo de conversa"
-      className="flex gap-1 rounded-md bg-muted p-1"
+      className="flex gap-1 rounded-full bg-muted p-1"
     >
       {abas.map(({ id, label, unread, Icon }) => {
         const ativa = aba === id;
@@ -37,10 +37,10 @@ export function InboxTabs({ aba, chatUnread, gruposUnread, equipeUnread, onChang
             role="tab"
             aria-selected={ativa}
             onClick={() => onChange(id)}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-sm font-medium transition-colors ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-1.5 text-sm font-medium transition-all duration-200 active:scale-95 ${
               ativa
                 ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground hover:bg-card/60 hover:text-foreground hover:shadow-sm"
             }`}
           >
             <Icon className="h-4 w-4" strokeWidth={1.8} />

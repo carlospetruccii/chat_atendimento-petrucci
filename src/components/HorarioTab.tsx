@@ -96,8 +96,7 @@ export function HorarioTab() {
     load();
   }, []);
 
-  const openAdd = (dia: number) =>
-    setAddSlot({ open: true, dia, inicio: "09:00", fim: "12:00" });
+  const openAdd = (dia: number) => setAddSlot({ open: true, dia, inicio: "09:00", fim: "12:00" });
 
   const handleAddSlot = async () => {
     setBusy(true);
@@ -209,13 +208,17 @@ export function HorarioTab() {
               const slots = hours.filter((h) => h.dia_semana === dia.num);
               return (
                 <div key={dia.num} className="p-4">
-                  <div className="flex items-start gap-4">
-                    <div className="w-[120px] shrink-0 pt-2">
+                  {/* Celular: rótulo do dia, faixas e botão empilham — os
+                      três lado a lado com rótulo de 120px fixo estouram bem
+                      antes dos 360px. Do md: pra cima volta à linha única
+                      original (rótulo à esquerda com largura fixa). */}
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
+                    <div className="md:w-[120px] md:shrink-0 md:pt-2">
                       <span className="text-sm font-semibold text-foreground">{dia.label}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 md:flex-1">
                       {slots.length === 0 ? (
-                        <p className="pt-2 text-sm text-muted-foreground italic">Fechado</p>
+                        <p className="text-sm text-muted-foreground italic md:pt-2">Fechado</p>
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {slots.map((s) => (
@@ -229,7 +232,7 @@ export function HorarioTab() {
                               <button
                                 type="button"
                                 onClick={() => setConfirmRemoveSlot(s.id)}
-                                className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+                                className="touch-target-mobile inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
                                 title="Remover faixa"
                               >
                                 <X className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -239,7 +242,7 @@ export function HorarioTab() {
                         </div>
                       )}
                     </div>
-                    <div className="shrink-0 pt-1">
+                    <div className="md:shrink-0 md:pt-1">
                       <button
                         type="button"
                         onClick={() => openAdd(dia.num)}
@@ -259,18 +262,16 @@ export function HorarioTab() {
 
       {/* Parte 2 — Feriados */}
       <div className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-start justify-between gap-4 border-b border-border p-6">
-          <div>
-            <h3 className="text-base font-semibold text-foreground">
-              Feriados e datas especiais
-            </h3>
+        <div className="flex flex-col gap-3 border-b border-border p-6 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-foreground">Feriados e datas especiais</h3>
             <p className="mt-1 text-sm text-muted-foreground max-w-3xl">
               Datas em que o atendimento fica fechado ou tem horário diferenciado.
             </p>
           </div>
           <button
             onClick={openNewHoliday}
-            className="flex shrink-0 items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            className="flex w-full shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
           >
             <Plus className="h-4 w-4" strokeWidth={1.8} /> Novo feriado
           </button>
@@ -283,31 +284,39 @@ export function HorarioTab() {
         ) : (
           <div className="divide-y divide-border">
             {holidays.map((h) => (
-              <div key={h.id} className="flex items-center gap-4 p-4">
-                <div className="w-[110px] shrink-0 text-sm font-semibold tabular-nums text-foreground">
+              // Celular: data, descrição, horário e ações empilham — as três
+              // colunas de largura fixa (110/1fr/180px) somam mais que os
+              // 360px disponíveis. Do md: pra cima volta à linha única.
+              <div
+                key={h.id}
+                className="flex flex-col gap-1.5 p-4 md:flex-row md:items-center md:gap-4"
+              >
+                <div className="text-sm font-semibold tabular-nums text-foreground md:w-[110px] md:shrink-0">
                   {fmtDate(h.data)}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 md:flex-1">
                   <div className="text-sm text-foreground truncate">
-                    {h.descricao ?? <span className="text-muted-foreground italic">sem descrição</span>}
+                    {h.descricao ?? (
+                      <span className="text-muted-foreground italic">sem descrição</span>
+                    )}
                   </div>
                 </div>
-                <div className="w-[180px] shrink-0 text-sm text-muted-foreground tabular-nums">
+                <div className="text-xs text-muted-foreground tabular-nums md:w-[180px] md:shrink-0 md:text-sm">
                   {h.inicio_override && h.fim_override
                     ? `${h.inicio_override} — ${h.fim_override}`
                     : "Dia fechado"}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 md:shrink-0">
                   <button
                     onClick={() => openEditHoliday(h)}
-                    className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                    className="touch-target-mobile inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
                     title="Editar"
                   >
                     <Pencil className="h-4 w-4" strokeWidth={1.8} />
                   </button>
                   <button
                     onClick={() => setConfirmRemoveHoliday(h)}
-                    className="rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-muted"
+                    className="touch-target-mobile inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-muted"
                     title="Excluir"
                   >
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
@@ -320,39 +329,46 @@ export function HorarioTab() {
       </div>
 
       {/* Modal: adicionar faixa */}
-      <Dialog open={addSlot.open} onOpenChange={(v) => !v && setAddSlot((s) => ({ ...s, open: false }))}>
+      <Dialog
+        open={addSlot.open}
+        onOpenChange={(v) => !v && setAddSlot((s) => ({ ...s, open: false }))}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
               Adicionar faixa — {DIAS_SEMANA.find((d) => d.num === addSlot.dia)?.label}
             </DialogTitle>
           </DialogHeader>
+          {/* min-w-0 nos dois <input type="time">: sem isso, dentro do
+              Dialog (já estreito no celular), a largura intrínseca de cada
+              campo de hora somada não cabe e o modal ganha rolagem
+              horizontal própria. */}
           <div className="flex items-center gap-3">
             <input
               type="time"
               value={addSlot.inicio}
               onChange={(e) => setAddSlot((s) => ({ ...s, inicio: e.target.value }))}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            <span className="text-muted-foreground">—</span>
+            <span className="shrink-0 text-muted-foreground">—</span>
             <input
               type="time"
               value={addSlot.fim}
               onChange={(e) => setAddSlot((s) => ({ ...s, fim: e.target.value }))}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
           <DialogFooter>
             <button
               onClick={() => setAddSlot((s) => ({ ...s, open: false }))}
-              className="rounded-md border border-input px-3 py-2 text-sm hover:bg-muted"
+              className="w-full rounded-md border border-input px-3 py-2 text-sm hover:bg-muted sm:w-auto"
             >
               Cancelar
             </button>
             <button
               onClick={handleAddSlot}
               disabled={busy}
-              className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 sm:w-auto"
             >
               {busy ? "Salvando..." : "Adicionar"}
             </button>
@@ -392,9 +408,7 @@ export function HorarioTab() {
               <input
                 type="checkbox"
                 checked={holidayForm.hasOverride}
-                onChange={(e) =>
-                  setHolidayForm((s) => ({ ...s, hasOverride: e.target.checked }))
-                }
+                onChange={(e) => setHolidayForm((s) => ({ ...s, hasOverride: e.target.checked }))}
               />
               Tem horário diferenciado (em vez de dia fechado)
             </label>
@@ -404,14 +418,14 @@ export function HorarioTab() {
                   type="time"
                   value={holidayForm.inicio}
                   onChange={(e) => setHolidayForm((s) => ({ ...s, inicio: e.target.value }))}
-                  className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-                <span className="text-muted-foreground">—</span>
+                <span className="shrink-0 text-muted-foreground">—</span>
                 <input
                   type="time"
                   value={holidayForm.fim}
                   onChange={(e) => setHolidayForm((s) => ({ ...s, fim: e.target.value }))}
-                  className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
             )}
@@ -419,14 +433,14 @@ export function HorarioTab() {
           <DialogFooter>
             <button
               onClick={() => setHolidayForm(emptyHoliday)}
-              className="rounded-md border border-input px-3 py-2 text-sm hover:bg-muted"
+              className="w-full rounded-md border border-input px-3 py-2 text-sm hover:bg-muted sm:w-auto"
             >
               Cancelar
             </button>
             <button
               onClick={handleSaveHoliday}
               disabled={busy}
-              className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 sm:w-auto"
             >
               {busy ? "Salvando..." : "Salvar"}
             </button>

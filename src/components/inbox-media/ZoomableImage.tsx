@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { Minus, Plus, RotateCcw } from "lucide-react";
+import { Download, Loader2, Minus, Plus, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 4;
@@ -15,6 +16,7 @@ interface Point {
 interface Props {
   src: string;
   alt: string;
+  fileName?: string;
 }
 
 function getDistance(a: Point, b: Point): number {
@@ -25,11 +27,12 @@ function getMidpoint(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-export function ZoomableImage({ src, alt }: Props) {
+export function ZoomableImage({ src, alt, fileName }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(MIN_SCALE);
   const [position, setPosition] = useState<Point>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const activePointers = useRef(new Map<number, Point>());
   const dragOrigin = useRef<{ pointer: Point; position: Point } | null>(null);
@@ -163,6 +166,28 @@ export function ZoomableImage({ src, alt }: Props) {
     setPosition({ x: 0, y: 0 });
   };
 
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const resp = await fetch(src);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = fileName ?? "imagem.jpg";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      toast.error("Não foi possível baixar a imagem. Tente novamente.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
       <div
@@ -190,12 +215,19 @@ export function ZoomableImage({ src, alt }: Props) {
         />
       </div>
 
-      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 p-1 backdrop-blur">
+      {/* bottom usa --safe-bottom (definida na fundação) em vez de bottom-3 seco:
+          num aparelho com barra de gestos (home indicator), 12px fixos deixam a
+          barra de zoom quase colada nela. touch-target-mobile em cada botão:
+          p-2 + ícone de 16px dava ~32px de alvo, abaixo do mínimo de 44px. */}
+      <div
+        className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 p-1 backdrop-blur"
+        style={{ bottom: "calc(0.75rem + var(--safe-bottom, 0px))" }}
+      >
         <button
           type="button"
           onClick={() => zoomByStep(-1)}
           disabled={scale <= MIN_SCALE}
-          className="rounded-full p-2 text-white transition hover:bg-white/20 disabled:opacity-40"
+          className="touch-target-mobile flex items-center justify-center rounded-full p-2 text-white transition hover:bg-white/20 disabled:opacity-40"
           aria-label="Diminuir zoom"
         >
           <Minus className="h-4 w-4" />
@@ -204,7 +236,7 @@ export function ZoomableImage({ src, alt }: Props) {
           type="button"
           onClick={reset}
           disabled={scale === MIN_SCALE}
-          className="rounded-full p-2 text-white transition hover:bg-white/20 disabled:opacity-40"
+          className="touch-target-mobile flex items-center justify-center rounded-full p-2 text-white transition hover:bg-white/20 disabled:opacity-40"
           aria-label="Redefinir zoom"
         >
           <RotateCcw className="h-4 w-4" />
@@ -213,10 +245,19 @@ export function ZoomableImage({ src, alt }: Props) {
           type="button"
           onClick={() => zoomByStep(1)}
           disabled={scale >= MAX_SCALE}
-          className="rounded-full p-2 text-white transition hover:bg-white/20 disabled:opacity-40"
+          className="touch-target-mobile flex items-center justify-center rounded-full p-2 text-white transition hover:bg-white/20 disabled:opacity-40"
           aria-label="Aumentar zoom"
         >
           <Plus className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="touch-target-mobile flex items-center justify-center rounded-full p-2 text-white transition hover:bg-white/20 disabled:opacity-40"
+          aria-label="Baixar imagem"
+        >
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         </button>
       </div>
     </div>

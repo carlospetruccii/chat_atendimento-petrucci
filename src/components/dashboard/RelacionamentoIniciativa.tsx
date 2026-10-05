@@ -1,8 +1,8 @@
-import { BarraEmpilhada, HeroNumero, ListaVazia, VizCard } from "./viz";
+import { BarraEmpilhada, HeroNumero, VizCard } from "./viz";
 import { resumoIniciativa } from "@/lib/relacionamento-format";
-import type { IniciativaCompleta } from "@/lib/relacionamento-queries";
+import type { Iniciativa } from "@/lib/relacionamento-format";
 
-export function RelacionamentoIniciativa({ dados }: { dados: IniciativaCompleta }) {
+export function RelacionamentoIniciativa({ dados }: { dados: Iniciativa }) {
   const { pctReativo, pctProativo, pctProativoForaDoSistema } = resumoIniciativa(dados);
   const temConversas = dados.total > 0;
 
@@ -57,33 +57,6 @@ export function RelacionamentoIniciativa({ dados }: { dados: IniciativaCompleta 
           ]}
         />
       </div>
-
-      {/* Sem conversa nenhuma a barra acima já diz "sem conversas no período";
-          um segundo bloco repetindo a frase faz o card parecer quebrado. */}
-      {temConversas ? (
-        <div className="mt-6 flex flex-1 flex-col">
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            Contas em que só o cliente puxa
-          </h4>
-          {dados.contas_reativas.length > 0 ? (
-            <ul className="mt-2 flex flex-col divide-y divide-border">
-              {dados.contas_reativas.map((conta) => (
-                <li
-                  key={conta.client_id}
-                  className="flex items-center justify-between gap-3 py-2 text-sm"
-                >
-                  <span className="truncate text-foreground">{conta.cliente ?? "sem nome"}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {conta.pct_cliente}% de {conta.conversas} conversas
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <ListaVazia preencher texto="Nenhuma conta é 100% reativa no período" tom="bom" />
-          )}
-        </div>
-      ) : null}
     </VizCard>
   );
 }

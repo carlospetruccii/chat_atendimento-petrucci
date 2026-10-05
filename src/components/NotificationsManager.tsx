@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, type CurrentUserProfile } from "@/hooks/useCurrentUser";
 import {
@@ -10,6 +11,8 @@ import {
   showBrowserNotification,
   unlockAudio,
 } from "@/lib/notifications";
+import { deveNotificarDocs, podeAcessarDocs } from "@/lib/docs-logic";
+import { fetchDocsConversaInfo } from "@/lib/docs-queries";
 
 // Componente invisível: mora no layout autenticado e escuta o realtime
 // globalmente para tocar sons/mostrar notificações estilo WhatsApp Web.
@@ -22,6 +25,9 @@ import {
 //      toca som de pendência; admin ouve de todos os departamentos,
 //      colaborador só do seu. Notificação some se eu já estou na tela de
 //      Pendentes.
+//  - Docs (número financeiro), só para quem tem acesso à aba: cliente escreveu
+//      numa conversa SEM DONO → todo mundo com acesso ouve; EM ANDAMENTO → só
+//      o dono. Mesma regra de "não notificar a conversa que estou olhando".
 
 interface AtendimentoInfo {
   departmentId: string | null;
@@ -69,6 +75,7 @@ function messagePreview(content: string | null, tipo: string | null): string {
 export function NotificationsManager() {
   const { user } = useCurrentUser();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useRouterState({ select: (s) => s.location });
 
   // Estado "vivo" lido dentro dos callbacks do canal (que são criados uma vez).
@@ -76,12 +83,18 @@ export function NotificationsManager() {
     user: CurrentUserProfile | null;
     pathname: string;
     conversation: string | null;
-  }>({ user, pathname: location.pathname, conversation: null });
+    /** ?conversa= da aba Docs. */
+    conversaDocs: string | null;
+  }>({ user, pathname: location.pathname, conversation: null, conversaDocs: null });
   stateRef.current = {
     user,
     pathname: location.pathname,
     conversation: (location.search as { conversation?: string } | undefined)?.conversation ?? null,
+    conversaDocs: (location.search as { conversa?: string } | undefined)?.conversa ?? null,
   };
+
+  // Muda quando um admin libera/tira o acesso: o canal é refeito com ou sem Docs.
+  const temDocs = podeAcessarDocs(user);
 
   // Pendências já avisadas (para não repetir a cada UPDATE do atendimento).
   const notifiedPending = useRef<Set<string>>(new Set());
@@ -188,6 +201,44 @@ export function NotificationsManager() {
       }
     };
 
+    const handleDocsMessage = async (row: {
+      conversa_id?: string;
+      direction?: string;
+      content?: string | null;
+      tipo?: string | null;
+    }) => {
+      const me = stateRef.current.user;
+      if (!me || !row?.conversa_id || row.direction !== "inbound") return;
+      // Badge "Docs" do menu: fora da tela do Docs ninguém mais o recarrega.
+      queryClient.invalidateQueries({ queryKey: ["docs-unread-total"] });
+      // O gatilho do banco já moveu so_envio/encerrada → sem_dono na mesma
+      // transação do INSERT, então o status lido aqui é o de depois.
+      const info = await fetchDocsConversaInfo(row.conversa_id);
+      if (!info) return;
+      const avisar = deveNotificarDocs({
+        direction: row.direction,
+        status: info.status,
+        assignedTo: info.assignedTo,
+        meuUserId: me.id,
+      });
+      if (!avisar) return;
+
+      playMessageSound();
+
+      const viewing =
+        stateRef.current.pathname === "/docs" &&
+        stateRef.current.conversaDocs === row.conversa_id &&
+        isDocumentVisible();
+      if (!viewing) {
+        showBrowserNotification(
+          `Docs · ${info.clientNome}`,
+          messagePreview(row.content ?? null, row.tipo ?? null),
+          `docs-${row.conversa_id}`,
+          () => navigate({ to: "/docs", search: { conversa: row.conversa_id } }),
+        );
+      }
+    };
+
     const channel = supabase
       .channel("global-notifications")
       .on(
@@ -204,14 +255,25 @@ export function NotificationsManager() {
           const row = (payload.new ?? payload.old) as Parameters<typeof handleAtendimento>[0];
           handleAtendimento(row);
         },
-      )
-      .subscribe();
+      );
+    // A RLS já não entrega docs_mensagens a quem não tem acesso; nem assinar
+    // evita um listener inútil para a maioria dos colaboradores.
+    if (temDocs) {
+      channel.on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "docs_mensagens" },
+        (payload) => {
+          void handleDocsMessage(payload.new as Parameters<typeof handleDocsMessage>[0]);
+        },
+      );
+    }
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, temDocs]);
 
   return null;
 }

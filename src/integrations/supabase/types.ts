@@ -142,10 +142,13 @@ export type Database = {
           escalated_from_department_id: string | null
           escalated_from_user_id: string | null
           first_response_at: string | null
+          first_response_user_id: string | null
           id: string
+          iniciada_pelo_cliente: boolean | null
           is_sessao: boolean
           last_message_at: string | null
           last_outbound_message_at: string | null
+          primeira_resposta_at: string | null
           status: Database["public"]["Enums"]["status_atendimento"]
           transferred_count: number
           triagem_estagio: Database["public"]["Enums"]["triagem_estagio"]
@@ -169,10 +172,13 @@ export type Database = {
           escalated_from_department_id?: string | null
           escalated_from_user_id?: string | null
           first_response_at?: string | null
+          first_response_user_id?: string | null
           id?: string
+          iniciada_pelo_cliente?: boolean | null
           is_sessao?: boolean
           last_message_at?: string | null
           last_outbound_message_at?: string | null
+          primeira_resposta_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
           transferred_count?: number
           triagem_estagio?: Database["public"]["Enums"]["triagem_estagio"]
@@ -196,10 +202,13 @@ export type Database = {
           escalated_from_department_id?: string | null
           escalated_from_user_id?: string | null
           first_response_at?: string | null
+          first_response_user_id?: string | null
           id?: string
+          iniciada_pelo_cliente?: boolean | null
           is_sessao?: boolean
           last_message_at?: string | null
           last_outbound_message_at?: string | null
+          primeira_resposta_at?: string | null
           status?: Database["public"]["Enums"]["status_atendimento"]
           transferred_count?: number
           triagem_estagio?: Database["public"]["Enums"]["triagem_estagio"]
@@ -270,6 +279,13 @@ export type Database = {
           {
             foreignKeyName: "atendimentos_escalated_from_user_id_fkey"
             columns: ["escalated_from_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atendimentos_first_response_user_id_fkey"
+            columns: ["first_response_user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -850,6 +866,302 @@ export type Database = {
           },
         ]
       }
+      docs_conversas: {
+        Row: {
+          assigned_at: string | null
+          assigned_to: string | null
+          client_id: string
+          closed_at: string | null
+          closed_by_user_id: string | null
+          company_id: string
+          created_at: string
+          id: string
+          last_inbound_at: string | null
+          last_message_at: string | null
+          last_outbound_message_at: string | null
+          status: Database["public"]["Enums"]["docs_conversa_status"]
+          ultimo_aviso_automatico_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assigned_at?: string | null
+          assigned_to?: string | null
+          client_id: string
+          closed_at?: string | null
+          closed_by_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          last_inbound_at?: string | null
+          last_message_at?: string | null
+          last_outbound_message_at?: string | null
+          status?: Database["public"]["Enums"]["docs_conversa_status"]
+          ultimo_aviso_automatico_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assigned_at?: string | null
+          assigned_to?: string | null
+          client_id?: string
+          closed_at?: string | null
+          closed_by_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          last_inbound_at?: string | null
+          last_message_at?: string | null
+          last_outbound_message_at?: string | null
+          status?: Database["public"]["Enums"]["docs_conversa_status"]
+          ultimo_aviso_automatico_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "docs_conversas_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "docs_conversas_client_same_company_fk"
+            columns: ["client_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "docs_conversas_closed_by_user_id_fkey"
+            columns: ["closed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "docs_conversas_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      docs_eventos: {
+        Row: {
+          actor_user_id: string | null
+          company_id: string
+          conversa_id: string
+          created_at: string
+          id: string
+          notificado_em: string | null
+          observacao: string | null
+          target_user_id: string | null
+          tipo: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          company_id: string
+          conversa_id: string
+          created_at?: string
+          id?: string
+          notificado_em?: string | null
+          observacao?: string | null
+          target_user_id?: string | null
+          tipo: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          company_id?: string
+          conversa_id?: string
+          created_at?: string
+          id?: string
+          notificado_em?: string | null
+          observacao?: string | null
+          target_user_id?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "docs_eventos_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "docs_eventos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "docs_eventos_conversa_same_company_fk"
+            columns: ["conversa_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "docs_conversas"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "docs_eventos_target_user_id_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      docs_leituras: {
+        Row: {
+          company_id: string
+          conversa_id: string
+          last_read_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          conversa_id: string
+          last_read_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          conversa_id?: string
+          last_read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "docs_leituras_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "docs_leituras_conversa_same_company_fk"
+            columns: ["conversa_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "docs_conversas"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "docs_leituras_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      docs_mensagens: {
+        Row: {
+          apagada_em: string | null
+          apagada_por_user_id: string | null
+          company_id: string
+          content: string | null
+          conteudo_anterior: string | null
+          conversa_id: string
+          created_at: string
+          direction: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em: string | null
+          id: string
+          media_metadata: Json | null
+          media_url: string | null
+          reply_to_message_id: string | null
+          sender_type: Database["public"]["Enums"]["sender_type"]
+          sent_by_user_id: string | null
+          status_envio: Database["public"]["Enums"]["status_envio_mensagem"]
+          status_whatsapp:
+            | Database["public"]["Enums"]["status_whatsapp_mensagem"]
+            | null
+          tipo: Database["public"]["Enums"]["tipo_mensagem"]
+          uazapi_message_id: string | null
+        }
+        Insert: {
+          apagada_em?: string | null
+          apagada_por_user_id?: string | null
+          company_id?: string
+          content?: string | null
+          conteudo_anterior?: string | null
+          conversa_id: string
+          created_at?: string
+          direction: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em?: string | null
+          id?: string
+          media_metadata?: Json | null
+          media_url?: string | null
+          reply_to_message_id?: string | null
+          sender_type: Database["public"]["Enums"]["sender_type"]
+          sent_by_user_id?: string | null
+          status_envio?: Database["public"]["Enums"]["status_envio_mensagem"]
+          status_whatsapp?:
+            | Database["public"]["Enums"]["status_whatsapp_mensagem"]
+            | null
+          tipo: Database["public"]["Enums"]["tipo_mensagem"]
+          uazapi_message_id?: string | null
+        }
+        Update: {
+          apagada_em?: string | null
+          apagada_por_user_id?: string | null
+          company_id?: string
+          content?: string | null
+          conteudo_anterior?: string | null
+          conversa_id?: string
+          created_at?: string
+          direction?: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em?: string | null
+          id?: string
+          media_metadata?: Json | null
+          media_url?: string | null
+          reply_to_message_id?: string | null
+          sender_type?: Database["public"]["Enums"]["sender_type"]
+          sent_by_user_id?: string | null
+          status_envio?: Database["public"]["Enums"]["status_envio_mensagem"]
+          status_whatsapp?:
+            | Database["public"]["Enums"]["status_whatsapp_mensagem"]
+            | null
+          tipo?: Database["public"]["Enums"]["tipo_mensagem"]
+          uazapi_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "docs_mensagens_apagada_por_user_id_fkey"
+            columns: ["apagada_por_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "docs_mensagens_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "docs_mensagens_conversa_same_company_fk"
+            columns: ["conversa_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "docs_conversas"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "docs_mensagens_reply_same_conversa_fk"
+            columns: ["reply_to_message_id", "conversa_id"]
+            isOneToOne: false
+            referencedRelation: "docs_mensagens"
+            referencedColumns: ["id", "conversa_id"]
+          },
+          {
+            foreignKeyName: "docs_mensagens_sent_by_user_id_fkey"
+            columns: ["sent_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       envios_internos_whatsapp: {
         Row: {
           criado_em: string
@@ -979,10 +1291,12 @@ export type Database = {
       }
       grupo_mensagens: {
         Row: {
+          apagada_em: string | null
           company_id: string
           content: string | null
           created_at: string
           direction: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em: string | null
           grupo_id: string
           id: string
           media_metadata: Json | null
@@ -1000,10 +1314,12 @@ export type Database = {
           uazapi_message_id: string | null
         }
         Insert: {
+          apagada_em?: string | null
           company_id?: string
           content?: string | null
           created_at?: string
           direction: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em?: string | null
           grupo_id: string
           id?: string
           media_metadata?: Json | null
@@ -1021,10 +1337,12 @@ export type Database = {
           uazapi_message_id?: string | null
         }
         Update: {
+          apagada_em?: string | null
           company_id?: string
           content?: string | null
           created_at?: string
           direction?: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em?: string | null
           grupo_id?: string
           id?: string
           media_metadata?: Json | null
@@ -1244,14 +1562,18 @@ export type Database = {
       }
       mensagens: {
         Row: {
+          apagada_em: string | null
+          apagada_por_user_id: string | null
           atendimento_id: string
           client_id: string
           company_id: string
           content: string | null
           content_original: string | null
+          conteudo_anterior: string | null
           created_at: string
           department_id: string | null
           direction: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em: string | null
           id: string
           media_metadata: Json | null
           media_url: string | null
@@ -1268,14 +1590,18 @@ export type Database = {
           zapi_message_id: string | null
         }
         Insert: {
+          apagada_em?: string | null
+          apagada_por_user_id?: string | null
           atendimento_id: string
           client_id: string
           company_id?: string
           content?: string | null
           content_original?: string | null
+          conteudo_anterior?: string | null
           created_at?: string
           department_id?: string | null
           direction: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em?: string | null
           id?: string
           media_metadata?: Json | null
           media_url?: string | null
@@ -1292,14 +1618,18 @@ export type Database = {
           zapi_message_id?: string | null
         }
         Update: {
+          apagada_em?: string | null
+          apagada_por_user_id?: string | null
           atendimento_id?: string
           client_id?: string
           company_id?: string
           content?: string | null
           content_original?: string | null
+          conteudo_anterior?: string | null
           created_at?: string
           department_id?: string | null
           direction?: Database["public"]["Enums"]["direction_mensagem"]
+          editada_em?: string | null
           id?: string
           media_metadata?: Json | null
           media_url?: string | null
@@ -1316,6 +1646,13 @@ export type Database = {
           zapi_message_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "mensagens_apagada_por_user_id_fkey"
+            columns: ["apagada_por_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "mensagens_atend_same_company_fk"
             columns: ["atendimento_id", "company_id"]
@@ -1505,6 +1842,7 @@ export type Database = {
           company_id: string | null
           created_at: string
           department_id: string
+          destino_user_id: string | null
           id: string
         }
         Insert: {
@@ -1512,6 +1850,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           department_id: string
+          destino_user_id?: string | null
           id?: string
         }
         Update: {
@@ -1519,6 +1858,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           department_id?: string
+          destino_user_id?: string | null
           id?: string
         }
         Relationships: [
@@ -1541,6 +1881,13 @@ export type Database = {
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notificacoes_colaborador_pendente_destino_user_id_fkey"
+            columns: ["destino_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -2006,6 +2353,18 @@ export type Database = {
       }
     }
     Views: {
+      contatos_unificados: {
+        Row: {
+          company_id: string | null
+          emails: Json | null
+          id: string | null
+          nome: string | null
+          numero_raw: string | null
+          numero_whatsapp: string | null
+          origem: string | null
+        }
+        Relationships: []
+      }
       vw_pendentes: {
         Row: {
           atendimento_id: string | null
@@ -2096,13 +2455,85 @@ export type Database = {
         Args: { p_company_id: string; p_janela_dias: number; p_to: string }
         Returns: Json
       }
-      dashboard_relacionamento: {
-        Args: { p_from: string; p_to: string }
-        Returns: Json
-      }
+      dashboard_relacionamento:
+        | { Args: { p_from: string; p_to: string }; Returns: Json }
+        | {
+            Args: {
+              p_department_id: string
+              p_from: string
+              p_to: string
+              p_user_id: string
+            }
+            Returns: Json
+          }
       dentro_da_janela_continuidade: {
         Args: { p_client_id: string }
         Returns: string
+      }
+      docs_assumir: { Args: { p_conversa_id: string }; Returns: undefined }
+      docs_definir_acesso: {
+        Args: { p_permitir: boolean; p_user_id: string }
+        Returns: undefined
+      }
+      docs_encerrar: { Args: { p_conversa_id: string }; Returns: undefined }
+      docs_iniciar_conversa: { Args: { p_client_id: string }; Returns: string }
+      docs_listar_acesso: {
+        Args: never
+        Returns: {
+          department_id: string
+          department_nome: string
+          is_superadmin: boolean
+          nome: string
+          tem_acesso: boolean
+          user_id: string
+        }[]
+      }
+      docs_listar_conversas: {
+        Args: {
+          p_busca?: string
+          p_filtro?: string
+          p_limite_historico?: number
+        }
+        Returns: {
+          assigned_at: string
+          assigned_to: string
+          client_id: string
+          cliente_nome: string
+          cliente_numero: string
+          closed_at: string
+          created_at: string
+          id: string
+          last_inbound_at: string
+          last_message_at: string
+          status: Database["public"]["Enums"]["docs_conversa_status"]
+        }[]
+      }
+      docs_midia_visivel: { Args: { p_name: string }; Returns: boolean }
+      docs_repassar: {
+        Args: {
+          p_conversa_id: string
+          p_observacao?: string
+          p_to_user_id: string
+        }
+        Returns: undefined
+      }
+      docs_soltar_conversas_sem_acesso: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
+      docs_ultimas_mensagens: {
+        Args: { p_conversa_ids: string[] }
+        Returns: {
+          apagada_em: string
+          content: string
+          conversa_id: string
+          created_at: string
+          direction: Database["public"]["Enums"]["direction_mensagem"]
+          file_name: string
+          id: string
+          sender_type: Database["public"]["Enums"]["sender_type"]
+          tipo: Database["public"]["Enums"]["tipo_mensagem"]
+        }[]
       }
       encerrar_atendimento: {
         Args: { p_atendimento_id: string; p_motivo?: string }
@@ -2145,6 +2576,13 @@ export type Database = {
           unread: number
         }[]
       }
+      get_docs_unread_counts: {
+        Args: { p_conversa_ids: string[] }
+        Returns: {
+          conversa_id: string
+          unread: number
+        }[]
+      }
       get_grupos_unread_counts: {
         Args: { p_grupo_ids: string[] }
         Returns: {
@@ -2152,6 +2590,7 @@ export type Database = {
           unread: number
         }[]
       }
+      get_my_docs_unread_total: { Args: never; Returns: number }
       get_my_grupos_unread_total: { Args: never; Returns: number }
       get_my_inbox_unread_total: { Args: never; Returns: number }
       get_my_internas_unread_total: { Args: never; Returns: number }
@@ -2193,6 +2632,10 @@ export type Database = {
         Args: { p_conversa_id: string }
         Returns: undefined
       }
+      marcar_docs_conversa_lida: {
+        Args: { p_conversa_id: string }
+        Returns: undefined
+      }
       marcar_grupo_lido: { Args: { p_grupo_id: string }; Returns: undefined }
       minutos_uteis_decorridos: {
         Args: { p_department_id: string; p_fim: string; p_inicio: string }
@@ -2205,6 +2648,7 @@ export type Database = {
       pendentes_abertos_a_todos:
         | { Args: never; Returns: boolean }
         | { Args: { p_company_id: string }; Returns: boolean }
+      pode_acessar_docs: { Args: never; Returns: boolean }
       pode_conversar_internamente: {
         Args: { p_company_id: string; p_user_id: string }
         Returns: boolean
@@ -2226,6 +2670,10 @@ export type Database = {
         Args: { p_client_id: string; p_department_id: string }
         Returns: string
       }
+      usuario_pode_acessar_docs: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       close_reason:
@@ -2236,6 +2684,11 @@ export type Database = {
         | "triagem_expirada_dia"
       company_role: "dono" | "administrador" | "colaborador"
       direction_mensagem: "inbound" | "outbound"
+      docs_conversa_status:
+        | "so_envio"
+        | "sem_dono"
+        | "em_andamento"
+        | "encerrada"
       grupo_sender_type: "participante" | "atendente" | "sistema" | "externo"
       sender_type: "cliente" | "atendente" | "bot" | "sistema" | "externo"
       status_atendimento:
@@ -2296,12 +2749,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2325,11 +2778,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2350,11 +2803,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2375,11 +2828,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2392,11 +2845,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2417,6 +2870,12 @@ export const Constants = {
       ],
       company_role: ["dono", "administrador", "colaborador"],
       direction_mensagem: ["inbound", "outbound"],
+      docs_conversa_status: [
+        "so_envio",
+        "sem_dono",
+        "em_andamento",
+        "encerrada",
+      ],
       grupo_sender_type: ["participante", "atendente", "sistema", "externo"],
       sender_type: ["cliente", "atendente", "bot", "sistema", "externo"],
       status_atendimento: [

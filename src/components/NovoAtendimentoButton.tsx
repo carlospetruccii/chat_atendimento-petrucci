@@ -6,12 +6,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { IniciarAtendimentoDialog } from "@/components/inbox/IniciarAtendimentoDialog";
 
 /**
- * Ação "Iniciar atendimento" na barra lateral, logo acima do avatar.
+ * Ação principal "Iniciar atendimento" na barra lateral, logo acima do avatar.
  *
  * Por que fica aqui e não mais no topo da lista do Inbox: é a única ação de
- * *criação* do sistema, e antes só existia dentro de uma tela. Na barra lateral
- * ela fica alcançável de qualquer lugar (Pendentes, Contatos, Dashboard) sem
- * navegar primeiro.
+ * *criação de conversa* do sistema. Na barra lateral ela fica alcançável de
+ * qualquer lugar (Pendentes, Contatos, Dashboard) sem navegar primeiro.
  *
  * Desenho — a régua lateral é plana e monocromática, com os ícones de navegação
  * todos iguais. Para esta não ser "mais um ícone", ela se separa em três eixos,

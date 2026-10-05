@@ -1,5 +1,12 @@
 project_id = "kxssjlvrbkkdicgevwtl"
 
+# Cron interno (pg_cron chama com a anon key no header Authorization, que é um
+# JWT válido). Declarado explicitamente para o verify_jwt não oscilar entre
+# deploys — sem esta seção a CLI aplica o default `true` e a função fica
+# divergindo do que estava publicado.
+[functions.cron-notificacao-colaboradores]
+verify_jwt = true
+
 # Endpoint público chamado pela uazapi (webhook de recebimento): valida origem
 # por um secret na query (?secret=UAZAPI_WEBHOOK_SECRET), não por JWT do Supabase.
 [functions.webhook-zapi-receive]
@@ -74,3 +81,44 @@ verify_jwt = true
 # a exigência de um pedido aberto em historico_import_pedidos.
 [functions.webhook-historico]
 verify_jwt = false
+
+# Apagar para todos / editar mensagem (POST /message/delete e /message/edit da
+# uazapi). Chamada pelo frontend com o JWT do atendente — verify_jwt explícito
+# porque a função destrói conteúdo no WhatsApp do cliente e não tem desfazer.
+[functions.mensagem-acao]
+verify_jwt = true
+
+# Encaminhar mensagem para outro atendimento. Chamada pelo frontend com o JWT
+# do atendente — verify_jwt explícito pelo mesmo motivo de mensagem-acao.
+[functions.mensagem-encaminhar]
+verify_jwt = true
+
+# "Tentar novamente" na bolha de mídia que falhou. Chamada pelo frontend com o
+# JWT do atendente (verify_jwt explícito) e restrita à empresa de quem pediu;
+# dispara uma busca na uazapi, então tem intervalo mínimo por mensagem.
+[functions.reprocessar-midia]
+verify_jwt = true
+
+# Aba Docs (número FINANCEIRO, segunda instância uazapi). O webhook é público
+# para a uazapi e valida a origem pelo token da instância no corpo
+# (UAZAPI_TOKEN_FINANCEIRO), fail-closed.
+[functions.webhook-docs-receive]
+verify_jwt = false
+
+# Chamadas pela tela com o JWT do usuário; checam acesso ao Docs por dentro.
+[functions.docs-enviar]
+verify_jwt = true
+
+[functions.docs-acao]
+verify_jwt = true
+
+[functions.docs-conexao]
+verify_jwt = true
+
+[functions.docs-notificar-repasse]
+verify_jwt = true
+
+# Importação única dos últimos 7 dias do número financeiro (admin ou token
+# temporário de operação).
+[functions.docs-importar-historico]
+verify_jwt = true

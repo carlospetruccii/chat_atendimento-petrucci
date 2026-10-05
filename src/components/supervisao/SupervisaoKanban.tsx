@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
@@ -59,8 +60,16 @@ export function SupervisaoKanban({ rows, currentUserId }: Props) {
   const [confirmClose, setConfirmClose] = useState<SupervisaoRow | null>(null);
   const [closeMotivo, setCloseMotivo] = useState("");
 
+  // Mouse e toque pedem sensores separados. Com um único PointerSensor por
+  // distância, o dedo que desliza para rolar a faixa de colunas já passa dos
+  // 6px antes do navegador decidir "é rolagem" — e o dnd-kit rouba o gesto
+  // pro drag. TouchSensor com delay dá tempo do gesto de rolagem vencer
+  // (se o dedo andar mais que `tolerance` antes do delay, o drag é
+  // cancelado e a rolagem nativa segue); MouseSensor mantém a resposta
+  // imediata do desktop, que não tem esse conflito.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
   const byStatus = useMemo(() => {
@@ -162,7 +171,10 @@ export function SupervisaoKanban({ rows, currentUserId }: Props) {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        {/* scroll-contain: rolar a faixa não arrasta a página atrás dela.
+            snap-x-mandatory: no celular a coluna "encaixa" em vez de parar
+            pela metade, deixando claro que existe mais coluna ao lado. */}
+        <div className="flex gap-3 overflow-x-auto pb-2 scroll-contain snap-x-mandatory">
           {COLUMNS.map((status) => {
             const items = byStatus.get(status) ?? [];
             const isEncerrado = status === "encerrado";
@@ -250,7 +262,10 @@ function Column({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
-    <div className="flex w-[280px] shrink-0 flex-col rounded-2xl border border-border bg-muted/40">
+    // Largura em vw no celular (com teto em px): estreita o bastante pra
+    // sobrar uma fatia da próxima coluna à direita, sinalizando que dá pra
+    // rolar. snap-start-always é o que faz o dedo "encaixar" a coluna.
+    <div className="flex w-[78vw] max-w-[280px] shrink-0 snap-start-always flex-col rounded-2xl border border-border bg-muted/40 sm:w-[280px]">
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
         <div className="flex items-center gap-2">
           <span className={`text-[11px] px-2 py-0.5 rounded ${STATUS_BADGE[status]}`}>
@@ -261,7 +276,7 @@ function Column({
       </div>
       <div
         ref={setNodeRef}
-        className={`flex-1 min-h-[200px] max-h-[calc(100vh-280px)] overflow-y-auto p-2 space-y-2 transition-colors ${
+        className={`flex-1 min-h-[200px] max-h-[calc(100dvh-280px)] overflow-y-auto p-2 space-y-2 scroll-contain transition-colors ${
           isOver ? "bg-accent/40" : ""
         }`}
       >
@@ -303,8 +318,11 @@ function CardContent({ row, dragging = false }: { row: SupervisaoRow; dragging?:
   return (
     <div
       className={
+        // Acompanha a largura responsiva da coluna (item anterior): sem isso
+        // o cartão flutuante ficava largo demais para caber na coluna estreita
+        // do celular enquanto era arrastado.
         dragging
-          ? "rounded-xl border border-border bg-card p-2.5 shadow-lg w-[260px]"
+          ? "w-[72vw] max-w-[260px] rounded-xl border border-border bg-card p-2.5 shadow-lg sm:w-[260px]"
           : ""
       }
     >

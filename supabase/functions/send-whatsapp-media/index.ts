@@ -11,6 +11,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { atualizacaoAposErroEnvio } from "../_shared/erro-envio.ts";
 import { gravarIdPosEnvio } from "../_shared/pos-envio.ts";
 import { enviarMidia, extrairMessageId, ZapiError, type TipoMidia } from "../_shared/uazapi-client.ts";
 
@@ -66,21 +67,6 @@ function extDoArquivo(nome: string, mime: string): string {
   return map[mime] ?? "bin";
 }
 
-function motivoLegivel(err: unknown): string {
-  if (err instanceof ZapiError) {
-    if (err.status === 429) return "WhatsApp indisponível (limite de requisições)";
-    if (err.status === 401 || err.status === 403) return "WhatsApp recusou a credencial (verifique a conexão)";
-    if (err.status >= 500) return "WhatsApp indisponível";
-    try {
-      const j = JSON.parse(err.body) as { error?: string; message?: string };
-      const msg = j.error ?? j.message;
-      if (msg && typeof msg === "string") return msg.slice(0, 140);
-    } catch { /* ignore */ }
-    return `Erro no envio (HTTP ${err.status})`;
-  }
-  if (err instanceof Error) return err.message.slice(0, 140);
-  return "Falha desconhecida no envio";
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
@@ -293,17 +279,18 @@ Deno.serve(async (req: Request) => {
         duracao_ms: t(),
       });
     } catch (err) {
-      const motivo = motivoLegivel(err);
-      const novoMeta = { ...mediaMetadata, erro_motivo: motivo };
+      const upd = atualizacaoAposErroEnvio(err, mediaMetadata);
+      const motivo =
+        (upd.media_metadata.erro_motivo ?? upd.media_metadata.envio_incerto_motivo) as string;
       await supabase
         .from("mensagens")
-        .update({ status_envio: "falha", media_metadata: novoMeta })
+        .update(upd)
         .eq("id", mensagemId);
 
       log({
         funcao: FUNCAO,
-        evento: "envio_falha",
-        status: "erro",
+        evento: upd.status_envio === "falha" ? "envio_falha" : "envio_incerto",
+        status: upd.status_envio === "falha" ? "erro" : "ok",
         atendimento_id: atendimentoId,
         mensagem_id: mensagemId,
         duracao_ms: t(),

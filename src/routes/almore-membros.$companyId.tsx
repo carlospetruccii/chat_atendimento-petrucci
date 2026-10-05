@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -13,6 +13,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   changeMemberRole,
   CompanyRole,
@@ -154,7 +161,9 @@ function MembrosPage() {
   const ordered = useMemo(() => members, [members]);
 
   return (
-    <div className="min-h-screen bg-background px-4 py-10">
+    // min-h-dvh, nunca min-h-screen (100vh): no celular o 100vh conta a barra de
+    // endereço do navegador como se estivesse sempre visível.
+    <div className="min-h-dvh bg-background px-4 py-10">
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
           <a
@@ -163,9 +172,12 @@ function MembrosPage() {
           >
             <ArrowLeft className="h-4 w-4" strokeWidth={1.7} /> Voltar aos espaços
           </a>
-          <div className="mt-3 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-semibold text-foreground">
+          {/* items-start + flex-col no celular: nome de empresa comprido ao lado
+              do botão "Convidar pessoa" espremia os dois em 360px. min-w-0 no
+              bloco de texto permite truncar o título em vez de estourar a linha. */}
+          <div className="mt-3 flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-semibold text-foreground">
                 Membros — {infoQ.data?.nome ?? "..."}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -175,7 +187,7 @@ function MembrosPage() {
             </div>
             <button
               onClick={openInvite}
-              className="flex shrink-0 items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="touch-target-mobile flex w-full shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
             >
               <UserPlus className="h-4 w-4" strokeWidth={1.8} /> Convidar pessoa
             </button>
@@ -192,20 +204,29 @@ function MembrosPage() {
               const badge = ROLE_BADGE[m.role];
               const isDono = m.role === "dono";
               return (
-                <li key={`${m.origem}-${m.id}`} className="flex items-center gap-3 px-4 py-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
-                    {initials(m.nome)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-foreground">{m.nome}</span>
-                      {m.pendente && (
-                        <span className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                          convite pendente
-                        </span>
-                      )}
+                // Celular: empilha (identidade em cima, papel/departamento/lixeira
+                // embaixo) — os 2 selects + lixeira ao lado do nome não cabem em
+                // 360px e estouravam a linha. items-start pra badge/ações não
+                // esticarem à largura toda (comportamento padrão de flex-col).
+                <li
+                  key={`${m.origem}-${m.id}`}
+                  className="flex flex-col items-start gap-2 px-4 py-3 md:flex-row md:items-center md:gap-3"
+                >
+                  <div className="flex w-full min-w-0 items-center gap-3 md:w-auto md:flex-1">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
+                      {initials(m.nome)}
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">{m.email ?? "—"}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium text-foreground">{m.nome}</span>
+                        {m.pendente && (
+                          <span className="inline-flex shrink-0 items-center rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                            convite pendente
+                          </span>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{m.email ?? "—"}</p>
+                    </div>
                   </div>
 
                   {/* Papel: dono é fixo; os demais podem ser trocados */}
@@ -217,13 +238,13 @@ function MembrosPage() {
                       {ROLE_LABEL.dono}
                     </span>
                   ) : (
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 md:shrink-0 md:flex-nowrap">
                       {m.role === "colaborador" && (
                         <select
                           value={m.departmentId ?? ""}
                           disabled={busy}
                           onChange={(e) => onDeptChange(m, e.target.value)}
-                          className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                          className="touch-target-mobile rounded-md border border-border bg-background px-2 py-1 text-xs"
                         >
                           {departments.map((d) => (
                             <option key={d.id} value={d.id}>
@@ -236,7 +257,7 @@ function MembrosPage() {
                         value={m.role}
                         disabled={busy}
                         onChange={(e) => onRoleChange(m, e.target.value as CompanyRole)}
-                        className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium"
+                        className="touch-target-mobile rounded-md border border-border bg-background px-2 py-1 text-xs font-medium"
                         style={{ color: badge.fg }}
                       >
                         <option value="administrador">{ROLE_LABEL.administrador}</option>
@@ -246,7 +267,7 @@ function MembrosPage() {
                         onClick={() => setRemoveTarget(m)}
                         disabled={busy}
                         title="Remover do espaço"
-                        className="rounded-md border border-border bg-background p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                        className="touch-target-mobile flex shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-destructive"
                       >
                         <Trash2 className="h-3.5 w-3.5" strokeWidth={1.7} />
                       </button>
@@ -264,114 +285,111 @@ function MembrosPage() {
         )}
       </div>
 
-      {inviteOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => !inviteMut.isPending && setInviteOpen(false)}
-        >
-          <div
-            className="w-full max-w-[460px] rounded-lg bg-card p-6 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between">
-              <h4 className="text-base font-semibold text-foreground">Convidar pessoa</h4>
-              <button
-                onClick={() => setInviteOpen(false)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Antes era um overlay+card montado à mão (fixed inset-0 + onClick de
+          backdrop) — não herdava nada do tratamento mobile da fundação. O
+          Dialog do shadcn já resolve largura com margem, max-h com rolagem e
+          teclado (ver comentário em components/ui/dialog.tsx); aqui só o
+          conteúdo do formulário. */}
+      <Dialog
+        open={inviteOpen}
+        onOpenChange={(next) => {
+          if (inviteMut.isPending) return;
+          setInviteOpen(next);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Convidar pessoa</DialogTitle>
+          </DialogHeader>
 
-            <div className="mt-5 space-y-4">
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">Nome</label>
+              <input
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                  errors.nome ? "border-destructive" : "border-border"
+                }`}
+              />
+              {errors.nome && <p className="mt-1 text-xs text-destructive">{errors.nome}</p>}
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">E-mail</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                  errors.email ? "border-destructive" : "border-border"
+                }`}
+              />
+              {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">Papel</label>
+              <select
+                value={form.role}
+                onChange={(e) => setForm({ ...form, role: e.target.value as InviteRole })}
+                className="touch-target-mobile w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="administrador">Admin</option>
+                <option value="colaborador">Colaborador</option>
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                O papel de dono é definido só na criação do espaço.
+              </p>
+            </div>
+            {form.role === "colaborador" && (
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">Nome</label>
-                <input
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                    errors.nome ? "border-destructive" : "border-border"
-                  }`}
-                />
-                {errors.nome && <p className="mt-1 text-xs text-destructive">{errors.nome}</p>}
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">E-mail</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                    errors.email ? "border-destructive" : "border-border"
-                  }`}
-                />
-                {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">Papel</label>
+                <label className="mb-1.5 block text-xs font-medium text-foreground">
+                  Departamento
+                </label>
                 <select
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value as InviteRole })}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={form.departmentId}
+                  onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
+                  className={`touch-target-mobile w-full rounded-md border bg-background px-3 py-2 text-sm ${
+                    errors.departmentId ? "border-destructive" : "border-border"
+                  }`}
                 >
-                  <option value="administrador">Admin</option>
-                  <option value="colaborador">Colaborador</option>
+                  <option value="">Selecione...</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.nome}
+                    </option>
+                  ))}
                 </select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  O papel de dono é definido só na criação do espaço.
-                </p>
+                {errors.departmentId && (
+                  <p className="mt-1 text-xs text-destructive">{errors.departmentId}</p>
+                )}
+                {departments.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Este espaço ainda não tem departamentos cadastrados.
+                  </p>
+                )}
               </div>
-              {form.role === "colaborador" && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-foreground">
-                    Departamento
-                  </label>
-                  <select
-                    value={form.departmentId}
-                    onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
-                    className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                      errors.departmentId ? "border-destructive" : "border-border"
-                    }`}
-                  >
-                    <option value="">Selecione...</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.nome}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.departmentId && (
-                    <p className="mt-1 text-xs text-destructive">{errors.departmentId}</p>
-                  )}
-                  {departments.length === 0 && (
-                    <p className="mt-1 text-xs text-amber-700">
-                      Este espaço ainda não tem departamentos cadastrados.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                onClick={() => setInviteOpen(false)}
-                disabled={inviteMut.isPending}
-                className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={submitInvite}
-                disabled={inviteMut.isPending}
-                className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {inviteMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Enviar convite
-              </button>
-            </div>
+            )}
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <button
+              onClick={() => setInviteOpen(false)}
+              disabled={inviteMut.isPending}
+              className="touch-target-mobile rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={submitInvite}
+              disabled={inviteMut.isPending}
+              className="touch-target-mobile flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {inviteMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Enviar convite
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
         <AlertDialogContent>

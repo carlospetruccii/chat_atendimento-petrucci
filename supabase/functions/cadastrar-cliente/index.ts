@@ -1,11 +1,19 @@
 // Edge Function: cadastrar-cliente
 // Cria/atualiza clientes em modo single ou csv_batch.
-// Auth: JWT obrigatório, exige is_superadmin OR has_permission('view_all_departments').
-// UPSERT por numero_whatsapp (telefone existente => sobrescreve nome).
+// Auth: JWT obrigatório. Modo single: qualquer membro ativo (é o primeiro passo
+// do "Conversar" na tela de Contatos). Modo csv_batch: is_superadmin OR
+// has_permission('view_all_departments').
+// UPSERT por identidade WhatsApp (móvel BR com/sem nono dígito => mesmo cliente).
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { exigirMembroAtivo } from "../_shared/empresa.ts";
+import {
+  numeroCanonicoWhatsapp,
+  selecionarRegistroPorNumeroWhatsapp,
+  variantesNumeroWhatsappBR,
+} from "../_shared/telefone-whatsapp.ts";
+import { podeCadastrarCliente, podeRenomearClienteExistente } from "./logic.ts";
 
 const FUNCAO = "cadastrar-cliente";
 
@@ -25,6 +33,8 @@ interface PayloadSingle {
   modo: "single";
   nome: string;
   telefone: string;
+  /** true = cliente já existente fica com o nome atual (ex.: cartão de contato recebido). */
+  manter_nome_existente?: boolean;
 }
 interface PayloadBatch {
   modo: "csv_batch";
@@ -79,8 +89,23 @@ Deno.serve(async (req: Request) => {
   if (errUser || !userRes?.user) return json({ ok: false, erro: "unauthorized" }, 401);
   const userId = userRes.user.id;
 
-  // Permissão: superadmin OU view_all_departments OU flag clientes_visivel_para_todos = true
-  const [{ data: userRow }, { data: permRow }, { data: flagRow }] = await Promise.all([
+  // O payload vem antes da checagem de permissão porque o portão depende do
+  // modo: cadastro avulso é liberado para qualquer membro, importação em lote
+  // não.
+  let payload: Payload;
+  try {
+    payload = (await req.json()) as Payload;
+  } catch {
+    return json({ ok: false, erro: "payload_invalido" }, 400);
+  }
+  if (payload?.modo !== "single" && payload?.modo !== "csv_batch") {
+    return json({ ok: false, erro: "payload_invalido", detalhe: "modo inválido" }, 400);
+  }
+
+  // A importação em lote é ação administrativa. A configuração
+  // clientes_visivel_para_todos controla somente leitura/visibilidade e não
+  // pode conceder escrita.
+  const [{ data: userRow }, { data: permRow }] = await Promise.all([
     supabase.from("users").select("is_superadmin").eq("id", userId).maybeSingle(),
     supabase
       .from("user_permissions")
@@ -88,16 +113,23 @@ Deno.serve(async (req: Request) => {
       .eq("user_id", userId)
       .eq("permission", "view_all_departments")
       .maybeSingle(),
-    supabase
-      .from("system_config")
-      .select("valor")
-      .eq("chave", "clientes_visivel_para_todos")
-      .maybeSingle(),
   ]);
-  const visivelParaTodos = flagRow?.valor === "true";
-  if (!userRow?.is_superadmin && !permRow && !visivelParaTodos) {
+  if (
+    !podeCadastrarCliente({
+      isSuperadmin: Boolean(userRow?.is_superadmin),
+      hasViewAllDepartments: Boolean(permRow),
+      modo: payload.modo,
+    })
+  ) {
     log({ funcao: FUNCAO, evento: "forbidden", status: "erro", duracao_ms: cron() });
-    return json({ ok: false, erro: "forbidden" }, 403);
+    return json(
+      {
+        ok: false,
+        erro: "forbidden",
+        detalhe: "Somente administradores podem importar contatos em lote.",
+      },
+      403,
+    );
   }
 
   // Empresa do chamador: `clients` é único por (company_id, numero_whatsapp),
@@ -106,16 +138,12 @@ Deno.serve(async (req: Request) => {
   const membro = await exigirMembroAtivo(supabase, userId);
   if (!membro) {
     log({ funcao: FUNCAO, evento: "sem_vinculo_empresa", status: "erro", duracao_ms: cron() });
-    return json({ ok: false, erro: "forbidden" }, 403);
+    return json(
+      { ok: false, erro: "forbidden", detalhe: "Seu usuário não está vinculado a uma empresa." },
+      403,
+    );
   }
   const companyId = membro.companyId;
-
-  let payload: Payload;
-  try {
-    payload = (await req.json()) as Payload;
-  } catch {
-    return json({ ok: false, erro: "payload_invalido" }, 400);
-  }
 
   // Modo single
   if (payload.modo === "single") {
@@ -129,13 +157,87 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Checa se já existe (para informar nome anterior).
-    const { data: existente } = await supabase
+    // O WhatsApp pode representar o mesmo celular BR com ou sem o nono
+    // dígito. Procura as duas formas antes de criar para manter um único
+    // client_id (e, portanto, um único histórico de conversa).
+    const { data: candidatos, error: errExistente } = await supabase
       .from("clients")
-      .select("id, nome")
+      .select("id, nome, numero_whatsapp")
       .eq("company_id", companyId)
-      .eq("numero_whatsapp", telefone)
-      .maybeSingle();
+      .in("numero_whatsapp", variantesNumeroWhatsappBR(telefone));
+
+    if (errExistente) {
+      log({
+        funcao: FUNCAO,
+        evento: "select_existente_single_erro",
+        status: "erro",
+        duracao_ms: cron(),
+        erro_msg: errExistente.message,
+      });
+      return json({ ok: false, erro: "erro_interno" }, 500);
+    }
+
+    const existente = selecionarRegistroPorNumeroWhatsapp(candidatos ?? [], telefone);
+    const podeRenomear = podeRenomearClienteExistente({
+      isSuperadmin: Boolean(userRow?.is_superadmin),
+      hasViewAllDepartments: Boolean(permRow),
+    });
+    if (existente && (payload.manter_nome_existente === true || !podeRenomear)) {
+      log({
+        funcao: FUNCAO,
+        evento: "existente_mantido_single",
+        status: "ok",
+        duracao_ms: cron(),
+        client_id: existente.id,
+      });
+      return json({
+        ok: true,
+        criado: false,
+        atualizado: false,
+        cliente: existente,
+        nome_anterior: existente.nome ?? null,
+      });
+    }
+    if (existente) {
+      const { data: atualizado, error: errAtualizar } = await supabase
+        .from("clients")
+        .update({ nome, updated_at: new Date().toISOString() })
+        .eq("id", existente.id)
+        .eq("company_id", companyId)
+        .select("id, nome, numero_whatsapp")
+        .single();
+
+      if (errAtualizar || !atualizado) {
+        log({
+          funcao: FUNCAO,
+          evento: "update_single_erro",
+          status: "erro",
+          duracao_ms: cron(),
+          erro_msg: errAtualizar?.message,
+        });
+        return json({ ok: false, erro: "erro_interno" }, 500);
+      }
+
+      log({
+        funcao: FUNCAO,
+        evento: "update_single_ok",
+        status: "ok",
+        duracao_ms: cron(),
+        client_id: atualizado.id,
+      });
+      return json({
+        ok: true,
+        criado: false,
+        atualizado: true,
+        cliente: atualizado,
+        nome_anterior: existente.nome ?? null,
+      });
+    }
+
+    // Clientes novos usam uma forma estável (com o nono dígito quando móvel
+    // BR), assim chamadas simultâneas das duas variantes disputam a mesma
+    // constraint UNIQUE em vez de criarem duas pessoas.
+    const telefoneCanonico = numeroCanonicoWhatsapp(telefone) ?? telefone;
 
     const { data: up, error: errUp } = await supabase
       .from("clients")
@@ -143,7 +245,7 @@ Deno.serve(async (req: Request) => {
         {
           company_id: companyId,
           nome,
-          numero_whatsapp: telefone,
+          numero_whatsapp: telefoneCanonico,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "company_id,numero_whatsapp" },
@@ -153,16 +255,16 @@ Deno.serve(async (req: Request) => {
 
     if (errUp) {
       log({ funcao: FUNCAO, evento: "upsert_single_erro", status: "erro", duracao_ms: cron(), erro_msg: errUp.message });
-      return json({ ok: false, erro: "erro_interno", detalhe: errUp.message }, 500);
+      return json({ ok: false, erro: "erro_interno" }, 500);
     }
 
     log({ funcao: FUNCAO, evento: "upsert_single_ok", status: "ok", duracao_ms: cron(), client_id: up.id });
     return json({
       ok: true,
-      criado: !existente,
-      atualizado: !!existente,
+      criado: true,
+      atualizado: false,
       cliente: up,
-      nome_anterior: existente?.nome ?? null,
+      nome_anterior: null,
     });
   }
 
@@ -193,26 +295,43 @@ Deno.serve(async (req: Request) => {
         erros.push({ linha: numLinha, motivo: "telefone inválido", nome: l?.nome, telefone: l?.telefone });
         return;
       }
-      // Última ocorrência ganha
-      validosPorTelefone.set(telefone, { nome, telefone });
+      // Última ocorrência equivalente ganha. Assim o próprio CSV não cria
+      // duas linhas para o mesmo móvel BR com/sem o nono dígito.
+      const telefoneCanonico = numeroCanonicoWhatsapp(telefone) ?? telefone;
+      validosPorTelefone.set(telefoneCanonico, { nome, telefone: telefoneCanonico });
     });
 
     const validos = Array.from(validosPorTelefone.values());
 
-    // Checa quais já existem
-    let existentes = new Set<string>();
+    // Checa as duas variantes para também reaproveitar clientes legados cujo
+    // número principal ainda esteja salvo sem o nono dígito.
+    const clientesExistentes: Array<{ id: string; numero_whatsapp: string }> = [];
     if (validos.length > 0) {
-      const tels = validos.map((v) => v.telefone);
-      const { data: jaTem, error: errSel } = await supabase
-        .from("clients")
-        .select("numero_whatsapp")
-        .eq("company_id", companyId)
-        .in("numero_whatsapp", tels);
-      if (errSel) {
-        log({ funcao: FUNCAO, evento: "select_existentes_erro", status: "erro", duracao_ms: cron(), erro_msg: errSel.message });
-        return json({ ok: false, erro: "erro_interno", detalhe: errSel.message }, 500);
+      const tels = Array.from(
+        new Set(validos.flatMap((v) => variantesNumeroWhatsappBR(v.telefone))),
+      );
+      // Mantém cada filtro abaixo do limite de URL e de linhas do Data API.
+      // Sem lotes, um CSV grande poderia omitir um cliente legado e recriá-lo.
+      const TAMANHO_LOTE_BUSCA = 200;
+      for (let inicio = 0; inicio < tels.length; inicio += TAMANHO_LOTE_BUSCA) {
+        const lote = tels.slice(inicio, inicio + TAMANHO_LOTE_BUSCA);
+        const { data: jaTem, error: errSel } = await supabase
+          .from("clients")
+          .select("id, numero_whatsapp")
+          .eq("company_id", companyId)
+          .in("numero_whatsapp", lote);
+        if (errSel) {
+          log({
+            funcao: FUNCAO,
+            evento: "select_existentes_erro",
+            status: "erro",
+            duracao_ms: cron(),
+            erro_msg: errSel.message,
+          });
+          return json({ ok: false, erro: "erro_interno" }, 500);
+        }
+        clientesExistentes.push(...(jaTem ?? []));
       }
-      existentes = new Set((jaTem ?? []).map((r) => r.numero_whatsapp as string));
     }
 
     let criados = 0;
@@ -220,23 +339,39 @@ Deno.serve(async (req: Request) => {
 
     if (validos.length > 0) {
       const now = new Date().toISOString();
-      const rows = validos.map((v) => ({
-        company_id: companyId,
-        nome: v.nome,
-        numero_whatsapp: v.telefone,
-        updated_at: now,
-      }));
+      const rowsAtualizar: Array<Record<string, string>> = [];
+      const rowsCriar: Array<Record<string, string>> = [];
+
+      for (const v of validos) {
+        const existente = selecionarRegistroPorNumeroWhatsapp(clientesExistentes, v.telefone);
+        if (existente) {
+          rowsAtualizar.push({
+            company_id: companyId,
+            nome: v.nome,
+            numero_whatsapp: existente.numero_whatsapp,
+            updated_at: now,
+          });
+        } else {
+          rowsCriar.push({
+            company_id: companyId,
+            nome: v.nome,
+            numero_whatsapp: v.telefone,
+            updated_at: now,
+          });
+        }
+      }
+
       const { error: errUp } = await supabase
         .from("clients")
-        .upsert(rows, { onConflict: "company_id,numero_whatsapp" });
+        .upsert([...rowsAtualizar, ...rowsCriar], {
+          onConflict: "company_id,numero_whatsapp",
+        });
       if (errUp) {
         log({ funcao: FUNCAO, evento: "upsert_batch_erro", status: "erro", duracao_ms: cron(), erro_msg: errUp.message });
-        return json({ ok: false, erro: "erro_interno", detalhe: errUp.message }, 500);
+        return json({ ok: false, erro: "erro_interno" }, 500);
       }
-      for (const v of validos) {
-        if (existentes.has(v.telefone)) atualizados++;
-        else criados++;
-      }
+      atualizados = rowsAtualizar.length;
+      criados = rowsCriar.length;
     }
 
     // Audit log

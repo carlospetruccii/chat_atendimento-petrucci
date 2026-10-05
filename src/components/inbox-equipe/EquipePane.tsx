@@ -97,9 +97,12 @@ export function EquipePane({ meuUserId, formatTime, tabs }: Props) {
   }, [queryClient]);
 
   return (
-    <>
+    // No celular a coluna visível é decidida por `data-pane`: com conversa
+    // aberta aparece o chat, sem conversa aparece a lista. No desktop as duas
+    // convivem lado a lado (padrão lista ↔ detalhe do BRIEF-MOBILE.md).
+    <div className="flex h-full w-full" data-pane={selectedId ? "detalhe" : "lista"}>
       {/* Lista */}
-      <div className="w-[360px] shrink-0 overflow-y-auto border-r border-border bg-card">
+      <div className="w-full shrink-0 overflow-y-auto border-r border-border bg-card scroll-contain md:w-[360px] [[data-pane=detalhe]_&]:hidden md:[[data-pane=detalhe]_&]:block">
         <div className="space-y-2 border-b border-border p-4">
           {tabs}
           <div className="flex items-center gap-2">
@@ -108,12 +111,12 @@ export function EquipePane({ meuUserId, formatTime, tabs }: Props) {
               onChange={(e) => setFilter(e.target.value)}
               type="text"
               placeholder="Buscar no time..."
-              className="w-full rounded-2xl border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              className="w-full rounded-2xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 md:py-2"
             />
             <button
               type="button"
               onClick={() => setNovaOpen(true)}
-              className="shrink-0 rounded-full bg-primary p-2 text-primary-foreground transition-opacity hover:opacity-90"
+              className="touch-target-mobile inline-flex shrink-0 items-center justify-center rounded-full bg-primary p-2 text-primary-foreground transition-opacity hover:opacity-90"
               aria-label="Conversar com alguém do time"
               title="Conversar com alguém do time"
             >
@@ -134,7 +137,7 @@ export function EquipePane({ meuUserId, formatTime, tabs }: Props) {
       </div>
 
       {/* Conversa */}
-      <div className="relative flex flex-1 flex-col bg-background">
+      <div className="relative flex w-full min-w-0 flex-1 flex-col bg-background [[data-pane=lista]_&]:hidden md:[[data-pane=lista]_&]:flex">
         {!current ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="text-center">
@@ -160,6 +163,7 @@ export function EquipePane({ meuUserId, formatTime, tabs }: Props) {
             conversa={current}
             meuUserId={meuUserId}
             formatTime={formatTime}
+            onVoltar={() => setSelectedId(null)}
             registrarRealtime={(cbs) => {
               chatCbsRef.current = cbs;
             }}
@@ -173,6 +177,6 @@ export function EquipePane({ meuUserId, formatTime, tabs }: Props) {
         abrindo={abrirMut.isPending}
         onEscolher={(colega) => abrirMut.mutate(colega)}
       />
-    </>
+    </div>
   );
 }

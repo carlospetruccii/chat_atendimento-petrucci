@@ -64,6 +64,19 @@ export interface AtendimentoMeta {
   isCurrent: boolean;
 }
 
+export type ChatLoadState = "loading" | "error" | "empty" | "messages";
+
+/** Decide o estado visível do painel sem mascarar falha de rede como chat vazio. */
+export function chatLoadState(params: {
+  isLoadingInitial: boolean;
+  error: unknown;
+  itemCount: number;
+}): ChatLoadState {
+  if (params.isLoadingInitial) return "loading";
+  if (params.error) return "error";
+  return params.itemCount === 0 ? "empty" : "messages";
+}
+
 export type ChatItem =
   | { kind: "date-separator"; key: string; label: string }
   | {
@@ -158,11 +171,7 @@ export function agruparMensagens(
 
   // Se o atendimento atual ainda não apareceu em nenhuma mensagem mas existem anteriores,
   // anexa o separador "Atendimento atual" no fim.
-  if (
-    showAtendimentoSeparators &&
-    currentMeta &&
-    lastAtendimentoId !== currentMeta.id
-  ) {
+  if (showAtendimentoSeparators && currentMeta && lastAtendimentoId !== currentMeta.id) {
     items.push({
       kind: "atendimento-separator",
       key: `at-${currentMeta.id}`,

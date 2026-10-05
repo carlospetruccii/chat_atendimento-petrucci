@@ -19,8 +19,8 @@ export interface FaixaHistograma {
 
 /**
  * Estas duas interfaces carregam SÓ os contadores escalares que as funções
- * puras deste módulo consomem. As listas (contas_reativas, peregrinacoes,
- * distribuicao) vivem nos tipos "Completa" de relacionamento-queries, que
+ * puras deste módulo consomem. As listas (peregrinacoes, distribuicao) vivem
+ * nos tipos "Completa" de relacionamento-queries, que
  * estendem estes. Misturar as listas aqui obrigaria a interseção de tipos no
  * componente, e interseção de arrays não estreita o elemento.
  */
@@ -40,13 +40,7 @@ export interface Transferencias {
   total_saltos: number;
 }
 
-export type NivelRisco = "critico" | "alto" | "medio";
-
 const MINUTOS_POR_HORA = 60;
-
-/** Limites de queda (%) para colorir a lista de desengajamento. */
-const QUEDA_CRITICA = -90;
-const QUEDA_ALTA = -70;
 
 function paraNumero(valor: NumeroDoBanco): number | null {
   if (valor === null || valor === undefined) return null;
@@ -72,25 +66,6 @@ export function formatarMinutos(min: NumeroDoBanco): string {
   return resto === 0 ? `${horas}h` : `${horas}h ${resto}min`;
 }
 
-/** Delta percentual com sinal explícito. O zero não leva sinal. */
-export function formatarDelta(pctValor: NumeroDoBanco): string {
-  const n = paraNumero(pctValor);
-  if (n === null) return "—";
-  if (n === 0) return "0%";
-  return n > 0 ? `+${n}%` : `${n}%`;
-}
-
-/**
- * Severidade de uma queda de engajamento. Só é chamada para clientes que já
- * passaram do limite de alerta do RPC (-50%), então "medio" é o piso.
- */
-export function nivelRiscoQueda(deltaPct: NumeroDoBanco): NivelRisco {
-  const n = paraNumero(deltaPct) ?? 0;
-  if (n <= QUEDA_CRITICA) return "critico";
-  if (n <= QUEDA_ALTA) return "alto";
-  return "medio";
-}
-
 /** Percentual inteiro protegido contra divisão por zero. */
 export function pct(parte: NumeroDoBanco, total: NumeroDoBanco): number {
   const p = paraNumero(parte) ?? 0;
@@ -99,24 +74,51 @@ export function pct(parte: NumeroDoBanco, total: NumeroDoBanco): number {
   return Math.round((p / t) * 100);
 }
 
-/** Descreve as duas janelas que o bloco de engajamento comparou. */
-export function rotuloJanela(janelaDias: NumeroDoBanco): string {
-  const n = paraNumero(janelaDias) ?? 0;
-  return `últimos ${n} dias vs os ${n} anteriores`;
+/**
+ * Onde cada faixa do histograma deixa de ser boa. O RPC devolve 7 faixas em
+ * ordem crescente (até 5min, 5–10, 10–15, 15–30, 30min–1h, 1h–1h30, +1h30);
+ * agrupar por posição evita acoplar ao texto da faixa.
+ */
+const FAIXAS_RAPIDAS = 3; // até 15min
+const FAIXAS_OK = 2; // 15min a 1h
+
+export type TomEspera = "rapido" | "ok" | "lento";
+
+export interface LinhaEspera {
+  faixa: string;
+  total: number;
+  pct: number;
+  tom: TomEspera;
 }
 
-/**
- * Percentual da amostra que caiu na faixa informada ou em qualquer faixa
- * posterior — a "cauda" do histograma. É a leitura que interessa: não a média,
- * mas quanta gente esperou muito.
- */
-export function pctCauda(histograma: FaixaHistograma[], aPartirDa: string): number {
-  const indice = histograma.findIndex((f) => f.faixa === aPartirDa);
-  if (indice < 0) return 0;
+export interface ResumoEspera {
+  total: number;
+  linhas: LinhaEspera[];
+  /** % respondido em até 15 minutos de expediente. */
+  pctAte15min: number;
+}
 
+function tomDaFaixa(indice: number): TomEspera {
+  if (indice < FAIXAS_RAPIDAS) return "rapido";
+  if (indice < FAIXAS_RAPIDAS + FAIXAS_OK) return "ok";
+  return "lento";
+}
+
+/** Histograma de espera com percentual e tom de cada faixa. */
+export function resumoEspera(histograma: FaixaHistograma[]): ResumoEspera {
   const total = histograma.reduce((acc, f) => acc + f.total, 0);
-  const cauda = histograma.slice(indice).reduce((acc, f) => acc + f.total, 0);
-  return pct(cauda, total);
+  const ate15 = histograma.slice(0, FAIXAS_RAPIDAS).reduce((acc, f) => acc + f.total, 0);
+
+  return {
+    total,
+    linhas: histograma.map((f, i) => ({
+      faixa: f.faixa,
+      total: f.total,
+      pct: pct(f.total, total),
+      tom: tomDaFaixa(i),
+    })),
+    pctAte15min: pct(ate15, total),
+  };
 }
 
 export interface ResumoIniciativa {

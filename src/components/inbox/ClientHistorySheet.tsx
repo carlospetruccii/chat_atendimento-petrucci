@@ -1,4 +1,4 @@
-import { Clock, X, Loader2, UserRound } from "lucide-react";
+import { Clock, Loader2, UserRound } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   listAtendentesChain,
@@ -9,6 +9,13 @@ import {
   type AtendimentoStatus,
 } from "@/lib/inbox-queries";
 import { shortDateSP } from "@/lib/inbox-history";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 
 interface Props {
   open: boolean;
@@ -17,6 +24,7 @@ interface Props {
   clientNome: string;
   currentAtendimentoId: string;
   currentDepartmentId: string | null;
+  userId: string;
   onPick: (atendimentoId: string) => void;
 }
 
@@ -50,61 +58,48 @@ export function ClientHistorySheet({
   clientNome,
   currentAtendimentoId,
   currentDepartmentId,
+  userId,
   onPick,
 }: Props) {
   const { data, isLoading } = useQuery<ClientAtendimentoSummary[]>({
-    queryKey: ["inbox", "client-history", clientId],
+    queryKey: ["inbox", "client-history", clientId, userId],
     queryFn: () =>
       listClientAtendimentosVisiveis({
         clientId,
         currentAtendimentoId,
         currentDepartmentId,
         canViewAll: true, // sheet só abre para quem pode ver tudo
+        userId,
       }),
     enabled: open && !!clientId,
   });
 
   // Cadeia de "quem atendeu" por atendimento (nome + departamento, na ordem).
   const ids = (data ?? []).map((a) => a.id);
-  const { data: chains, isLoading: chainsLoading } = useQuery<
-    Record<string, AtendenteChainItem[]>
-  >({
-    queryKey: ["inbox", "atendentes-chain", clientId, ids.join(",")],
-    queryFn: () => listAtendentesChain(ids),
-    enabled: open && ids.length > 0,
-  });
-
-  if (!open) return null;
+  const { data: chains, isLoading: chainsLoading } = useQuery<Record<string, AtendenteChainItem[]>>(
+    {
+      queryKey: ["inbox", "atendentes-chain", clientId, userId, ids.join(",")],
+      queryFn: () => listAtendentesChain(ids),
+      enabled: open && ids.length > 0,
+    },
+  );
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        className="absolute inset-0 z-20 bg-black/20"
-      />
-      <aside
-        className="absolute top-0 right-0 z-30 h-full w-[400px] bg-card border-l border-border shadow-lg"
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-2 min-w-0">
+    // Componente Sheet da fundação em vez do overlay+aside manual de antes: ele
+    // já resolve tela cheia no celular e painel lateral no desktop (era um
+    // `absolute ... w-[400px]` fixo que estourava a largura da tela no
+    // celular, já que o painel de chat também passou a ocupar 100% ali).
+    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <SheetContent side="right" className="flex flex-col gap-0 overflow-hidden p-0 sm:p-0">
+        <SheetHeader className="shrink-0 border-b border-border px-5 py-4 text-left">
+          <SheetTitle className="flex items-center gap-2 text-sm font-semibold">
             <Clock className="h-5 w-5 text-primary shrink-0" strokeWidth={1.5} />
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-foreground truncate">
-                Linha do tempo
-              </h3>
-              <p className="text-xs text-muted-foreground truncate">{clientNome}</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+            Linha do tempo
+          </SheetTitle>
+          <SheetDescription className="truncate">{clientNome}</SheetDescription>
+        </SheetHeader>
 
-        <div className="p-4 space-y-2 overflow-y-auto h-[calc(100%-64px)]">
+        <div className="flex-1 min-h-0 space-y-2 overflow-y-auto scroll-contain p-4">
           {isLoading ? (
             <div className="text-center text-sm text-muted-foreground py-8">
               <Loader2 className="inline h-4 w-4 animate-spin mr-2" /> Carregando...
@@ -134,12 +129,8 @@ export function ClientHistorySheet({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-foreground">
-                      {dataLabel}
-                    </span>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded ${statusBadge(a.status)}`}
-                    >
+                    <span className="text-xs font-medium text-foreground">{dataLabel}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusBadge(a.status)}`}>
                       {STATUS_TXT[a.status]}
                     </span>
                   </div>
@@ -173,9 +164,7 @@ export function ClientHistorySheet({
                       }
                       if (cadeia.length === 0) {
                         return (
-                          <span className="text-muted-foreground italic">
-                            Aguardando atendente
-                          </span>
+                          <span className="text-muted-foreground italic">Aguardando atendente</span>
                         );
                       }
                       return (
@@ -203,7 +192,7 @@ export function ClientHistorySheet({
             })
           )}
         </div>
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }

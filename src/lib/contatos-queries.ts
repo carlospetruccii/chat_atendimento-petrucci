@@ -64,12 +64,16 @@ export async function googleDisconnect(): Promise<void> {
 // Leitura dos contatos (tabela contatos)
 // ---------------------------------------------------------------------------
 
+export type ContatoOrigem = "google" | "sistema";
+
 export interface Contato {
   id: string;
   nome: string | null;
   numero_whatsapp: string | null;
   numero_raw: string | null;
   emails: string[];
+  /** "google" = veio do sync do Google. "sistema" = cadastrado via "Adicionar contato". */
+  origem: ContatoOrigem;
 }
 
 export interface ListContatosResult {
@@ -79,6 +83,13 @@ export interface ListContatosResult {
   pageSize: number;
 }
 
+/**
+ * Lê de `contatos_unificados`, a view que junta o sync do Google (tabela
+ * `contatos`) com os clientes cadastrados manualmente (tabela `clients`) que
+ * ainda não têm um contato Google com o mesmo numero_whatsapp — sem isso, um
+ * contato salvo pelo "Adicionar contato" nunca aparecia aqui e nunca tinha
+ * como iniciar atendimento por esta tela.
+ */
 export async function listContatos(params: {
   search?: string;
   page?: number;
@@ -90,8 +101,8 @@ export async function listContatos(params: {
   const to = from + pageSize - 1;
 
   let query = supabase
-    .from("contatos")
-    .select("id, nome, numero_whatsapp, numero_raw, emails", { count: "exact" })
+    .from("contatos_unificados")
+    .select("id, nome, numero_whatsapp, numero_raw, emails, origem", { count: "exact" })
     .order("nome", { ascending: true, nullsFirst: false });
 
   const term = params.search?.trim();
@@ -105,13 +116,18 @@ export async function listContatos(params: {
   const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
-  const rows: Contato[] = (data ?? []).map((r) => ({
-    id: r.id,
-    nome: r.nome,
-    numero_whatsapp: r.numero_whatsapp,
-    numero_raw: r.numero_raw,
-    emails: Array.isArray(r.emails) ? (r.emails as string[]) : [],
-  }));
+  // A view (UNION) não carrega NOT NULL do Postgres pro tipo gerado, mas
+  // `id` é sempre uuid não-nulo nas duas tabelas de origem.
+  const rows: Contato[] = (data ?? [])
+    .filter((r): r is typeof r & { id: string } => r.id !== null)
+    .map((r) => ({
+      id: r.id,
+      nome: r.nome,
+      numero_whatsapp: r.numero_whatsapp,
+      numero_raw: r.numero_raw,
+      emails: Array.isArray(r.emails) ? (r.emails as string[]) : [],
+      origem: r.origem === "sistema" ? "sistema" : "google",
+    }));
 
   return { rows, total: count ?? 0, page, pageSize };
 }
@@ -128,9 +144,7 @@ export async function listContatos(params: {
  * É aditivo e à prova de falha: se a consulta der erro, devolve um mapa vazio
  * (o Inbox segue mostrando o nome atual, sem quebrar).
  */
-export async function fetchContatoNamesByNumbers(
-  numeros: string[],
-): Promise<Map<string, string>> {
+export async function fetchContatoNamesByNumbers(numeros: string[]): Promise<Map<string, string>> {
   const mapa = new Map<string, string>();
   const unicos = Array.from(new Set(numeros.filter(Boolean)));
   if (unicos.length === 0) return mapa;

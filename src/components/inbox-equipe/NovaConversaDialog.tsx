@@ -70,11 +70,15 @@ export function NovaConversaDialog({ open, onOpenChange, onEscolher, abrindo }: 
             type="text"
             autoFocus
             placeholder="Buscar por nome ou setor..."
-            className="w-full rounded-2xl border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-2xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/20 md:py-2"
           />
         </div>
 
-        <div className="max-h-[320px] overflow-y-auto">
+        {/* 50dvh no celular: o input tem autoFocus, então o teclado já abre
+            junto com o diálogo. A lista precisa continuar rolável mesmo com
+            menos espaço vertical sobrando. Do sm pra cima sobra tela e a
+            altura fixa de sempre já é confortável. */}
+        <div className="max-h-[50dvh] overflow-y-auto scroll-contain sm:max-h-[320px]">
           {colegasQuery.isLoading ? (
             <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando time...
@@ -93,7 +97,7 @@ export function NovaConversaDialog({ open, onOpenChange, onEscolher, abrindo }: 
                     type="button"
                     disabled={abrindo}
                     onClick={() => onEscolher(c)}
-                    className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted disabled:opacity-50"
+                    className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-muted disabled:opacity-50"
                   >
                     <span className="relative shrink-0">
                       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-primary">

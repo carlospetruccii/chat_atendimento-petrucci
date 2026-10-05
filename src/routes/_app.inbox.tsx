@@ -8,28 +8,29 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Clock,
-  Search,
-  ArrowRightCircle,
   AlertCircle,
   UserPlus,
   Loader2,
-  Reply,
   Sparkles,
+  Ban,
+  Check,
+  ChevronLeft,
+  MoreVertical,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatWhatsAppText } from "@/lib/whatsapp-format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  InboxStatusFilter,
+  type InboxStatusFilterValue,
+} from "@/components/inbox/InboxStatusFilter";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   listInboxConversations,
@@ -39,7 +40,6 @@ import {
   sendInboxMedia,
   marcarConversaLida,
   marcarAtendimentoLido,
-  notificarRepasse,
   listClientAtendimentosVisiveis,
   initialsOf,
   statusLabel,
@@ -51,8 +51,19 @@ import {
 import { MessageMedia } from "@/components/inbox-media/MessageMedia";
 import { ListaOpcoesPreview } from "@/components/inbox-media/ListaOpcoesPreview";
 import { QuotedMessagePreview } from "@/components/inbox/QuotedMessagePreview";
+import { MensagemAcoesMenu } from "@/components/inbox/MensagemAcoesMenu";
+import { MensagemLinha } from "@/components/inbox/MensagemLinha";
+import { SelecaoMensagensBar } from "@/components/inbox/SelecaoMensagensBar";
+import { ApagarParaTodosDialog } from "@/components/inbox/ApagarParaTodosDialog";
+import { EditarMensagemDialog } from "@/components/inbox/EditarMensagemDialog";
+import { EncaminharDialog } from "@/components/inbox/EncaminharDialog";
+import { RepassarModal } from "@/components/inbox/RepassarModal";
+import { EncerrarModal } from "@/components/inbox/EncerrarModal";
+import { useSelecaoMensagens } from "@/hooks/useSelecaoMensagens";
+import { useLongPress } from "@/hooks/useLongPress";
+import { useAgora } from "@/hooks/useAgora";
 import { useChatHistory } from "@/hooks/useChatHistory";
-import { agruparMensagens, type AtendimentoMeta } from "@/lib/inbox-history";
+import { agruparMensagens, chatLoadState, type AtendimentoMeta } from "@/lib/inbox-history";
 import { ClientHistorySheet } from "@/components/inbox/ClientHistorySheet";
 import { AudioRecorderBar } from "@/components/inbox/AudioRecorderBar";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
@@ -158,8 +169,16 @@ function InboxPage() {
   const [encerrarOpen, setEncerrarOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<InboxStatusFilterValue>("todos");
   const [replyTo, setReplyTo] = useState<InboxMessage | null>(null);
   const [aba, setAba] = useState<InboxAba>(search.aba ?? "chat");
+  // Apagar para todos / editar mensagem (recursos nativos do WhatsApp).
+  const [editando, setEditando] = useState<InboxMessage | null>(null);
+  const [confirmarApagar, setConfirmarApagar] = useState<InboxMessage[] | null>(null);
+  const [encaminhando, setEncaminhando] = useState<InboxMessage | null>(null);
+  // Relógio compartilhado: os prazos do WhatsApp expiram com a tela aberta, e
+  // menu e barra de seleção têm que envelhecer juntos.
+  const agora = useAgora();
 
   // A aba fica na URL: recarregar ou compartilhar o link mantém onde você estava.
   const navigate = Route.useNavigate();
@@ -258,16 +277,27 @@ function InboxPage() {
   });
   const matchedClientIds = messageSearchQuery.data ?? new Set<string>();
 
-  const filtered = filter
-    ? conversations.filter((c) => {
-        const f = filter.toLowerCase();
-        return (
-          c.clientNome.toLowerCase().includes(f) ||
-          c.clientNumero.includes(filter) ||
-          matchedClientIds.has(c.clientId)
-        );
-      })
-    : conversations;
+  // Contadores por status, para os badges das pills de filtro — sempre sobre
+  // `conversations` (não `filtered`), senão o número encolhe junto com a busca.
+  const statusCounts: Record<InboxStatusFilterValue, number> = {
+    todos: conversations.length,
+    em_andamento: conversations.filter((c) => c.status !== "encerrado").length,
+    encerrado: conversations.filter((c) => c.status === "encerrado").length,
+    nao_visto: conversations.filter((c) => c.unread > 0).length,
+  };
+
+  const filtered = conversations.filter((c) => {
+    if (statusFilter === "encerrado" && c.status !== "encerrado") return false;
+    if (statusFilter === "em_andamento" && c.status === "encerrado") return false;
+    if (statusFilter === "nao_visto" && c.unread <= 0) return false;
+    if (!filter) return true;
+    const f = filter.toLowerCase();
+    return (
+      c.clientNome.toLowerCase().includes(f) ||
+      c.clientNumero.includes(filter) ||
+      matchedClientIds.has(c.clientId)
+    );
+  });
 
   const current: InboxConversation | undefined =
     filtered.find((c) => c.id === selected) ?? conversations.find((c) => c.id === selected);
@@ -312,15 +342,19 @@ function InboxPage() {
       current?.id,
       current?.departmentId,
       canViewAll,
+      user?.id,
     ],
-    queryFn: () =>
-      listClientAtendimentosVisiveis({
-        clientId: current!.clientId,
-        currentAtendimentoId: current!.id,
-        currentDepartmentId: current!.departmentId,
+    queryFn: () => {
+      if (!current || !user) throw new Error("Perfil ausente ao carregar histórico");
+      return listClientAtendimentosVisiveis({
+        clientId: current.clientId,
+        currentAtendimentoId: current.id,
+        currentDepartmentId: current.departmentId,
         canViewAll,
-      }),
-    enabled: abaChatAtiva && !!current,
+        userId: user.id,
+      });
+    },
+    enabled: abaChatAtiva && !!current && !!user,
   });
 
   const atendimentoMetas: AtendimentoMeta[] = useMemo(() => {
@@ -352,6 +386,19 @@ function InboxPage() {
     for (const m of chat.messages) map.set(m.id, m);
     return map;
   }, [chat.messages]);
+
+  const selecao = useSelecaoMensagens(chat.messages);
+
+  // Trocar de conversa sai do modo de seleção. Sem isso, a barra seguiria na
+  // tela com ids de outra conversa marcados — e o lote apagaria mensagens que
+  // não estão mais à vista.
+  useEffect(() => {
+    selecao.limpar();
+    setEditando(null);
+    setConfirmarApagar(null);
+    setEncaminhando(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   // Anima só mensagens enviadas por mim que acabaram de chegar no fim da lista
   // (não as carregadas no histórico inicial nem as antigas trazidas por paginação).
@@ -389,10 +436,12 @@ function InboxPage() {
   const chatCallbacksRef = useRef({
     onRealtimeInsert: chat.onRealtimeInsert,
     onRealtimeUpdate: chat.onRealtimeUpdate,
+    onRealtimeDelete: chat.onRealtimeDelete,
   });
   chatCallbacksRef.current = {
     onRealtimeInsert: chat.onRealtimeInsert,
     onRealtimeUpdate: chat.onRealtimeUpdate,
+    onRealtimeDelete: chat.onRealtimeDelete,
   };
 
   useEffect(() => {
@@ -425,6 +474,17 @@ function InboxPage() {
           }
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "mensagens" },
+        (payload) => {
+          // O payload de DELETE só traz a chave primária. Serve para tirar da
+          // tela a linha duplicada que a edge function remove ao editar (ver
+          // onRealtimeDelete).
+          const row = payload.old as { id?: string } | null;
+          if (row?.id) chatCallbacksRef.current.onRealtimeDelete(row.id);
+        },
+      )
       .on("postgres_changes", { event: "*", schema: "public", table: "atendimentos" }, () => {
         queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
         queryClient.invalidateQueries({ queryKey: ["inbox", "client-atendimentos"] });
@@ -441,6 +501,12 @@ function InboxPage() {
   // PERFIL (users) por um instante — seguramos a tela até ele chegar, para que
   // o envio e as ações sempre carreguem a identidade de quem está logado.
   const chatItems = agruparMensagens(chat.messages, atendimentoMetas);
+  const historyError = atendimentosQuery.error ?? chat.error;
+  const historyState = chatLoadState({
+    isLoadingInitial: atendimentosQuery.isLoading || chat.isLoadingInitial,
+    error: historyError,
+    itemCount: chatItems.length,
+  });
 
   if (!user) {
     return (
@@ -462,7 +528,7 @@ function InboxPage() {
     if (!current || !content || sending) return;
     setSending(true);
     try {
-      await sendInboxMessage({
+      const mensagemId = await sendInboxMessage({
         atendimentoId: current.id,
         clientId: current.clientId,
         departmentId: current.departmentId,
@@ -475,11 +541,12 @@ function InboxPage() {
       setHasDraft(false);
       setReplyTo(null);
       setPendingOtimizacao(null);
-      // Realtime já vai trazer; força scroll para o fim na próxima paint.
-      requestAnimationFrame(() => {
-        chat.scrollToBottom(true);
-        composerRef.current?.focus();
-      });
+      // Põe a bolha na tela com o id que acabou de ser gravado, em vez de
+      // esperar o eco do realtime — que às vezes não voltava, e aí a mensagem
+      // só aparecia depois de recarregar a página. O eco chega depois e é
+      // deduplicado pelo id.
+      await chat.ingestMessage(mensagemId);
+      requestAnimationFrame(() => composerRef.current?.focus());
     } catch (e) {
       toast.error("Não foi possível enviar a mensagem.");
       console.error(e);
@@ -509,7 +576,7 @@ function InboxPage() {
     if (!current || !recordedAudio || sending) return;
     setSending(true);
     try {
-      await sendInboxAudio({
+      const mensagemId = await sendInboxAudio({
         atendimentoId: current.id,
         blob: recordedAudio.blob,
         mimeType: recordedAudio.mimeType,
@@ -518,7 +585,10 @@ function InboxPage() {
       });
       setRecordedAudio(null);
       setReplyTo(null);
-      requestAnimationFrame(() => chat.scrollToBottom(true));
+      // Mesmo motivo do texto (ver doSend). Aqui o id vem da edge function, que
+      // é quem grava a linha; se ela não devolver, cai no caminho antigo.
+      if (mensagemId) await chat.ingestMessage(mensagemId);
+      else requestAnimationFrame(() => chat.scrollToBottom(true));
     } catch (e) {
       toast.error("Não foi possível enviar o áudio.");
       console.error(e);
@@ -589,7 +659,7 @@ function InboxPage() {
     if (!current || !pendingMedia) return;
     setSending(true);
     try {
-      await sendInboxMedia({
+      const mensagemId = await sendInboxMedia({
         atendimentoId: current.id,
         tipo: pendingMedia.tipo,
         file: pendingMedia.file,
@@ -598,7 +668,9 @@ function InboxPage() {
       });
       setPendingMedia(null);
       setReplyTo(null);
-      requestAnimationFrame(() => chat.scrollToBottom(true));
+      // Mesmo motivo do texto (ver doSend).
+      if (mensagemId) await chat.ingestMessage(mensagemId);
+      else requestAnimationFrame(() => chat.scrollToBottom(true));
     } catch (e) {
       toast.error("Não foi possível enviar o anexo.");
       console.error(e);
@@ -654,6 +726,12 @@ function InboxPage() {
     queryClient.invalidateQueries({ queryKey: ["inbox"] });
   };
 
+  // Botão Voltar do cabeçalho (só existe no celular — ver `data-pane` abaixo).
+  // Só limpa a seleção local: abrir uma conversa nunca empurra `?conversation=`
+  // para a URL (só a sincroniza quando ela chega de fora), então não há nada
+  // para desfazer na navegação — mesmo padrão que o EncerrarModal já usa.
+  const handleVoltar = () => setSelected(null);
+
   // Abas Grupos e Equipe: mundos separados (lista + conversa próprias). Nada do
   // fluxo de atendimento — bot, triagem, repasse, encerramento — existe neles.
   if (aba === "grupos") {
@@ -678,9 +756,14 @@ function InboxPage() {
 
   return (
     <div className="h-full">
-      <div className="flex h-full">
+      {/* No celular as duas colunas não cabem juntas (a lista comia a tela
+          inteira e o chat ficava com ~0px) — `data-pane` decide qual delas
+          aparece, com CSS puro (`[[data-pane=...]_&]`) para não pintar o
+          layout errado no primeiro paint e "pular" na hidratação. No desktop
+          (`md:`) as duas convivem sempre, igual antes. */}
+      <div className="flex h-full" data-pane={selected ? "detalhe" : "lista"}>
         {/* Lista */}
-        <div className="w-[360px] shrink-0 border-r border-border bg-card overflow-y-auto">
+        <div className="w-full shrink-0 overflow-y-auto scroll-contain border-r border-border bg-card md:w-[360px] [[data-pane=detalhe]_&]:hidden md:[[data-pane=detalhe]_&]:block">
           {/* "Iniciar atendimento" mora na barra lateral (NovoAtendimentoButton):
               é ação de criação e vale de qualquer tela, não só do Inbox. */}
           <div className="p-4 border-b border-border space-y-2">
@@ -692,6 +775,11 @@ function InboxPage() {
               placeholder="Buscar conversas..."
               className="w-full rounded-2xl border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
             />
+            <InboxStatusFilter
+              value={statusFilter}
+              counts={statusCounts}
+              onChange={setStatusFilter}
+            />
           </div>
 
           {conversationsQuery.isLoading ? (
@@ -700,9 +788,11 @@ function InboxPage() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-              {canViewAll
-                ? "Nenhuma conversa em andamento."
-                : "Você não tem atendimentos ativos. Pegue um em Pendentes."}
+              {statusFilter !== "todos"
+                ? "Nenhuma conversa nesse filtro."
+                : canViewAll
+                  ? "Nenhuma conversa em andamento."
+                  : "Você não tem atendimentos ativos. Pegue um em Pendentes."}
             </div>
           ) : (
             <ul>
@@ -765,7 +855,7 @@ function InboxPage() {
         </div>
 
         {/* Chat */}
-        <div className="relative flex flex-1 flex-col bg-background">
+        <div className="relative flex w-full min-w-0 flex-1 flex-col bg-background [[data-pane=lista]_&]:hidden md:[[data-pane=lista]_&]:flex">
           {!current ? (
             <div className="flex flex-1 items-center justify-center">
               <div className="text-center">
@@ -779,84 +869,149 @@ function InboxPage() {
           ) : (
             <>
               {/* Cabeçalho */}
-              <div className="flex items-center justify-between gap-3 border-b border-border bg-card px-6 py-3">
-                <div className="flex items-center gap-3 min-w-0">
+              <div className="absolute inset-x-2 top-1 z-10 flex items-center gap-3 rounded-3xl border border-border bg-card px-3 py-2 shadow-sm sm:inset-x-3 sm:top-1.5 sm:px-5 sm:py-3">
+                {/* Só existe no celular: as colunas não convivem na tela (ver
+                    data-pane acima), então sem isto a pessoa fica presa na
+                    conversa — não tem como voltar para a lista. */}
+                <button
+                  type="button"
+                  onClick={handleVoltar}
+                  aria-label="Voltar para a lista de conversas"
+                  className="touch-target-mobile -ml-1 inline-flex shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+                >
+                  <ChevronLeft className="h-5 w-5" strokeWidth={1.8} />
+                </button>
+                <div className="flex min-w-0 flex-1 items-center gap-3">
                   <FotoPerfil
                     url={current.clientFotoUrl}
                     fallback={initialsOf(current.clientNome)}
-                    className="h-9 w-9"
+                    className="h-9 w-9 shrink-0"
                   />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-foreground truncate">
+                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
                         {current.clientNome}
                       </span>
                       <span
-                        className="text-[10px] px-1.5 py-0.5 rounded"
+                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded"
                         style={deptStyle(current.departmentCor)}
                       >
                         {current.departmentNome ??
                           (current.status === "em_triagem" ? "Triagem" : "Sem departamento")}
                       </span>
                       {current.status === "encerrado" && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
                           Encerrado
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground">{current.clientNumero}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {current.clientNumero}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {supervisionMode && current.status !== "em_triagem" && (
+                  {supervisionMode && (
                     <Button
+                      // O rótulo some abaixo de sm: e `display:none` não conta para o
+                      // nome acessível — sem isto o leitor de tela anuncia só "botão"
+                      // na ação principal do modo supervisão.
+                      aria-label="Atribuir a mim"
                       size="sm"
                       onClick={assignToMe}
                       className="rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90"
                     >
                       <UserPlus className="h-4 w-4" strokeWidth={1.5} />
-                      Atribuir a mim
+                      {/* Texto some no celular: "Atribuir a mim" é a ação
+                          principal do modo supervisão, então o botão fica —
+                          só o rótulo encolhe para caber ao lado do menu "⋮". */}
+                      <span className="hidden sm:inline">Atribuir a mim</span>
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRepassarOpen(true)}
-                    className="rounded-2xl"
-                  >
-                    <ArrowRightLeft className="h-4 w-4" strokeWidth={1.5} />
-                    Repassar
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEncerrarOpen(true)}
-                    className="rounded-2xl"
-                  >
-                    <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
-                    Encerrar
-                  </Button>
-                  {canViewAll && (
+                  {/* Repassar / Encerrar / Linha do tempo: cabem soltos no
+                      desktop. No celular colapsam no menu "⋮" abaixo — os três
+                      botões com texto não cabem ao lado do nome numa tela de
+                      360px. */}
+                  <div className="hidden items-center gap-2 md:flex">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setTimelineOpen(true)}
+                      onClick={() => setRepassarOpen(true)}
                       className="rounded-2xl"
                     >
-                      <Clock className="h-4 w-4" strokeWidth={1.5} />
-                      Linha do tempo
+                      <ArrowRightLeft className="h-4 w-4" strokeWidth={1.5} />
+                      Repassar
                     </Button>
-                  )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEncerrarOpen(true)}
+                      className="rounded-2xl"
+                    >
+                      <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
+                      Encerrar
+                    </Button>
+                    {canViewAll && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTimelineOpen(true)}
+                        className="rounded-2xl"
+                      >
+                        <Clock className="h-4 w-4" strokeWidth={1.5} />
+                        Linha do tempo
+                      </Button>
+                    )}
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Mais ações do atendimento"
+                        className="touch-target-mobile inline-flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+                      >
+                        <MoreVertical className="h-5 w-5" strokeWidth={1.8} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => setRepassarOpen(true)}>
+                        <ArrowRightLeft className="h-4 w-4" strokeWidth={1.5} />
+                        Repassar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setEncerrarOpen(true)}>
+                        <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
+                        Encerrar
+                      </DropdownMenuItem>
+                      {canViewAll && (
+                        <DropdownMenuItem onSelect={() => setTimelineOpen(true)}>
+                          <Clock className="h-4 w-4" strokeWidth={1.5} />
+                          Linha do tempo
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
               {/* Mensagens — scroll contínuo com paginação infinita pra cima */}
               <div
                 ref={chat.scrollContainerRef}
-                className="relative flex-1 overflow-y-auto p-6 bg-[var(--chat-bg)]"
+                className="relative flex-1 overflow-y-auto scroll-contain p-3 pt-16 sm:p-6 sm:pt-[5.25rem] bg-[var(--chat-bg)]"
               >
                 {/* Sentinela de topo para IntersectionObserver */}
                 <div ref={chat.topSentinelRef} aria-hidden className="h-px" />
+
+                {selecao.ativo && (
+                  <SelecaoMensagensBar
+                    quantas={selecao.selecionados.size}
+                    onCancelar={selecao.limpar}
+                    onApagar={() =>
+                      setConfirmarApagar(
+                        chat.messages.filter((msg) => selecao.selecionados.has(msg.id)),
+                      )
+                    }
+                  />
+                )}
 
                 {chat.isLoadingMore && (
                   <div className="flex items-center justify-center py-3 text-xs text-muted-foreground">
@@ -864,11 +1019,37 @@ function InboxPage() {
                   </div>
                 )}
 
-                {chat.isLoadingInitial ? (
+                {chat.loadMoreError && chatItems.length > 0 && !chat.isLoadingMore && (
+                  <div className="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground">
+                    <AlertCircle className="h-3.5 w-3.5 text-destructive" aria-hidden />
+                    <span>Não foi possível carregar mensagens mais antigas.</span>
+                    <Button type="button" variant="link" size="sm" onClick={chat.retryLoadMore}>
+                      Tentar novamente
+                    </Button>
+                  </div>
+                )}
+
+                {historyState === "loading" ? (
                   <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando mensagens...
                   </div>
-                ) : chatItems.length === 0 ? (
+                ) : historyState === "error" ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-sm text-muted-foreground">
+                    <AlertCircle className="h-5 w-5 text-destructive" aria-hidden />
+                    <p>Não foi possível carregar o histórico agora.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void atendimentosQuery.refetch();
+                        chat.retryInitial();
+                      }}
+                    >
+                      Tentar novamente
+                    </Button>
+                  </div>
+                ) : historyState === "empty" ? (
                   <div className="text-center py-12 text-sm text-muted-foreground">
                     Nenhuma mensagem nessa conversa ainda.
                   </div>
@@ -951,12 +1132,21 @@ function InboxPage() {
                       ? (messagesById.get(m.replyToMessageId) ?? null)
                       : null;
 
+                    const apagada = !!m.apagadaEm;
+
                     return (
-                      <div
+                      <MensagemLinha
                         key={item.key}
-                        data-atendimento-anchor={anchor}
-                        data-message-id={m.id}
+                        mensagemId={m.id}
+                        atendimentoAnchor={anchor}
                         className={`group flex flex-col ${isMe ? "items-end" : "items-start"} ${groupGap} ${enteringIds.has(m.id) ? "message-enter" : ""}`}
+                        modoSelecao={selecao.ativo}
+                        selecionada={selecao.selecionados.has(m.id)}
+                        onSegurar={() => {
+                          if (supervisionMode) return;
+                          selecao.iniciarCom(m);
+                        }}
+                        onToqueSelecao={() => selecao.alternar(m)}
                       >
                         {showSenderName && (
                           <span className="text-[11px] text-muted-foreground mb-0.5 px-1">
@@ -964,10 +1154,25 @@ function InboxPage() {
                           </span>
                         )}
                         <div
-                          className={`flex items-center gap-1 ${isMe ? "flex-row-reverse" : "flex-row"} max-w-[85%]`}
+                          // Larguras relativas, não fixas: no celular a bolha pode
+                          // usar quase toda a largura (85%); em telas maiores ela
+                          // encolhe (75%/65%) para não virar uma linha de texto
+                          // esticada de ponta a ponta — o `max-w-[75ch]` do
+                          // `bubbleClass` abaixo ainda cobre o caso de janela muito
+                          // larga no desktop.
+                          className={`flex items-center gap-1 ${isMe ? "flex-row-reverse" : "flex-row"} max-w-[85%] sm:max-w-[75%] md:max-w-[65%]`}
                         >
-                          <div className={bubbleClass}>
-                            {m.replyToMessageId && (
+                          <div className={apagada ? `${bubbleClass} opacity-80` : bubbleClass}>
+                            {apagada ? (
+                              // Igual ao WhatsApp: a bolha continua na conversa
+                              // como marcador. Sumir com ela deixaria a resposta
+                              // do cliente sem o contexto do que foi apagado.
+                              <p className="flex items-center gap-1.5 text-sm italic">
+                                <Ban className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                                {isMe ? "Você apagou esta mensagem" : "Esta mensagem foi apagada"}
+                              </p>
+                            ) : null}
+                            {!apagada && m.replyToMessageId && (
                               <QuotedMessagePreview
                                 variant="inBubble"
                                 quoted={quoted}
@@ -982,19 +1187,25 @@ function InboxPage() {
                                 }}
                               />
                             )}
-                            {m.tipo === "texto" ? (
+                            {apagada ? null : m.tipo === "texto" ? (
                               (m.mediaMetadata as { kind?: string } | null)?.kind ===
                               "lista_opcoes" ? (
                                 <ListaOpcoesPreview message={m} />
                               ) : (
-                                <p className="whitespace-pre-wrap break-words">
+                                // break-anywhere, não break-words: a bolha é
+                                // `min-w-fit` (mensagem curta não estica à toa) e
+                                // `break-words`/overflow-wrap:break-word não conta
+                                // para o cálculo do tamanho mínimo do flex — uma
+                                // URL/ID sem espaço ainda forçava a bolha a crescer
+                                // e furar a tela. `break-anywhere` conta.
+                                <p className="whitespace-pre-wrap break-anywhere">
                                   {formatWhatsAppText(m.content)}
                                 </p>
                               )
                             ) : (
-                              <MessageMedia message={m} />
+                              <MessageMedia message={m} escopo="individual" />
                             )}
-                            {isExterno && (
+                            {!apagada && isExterno && (
                               <p className={`text-[10px] italic ${metaColor} mt-1`}>
                                 {(m.mediaMetadata as { origem?: string } | null)?.origem ===
                                 "api_externa"
@@ -1006,6 +1217,16 @@ function InboxPage() {
                               {formatTime(m.createdAt)}
                               {m.senderType === "bot" && " · bot"}
                               {m.senderType === "sistema" && " · sistema"}
+                              {/* Mesma marca do WhatsApp: quem lê tem que saber
+                                  que o texto mudou depois de enviado. */}
+                              {!apagada && m.editadaEm && (
+                                <span
+                                  className="ml-1 italic"
+                                  title={`Editada em ${formatTime(m.editadaEm)}`}
+                                >
+                                  · editada
+                                </span>
+                              )}
                               {m.otimizadoIa && (
                                 <span
                                   className="ml-1 inline-flex items-center gap-0.5 align-[-1px]"
@@ -1020,19 +1241,42 @@ function InboxPage() {
                               )}
                             </span>
                           </div>
-                          {!supervisionMode && (
-                            <button
-                              type="button"
-                              onClick={() => setReplyTo(m)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                              aria-label="Responder mensagem"
-                              title="Responder"
-                            >
-                              <Reply className="h-3.5 w-3.5" strokeWidth={1.5} />
-                            </button>
-                          )}
+                          {selecao.ativo
+                            ? // No modo de seleção o menu sai de cena: o que a
+                              // pessoa precisa ver é o que está marcado. Mensagem
+                              // inelegível fica sem marcador nenhum — tocar nela
+                              // avisa o motivo (ver useSelecaoMensagens).
+                              selecao.podeApagar(m).pode && (
+                                <span
+                                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                                    selecao.selecionados.has(m.id)
+                                      ? "border-primary bg-primary text-primary-foreground"
+                                      : "border-muted-foreground/40"
+                                  }`}
+                                  aria-hidden
+                                >
+                                  {selecao.selecionados.has(m.id) && (
+                                    <Check className="h-3 w-3" strokeWidth={3} />
+                                  )}
+                                </span>
+                              )
+                            : // O backend (mensagem-acao, send-whatsapp-message) já libera
+                              // editar/apagar/encaminhar para quem é assigned_to OU
+                              // superadmin OU tem 'force_close' — o menu segue essa mesma
+                              // régua e NÃO soma no modo supervisão (só o composer de
+                              // mandar mensagem NOVA fica bloqueado até assumir a conversa).
+                              !apagada && (
+                                <MensagemAcoesMenu
+                                  mensagem={m}
+                                  agora={agora}
+                                  onResponder={() => setReplyTo(m)}
+                                  onEditar={() => setEditando(m)}
+                                  onApagar={() => setConfirmarApagar([m])}
+                                  onEncaminhar={() => setEncaminhando(m)}
+                                />
+                              )}
                         </div>
-                      </div>
+                      </MensagemLinha>
                     );
                   })
                 )}
@@ -1057,14 +1301,12 @@ function InboxPage() {
                 <div className="flex items-center gap-2 border-t border-[var(--warning-border)] bg-[var(--warning-bg)] px-6 py-3 text-sm text-[var(--warning-foreground)]">
                   <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   <span>
-                    Modo supervisão · Visualização.{" "}
-                    {current.status === "em_triagem"
-                      ? "Atendimento ainda em triagem — aguarde classificação ou atribua manualmente em Pendentes."
-                      : "Para enviar mensagens, atribua o atendimento a você."}
+                    Modo supervisão · Visualização. Para enviar mensagens, atribua o atendimento a
+                    você.
                   </span>
                 </div>
               ) : (
-                <div className="border-t border-border bg-card p-4 space-y-2">
+                <div className="bg-[var(--chat-bg)] px-4 pb-4 pt-2 space-y-2">
                   {replyTo && recorder.state === "idle" && !recordedAudio && (
                     <QuotedMessagePreview
                       variant="compact"
@@ -1090,7 +1332,7 @@ function InboxPage() {
                       onTranscribe={handleTranscribeRecorded}
                     />
                   ) : (
-                    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-3xl border border-border bg-background px-3 py-2 shadow-sm">
                       <AttachMenu
                         disabled={sending}
                         onPick={handleAttachPick}
@@ -1112,7 +1354,7 @@ function InboxPage() {
                         type="button"
                         onClick={handleStartRecording}
                         disabled={sending}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        className="touch-target-mobile inline-flex shrink-0 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-50"
                         aria-label="Gravar áudio"
                       >
                         <Mic className="h-5 w-5" strokeWidth={1.5} />
@@ -1120,7 +1362,7 @@ function InboxPage() {
                       <button
                         onClick={handleSend}
                         disabled={sending || !hasDraft}
-                        className="rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        className="touch-target-mobile inline-flex shrink-0 items-center justify-center rounded-full bg-primary p-2 text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                       >
                         {sending ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -1141,6 +1383,7 @@ function InboxPage() {
                   clientNome={current.clientNome}
                   currentAtendimentoId={current.id}
                   currentDepartmentId={current.departmentId}
+                  userId={user.id}
                   onPick={(id) => chat.scrollToAtendimento(id)}
                 />
               )}
@@ -1186,269 +1429,30 @@ function InboxPage() {
         }}
         onEnviar={doSend}
       />
+      <ApagarParaTodosDialog
+        open={!!confirmarApagar}
+        onOpenChange={(v) => !v && setConfirmarApagar(null)}
+        mensagens={confirmarApagar ?? []}
+        onConcluido={() => {
+          // As bolhas mudam sozinhas: a edge function faz UPDATE e o realtime de
+          // `mensagens` já recarrega a mensagem alterada. O que resta é sair do
+          // modo de seleção e atualizar a prévia na lista de conversas.
+          selecao.limpar();
+          queryClient.invalidateQueries({ queryKey: ["inbox"] });
+        }}
+      />
+      <EditarMensagemDialog
+        mensagem={editando}
+        onOpenChange={(v) => !v && setEditando(null)}
+        onEditada={() => queryClient.invalidateQueries({ queryKey: ["inbox"] })}
+      />
+      <EncaminharDialog
+        mensagem={encaminhando}
+        conversations={conversations}
+        currentAtendimentoId={current?.id ?? null}
+        onOpenChange={(v) => !v && setEncaminhando(null)}
+        onEncaminhada={() => queryClient.invalidateQueries({ queryKey: ["inbox"] })}
+      />
     </div>
-  );
-}
-
-interface CollabRow {
-  id: string;
-  nome: string;
-  department_id: string | null;
-  departmentNome: string;
-}
-
-function RepassarModal({
-  open,
-  onOpenChange,
-  atendimentoId,
-  onDone,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  atendimentoId: string | null;
-  onDone: () => void;
-}) {
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
-  const [observacao, setObservacao] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const { data: collabs } = useQuery({
-    queryKey: ["collaborators-active"],
-    queryFn: async (): Promise<CollabRow[]> => {
-      const { data, error } = await supabase
-        .from("users")
-        .select("id, nome, department_id, ativo, is_system_user, departments:department_id(nome)")
-        .eq("ativo", true)
-        .eq("is_system_user", false)
-        .order("nome");
-      if (error) throw error;
-      return (data ?? []).map((u) => ({
-        id: u.id,
-        nome: u.nome,
-        department_id: u.department_id,
-        departmentNome: (u.departments as { nome: string } | null)?.nome ?? "Sem departamento",
-      }));
-    },
-    enabled: open,
-  });
-
-  const filtered = (collabs ?? []).filter((c) =>
-    c.nome.toLowerCase().includes(search.toLowerCase()),
-  );
-  const grouped = useMemo(() => {
-    const acc: Record<string, CollabRow[]> = {};
-    for (const c of filtered) {
-      (acc[c.departmentNome] ??= []).push(c);
-    }
-    return acc;
-  }, [filtered]);
-  const selectedUser = (collabs ?? []).find((c) => c.id === selected);
-
-  const handleConfirm = async () => {
-    if (!atendimentoId || !selectedUser) return;
-    setSubmitting(true);
-
-    const { data, error } = await supabase.rpc("repassar_atendimento", {
-      p_atendimento_id: atendimentoId,
-      p_to_user_id: selectedUser.id,
-      p_observacao: observacao.trim() || undefined,
-    });
-
-    setSubmitting(false);
-
-    if (error) {
-      const code = (error as { code?: string }).code;
-      if (code === "42501") {
-        toast.error("Você não tem permissão para repassar este atendimento.");
-      } else if (code === "P0002") {
-        // Encerrado já não cai aqui: repassar reabre. Sobra triagem em
-        // andamento (o bot ainda está roteando) e atendimento inexistente.
-        toast.error("Atendimento ainda está em triagem — aguarde o bot terminar.");
-      } else if (code === "23505") {
-        toast.error("Este cliente já tem uma conversa ativa — repasse a conversa atual dele.");
-      } else if (code === "22023") {
-        toast.error("Colaborador destino inválido.");
-      } else {
-        const msg = (error as { message?: string }).message;
-        toast.error(
-          msg ? `Não foi possível repassar: ${msg}` : "Não foi possível repassar o atendimento.",
-        );
-      }
-      return;
-    }
-
-    if (data === false) {
-      toast.message("Atendimento já não pode mais ser repassado.");
-      setObservacao("");
-      onDone();
-      return;
-    }
-
-    setObservacao("");
-    toast.success(`Atendimento repassado para ${selectedUser.nome}`);
-    // Avisa o colaborador no WhatsApp pessoal (best-effort, não bloqueia).
-    void notificarRepasse(atendimentoId, selectedUser.id);
-    onDone();
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Repassar atendimento</DialogTitle>
-          <DialogDescription>
-            Selecione o colaborador que deve assumir esta conversa.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar colaborador..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-
-        <div className="max-h-64 overflow-y-auto -mx-1 px-1 space-y-3">
-          {Object.entries(grouped).map(([dept, users]) => (
-            <div key={dept}>
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground px-1 mb-1">
-                {dept}
-              </div>
-              <div className="space-y-1">
-                {users.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => setSelected(u.id)}
-                    className={`w-full flex items-center gap-3 rounded-md px-2 py-2 text-left transition-colors ${
-                      selected === u.id ? "bg-accent" : "hover:bg-muted"
-                    }`}
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-xs font-medium text-primary">
-                      {initialsOf(u.nome)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-foreground">{u.nome}</div>
-                      <div className="text-xs text-muted-foreground">{u.departmentNome}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <Textarea
-          placeholder="Observação (opcional)"
-          rows={2}
-          value={observacao}
-          onChange={(e) => setObservacao(e.target.value)}
-        />
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button disabled={!selectedUser || submitting} onClick={handleConfirm}>
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowRightCircle className="h-4 w-4" strokeWidth={1.5} />
-            )}
-            Confirmar repasse
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function EncerrarModal({
-  open,
-  onOpenChange,
-  atendimentoId,
-  userId,
-  onDone,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  atendimentoId: string | null;
-  userId: string;
-  onDone: () => void;
-}) {
-  const [submitting, setSubmitting] = useState(false);
-  const [motivo, setMotivo] = useState("");
-
-  // Reset motivo sempre que o modal fecha (cancelar, overlay, sucesso).
-  useEffect(() => {
-    if (!open) setMotivo("");
-  }, [open]);
-
-  const handleConfirm = async () => {
-    if (!atendimentoId) return;
-    setSubmitting(true);
-
-    const { data, error } = await supabase.rpc("encerrar_atendimento", {
-      p_atendimento_id: atendimentoId,
-      p_motivo: motivo.trim() || undefined,
-    });
-
-    setSubmitting(false);
-
-    if (error) {
-      if (error.code === "42501") {
-        toast.error("Você não tem permissão para encerrar este atendimento.");
-      } else {
-        toast.error("Não foi possível encerrar o atendimento.");
-      }
-      return;
-    }
-
-    if (data === false) {
-      toast.message("Este atendimento já estava encerrado.");
-      onDone();
-      return;
-    }
-
-    toast.success("Atendimento encerrado");
-    onDone();
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Encerrar atendimento</DialogTitle>
-          <DialogDescription>
-            Tem certeza que deseja encerrar este atendimento? Novas mensagens do cliente iniciarão
-            um novo atendimento.
-          </DialogDescription>
-        </DialogHeader>
-
-        <Textarea
-          placeholder="Motivo do encerramento (opcional)"
-          rows={3}
-          value={motivo}
-          onChange={(e) => setMotivo(e.target.value)}
-        />
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={submitting}
-            className="bg-[#DC2626] text-white hover:bg-[#DC2626]/90"
-          >
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Encerrar atendimento
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

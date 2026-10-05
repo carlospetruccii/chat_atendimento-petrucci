@@ -277,9 +277,11 @@ export const TEMPLATE_VARS: Record<string, string[]> = {
   sessao_confirmacao: ["colaborador"],
   notificacao_admin: ["nome_cliente", "telefone", "departamento", "tempo_aguardando"],
   notificacao_colaborador: ["nome_cliente", "telefone", "departamento"],
+  notificacao_colaborador_reservado: ["nome_cliente", "telefone", "departamento"],
   encerramento: [],
   fora_horario: [],
   repasse: [],
+  docs_aviso_somente_documentos: [],
 };
 
 export const TEMPLATE_VAR_DESC: Record<string, string> = {
@@ -305,9 +307,11 @@ export const TEMPLATE_LABEL: Record<string, string> = {
   sessao_confirmacao: "Sessão · Confirmação de encaminhamento",
   notificacao_admin: "Notificação ao administrador",
   notificacao_colaborador: "Aviso ao colaborador (novo pendente)",
+  notificacao_colaborador_reservado: "Aviso ao colaborador (cliente reservado pra ele)",
   encerramento: "Encerramento",
   fora_horario: "Fora do horário",
   repasse: "Aviso de repasse",
+  docs_aviso_somente_documentos: 'Docs · Aviso "número só de documentos"',
 };
 
 export async function fetchTemplates(): Promise<TemplateRow[]> {

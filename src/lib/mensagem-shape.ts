@@ -10,6 +10,9 @@
  * de atendimento que não existem.
  */
 export interface MensagemRenderizavel {
+  /** Id da linha no banco. Opcional só por retrocompatibilidade com objetos
+   *  montados à mão; é o que permite pedir o reprocessamento de uma mídia. */
+  id?: string;
   tipo:
     | "texto"
     | "imagem"
@@ -22,4 +25,9 @@ export interface MensagemRenderizavel {
   content: string | null;
   mediaUrl: string | null;
   mediaMetadata: Record<string, unknown> | null;
+  /**
+   * Apagada para todos no WhatsApp. Opcional porque o modelo de grupo ainda não
+   * oferece a ação — quem não passa é tratado como "não apagada".
+   */
+  apagadaEm?: string | null;
 }

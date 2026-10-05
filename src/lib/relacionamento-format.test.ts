@@ -1,11 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
   formatarMinutos,
-  formatarDelta,
-  nivelRiscoQueda,
   pct,
-  rotuloJanela,
-  pctCauda,
+  resumoEspera,
   resumoIniciativa,
   resumoTransferencias,
 } from "./relacionamento-format";
@@ -45,42 +42,6 @@ describe("formatarMinutos", () => {
   });
 });
 
-describe("formatarDelta", () => {
-  test("prefixa queda com sinal negativo", () => {
-    expect(formatarDelta(-100)).toBe("-100%");
-    expect(formatarDelta(-66)).toBe("-66%");
-  });
-
-  test("prefixa alta com sinal positivo", () => {
-    expect(formatarDelta(5)).toBe("+5%");
-  });
-
-  test("não prefixa o zero", () => {
-    expect(formatarDelta(0)).toBe("0%");
-  });
-
-  test("aceita string numérica vinda do jsonb", () => {
-    expect(formatarDelta("-100")).toBe("-100%");
-  });
-});
-
-describe("nivelRiscoQueda", () => {
-  test("queda quase total é crítica", () => {
-    expect(nivelRiscoQueda(-100)).toBe("critico");
-    expect(nivelRiscoQueda(-90)).toBe("critico");
-  });
-
-  test("queda forte é alta", () => {
-    expect(nivelRiscoQueda(-89)).toBe("alto");
-    expect(nivelRiscoQueda(-70)).toBe("alto");
-  });
-
-  test("queda no limite do alerta é média", () => {
-    expect(nivelRiscoQueda(-69)).toBe("medio");
-    expect(nivelRiscoQueda(-50)).toBe("medio");
-  });
-});
-
 describe("pct", () => {
   test("arredonda para inteiro", () => {
     expect(pct(1, 3)).toBe(33);
@@ -98,40 +59,45 @@ describe("pct", () => {
   });
 });
 
-describe("rotuloJanela", () => {
-  test("descreve as duas janelas comparadas", () => {
-    expect(rotuloJanela(30)).toBe("últimos 30 dias vs os 30 anteriores");
-    expect(rotuloJanela(14)).toBe("últimos 14 dias vs os 14 anteriores");
-  });
-});
-
-describe("pctCauda", () => {
+describe("resumoEspera", () => {
+  // Mesma ordem que o RPC devolve: até 5min … +1h30.
   const histograma = [
-    { faixa: "< 1m", total: 57 },
-    { faixa: "1–5m", total: 15 },
-    { faixa: "5–15m", total: 9 },
-    { faixa: "15–30m", total: 6 },
-    { faixa: "30m–1h", total: 5 },
-    { faixa: "1–2h", total: 4 },
-    { faixa: "2–4h", total: 2 },
-    { faixa: "4h+", total: 3 },
+    { faixa: "até 5min", total: 50 },
+    { faixa: "5–10min", total: 20 },
+    { faixa: "10–15min", total: 10 },
+    { faixa: "15–30min", total: 8 },
+    { faixa: "30min–1h", total: 6 },
+    { faixa: "1h–1h30", total: 4 },
+    { faixa: "+1h30", total: 2 },
   ];
 
-  test("soma a faixa informada e todas as seguintes", () => {
-    // 2 + 3 = 5 de 101 = 5%
-    expect(pctCauda(histograma, "2–4h")).toBe(5);
+  test("devolve uma linha por faixa, com percentual do total", () => {
+    const r = resumoEspera(histograma);
+
+    expect(r.total).toBe(100);
+    expect(r.linhas).toHaveLength(7);
+    expect(r.linhas[0]).toEqual({ faixa: "até 5min", total: 50, pct: 50, tom: "rapido" });
+    expect(r.linhas[6]).toEqual({ faixa: "+1h30", total: 2, pct: 2, tom: "lento" });
   });
 
-  test("a partir da primeira faixa cobre a amostra inteira", () => {
-    expect(pctCauda(histograma, "< 1m")).toBe(100);
+  test("até 15min é rápido, até 1h é ok, acima de 1h é lento", () => {
+    expect(resumoEspera(histograma).linhas.map((l) => l.tom)).toEqual([
+      "rapido",
+      "rapido",
+      "rapido",
+      "ok",
+      "ok",
+      "lento",
+      "lento",
+    ]);
   });
 
-  test("faixa desconhecida devolve zero em vez de estourar", () => {
-    expect(pctCauda(histograma, "não existe")).toBe(0);
+  test("percentual acumulado até 15 minutos", () => {
+    expect(resumoEspera(histograma).pctAte15min).toBe(80);
   });
 
-  test("histograma vazio devolve zero", () => {
-    expect(pctCauda([], "4h+")).toBe(0);
+  test("histograma vazio não estoura nem divide por zero", () => {
+    expect(resumoEspera([])).toEqual({ total: 0, linhas: [], pctAte15min: 0 });
   });
 });
 

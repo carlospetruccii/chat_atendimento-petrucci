@@ -7,52 +7,25 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { log } from "../_shared/logger.ts";
-import { deduzirExtensao, obterBytesMidia } from "../_shared/midia-download.ts";
+import { baixarESalvarMidia } from "../_shared/midia-mensagem.ts";
 import { infoGrupo } from "../_shared/uazapi-client.ts";
 import { fotoDoChat } from "../_shared/foto-perfil.ts";
 import { atualizarFotoEmSegundoPlano } from "../_shared/foto-perfil-sync.ts";
 import {
-  EXT_FALLBACK,
   type MensagemParseada,
   TIPOS_COM_DOWNLOAD,
-  type TipoMensagem,
 } from "../_shared/mensagem-uazapi.ts";
 import { adotarEcoProprio, aguardarAssentarEco } from "./eco.ts";
 import { extrairIdentidadeGrupo, extrairNomeGrupo } from "./grupos-logic.ts";
 
 const FUNCAO = "webhook-zapi-receive";
-const BUCKET = "mensagens-midia";
 
 // Empresa do webhook. Hoje há UMA instância uazapi = UMA empresa, então o valor
 // é fixo (o mesmo default das tabelas). Quando houver mais de uma instância, a
 // empresa passa a sair do `owner`/`token` do envelope e este ponto muda — mas
 // deixamos explícito aqui em vez de depender do DEFAULT da coluna, para o lugar
 // a mudar ser óbvio.
-const COMPANY_ID_INSTANCIA = "11111111-1111-1111-1111-111111111111";
-
-// Content-Type de arquivo recebido de terceiro: sem whitelist, um `text/html`
-// subiria para o bucket e seria servido no domínio do projeto pela URL assinada.
-// Tipo desconhecido vira binário inerte (o download continua funcionando).
-const MIMES_PERMITIDOS = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
-  "audio/ogg",
-  "audio/mpeg",
-  "audio/mp4",
-  "audio/aac",
-  "audio/webm",
-  "application/pdf",
-]);
-
-function contentTypeSeguro(bruto: string | null | undefined): string {
-  const base = (bruto ?? "").split(";")[0].trim().toLowerCase();
-  return MIMES_PERMITIDOS.has(base) ? base : "application/octet-stream";
-}
+export const COMPANY_ID_INSTANCIA = "11111111-1111-1111-1111-111111111111";
 
 export interface ResultadoRegistroGrupo {
   ok: boolean;
@@ -181,72 +154,6 @@ async function completarDadosDoGrupo(
       erro_msg: err instanceof Error ? err.message.slice(0, 140) : String(err),
       extra: { grupo_id: grupoId },
     });
-  }
-}
-
-async function baixarESalvarMidiaGrupo(params: {
-  supabase: SupabaseClient;
-  mensagemId: string;
-  grupoId: string;
-  uazapiMessageId: string;
-  urlOriginal: string | null;
-  tipo: TipoMensagem;
-  metaInicial: Record<string, unknown>;
-}): Promise<void> {
-  const { supabase, mensagemId, grupoId, uazapiMessageId, urlOriginal, tipo, metaInicial } = params;
-  try {
-    const { buf, contentType: ctDetectado, fonte } = await obterBytesMidia(
-      urlOriginal,
-      uazapiMessageId,
-    );
-    const contentType = contentTypeSeguro(
-      ctDetectado ?? (metaInicial.mime_type as string | null),
-    );
-    const ext = deduzirExtensao(contentType, EXT_FALLBACK[tipo]);
-    const path = `grupos/${grupoId}/${mensagemId}.${ext}`;
-
-    const { error: errUp } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, buf, { contentType, upsert: true });
-    if (errUp) throw new Error(`storage_upload: ${errUp.message}`);
-
-    const { error: errUpd } = await supabase
-      .from("grupo_mensagens")
-      .update({
-        media_url: path,
-        media_metadata: {
-          ...metaInicial,
-          mime_type: contentType,
-          tamanho_bytes: buf.byteLength,
-          bucket: BUCKET,
-          storage_path: path,
-        },
-      })
-      .eq("id", mensagemId);
-    if (errUpd) throw new Error(`update_mensagem: ${errUpd.message}`);
-
-    log({
-      funcao: FUNCAO,
-      evento: "grupo_download_sucesso",
-      status: "ok",
-      mensagem_id: mensagemId,
-      extra: { tamanho_bytes: buf.byteLength, mime: contentType, fonte },
-    });
-  } catch (err) {
-    const motivo = err instanceof Error ? err.message.slice(0, 140) : "falha desconhecida";
-    log({
-      funcao: FUNCAO,
-      evento: "grupo_download_falha",
-      status: "erro",
-      mensagem_id: mensagemId,
-      erro_msg: motivo,
-    });
-    await supabase
-      .from("grupo_mensagens")
-      .update({
-        media_metadata: { ...metaInicial, download_falhou: true, download_erro_motivo: motivo },
-      })
-      .eq("id", mensagemId);
   }
 }
 
@@ -405,11 +312,12 @@ export async function registrarMensagemGrupo(params: {
   });
 
   if (TIPOS_COM_DOWNLOAD.has(parsed.tipo) && uazapiMessageId) {
-    const tarefa = baixarESalvarMidiaGrupo({
-      supabase,
+    const tarefa = baixarESalvarMidia({
+      funcao: FUNCAO,
+      escopo: "grupo",
       mensagemId,
-      grupoId: grupo.id,
-      uazapiMessageId,
+      atendimentoId: grupo.id,
+      zapiMessageId: uazapiMessageId,
       urlOriginal: parsed.media_url,
       tipo: parsed.tipo,
       metaInicial: parsed.media_metadata ?? {},
