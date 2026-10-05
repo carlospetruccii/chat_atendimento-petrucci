@@ -1,10 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
-/**
- * Chat individual (`mensagens`), chat de grupo (`grupo_mensagens`) ou aba Docs
- * (`docs_mensagens`, número financeiro — reprocessa pela docs-acao).
- */
-export type EscopoMidia = "individual" | "grupo" | "docs";
+/** Chat individual (`mensagens`) ou chat de grupo (`grupo_mensagens`). */
+export type EscopoMidia = "individual" | "grupo";
 
 interface RespostaReprocessar {
   ok?: boolean;
@@ -26,31 +23,21 @@ const MOTIVOS: Record<string, string> = {
   tipo_sem_download: "Esse tipo de mensagem não tem arquivo para baixar.",
   grande_demais: "O arquivo passa do limite de 50 MB do sistema.",
   nao_encontrada: "Mensagem não encontrada.",
-  // Motivos que só a docs-acao devolve.
-  ja_apagada: "Essa mensagem foi apagada.",
-  midia_propria: "Esse arquivo foi enviado daqui; não há o que baixar de novo.",
 };
 
 /**
- * Pede de novo o download de uma mídia que falhou (ou, no Docs, o primeiro
- * download de um documento do sistema financeiro, que só baixa sob demanda).
- * A função responde assim que dispara (a docs-acao responde 202): quem espera
- * o arquivo é a linha da mensagem, que chega atualizada pelo realtime.
+ * Pede de novo o download de uma mídia que falhou. A função responde assim que
+ * enfileira: quem espera o arquivo é a linha da mensagem, que chega atualizada
+ * pelo realtime.
  */
 export async function reprocessarMidia(params: {
   mensagemId: string;
   escopo?: EscopoMidia;
 }): Promise<ResultadoReprocessar> {
-  // Docs tem tabela e instância próprias: o reprocessamento mora na docs-acao
-  // (que só aceita quem tem acesso ao Docs), não na reprocessar-midia.
-  const { data, error } =
-    params.escopo === "docs"
-      ? await supabase.functions.invoke<RespostaReprocessar>("docs-acao", {
-          body: { acao: "reprocessar_midia", mensagem_id: params.mensagemId },
-        })
-      : await supabase.functions.invoke<RespostaReprocessar>("reprocessar-midia", {
-          body: { mensagem_id: params.mensagemId, escopo: params.escopo ?? "individual" },
-        });
+  const { data, error } = await supabase.functions.invoke<RespostaReprocessar>(
+    "reprocessar-midia",
+    { body: { mensagem_id: params.mensagemId, escopo: params.escopo ?? "individual" } },
+  );
   if (error) throw error;
   if (!data?.ok) {
     const chave = data?.motivo ?? data?.erro ?? "";

@@ -8,8 +8,6 @@ import { MediaVideo } from "./MediaVideo";
 import { MediaDocument } from "./MediaDocument";
 import { MediaSticker } from "./MediaSticker";
 import { MediaContato } from "./MediaContato";
-import { MediaSobDemanda } from "./MediaSobDemanda";
-import { ehSobDemanda, nomeDoArquivo } from "@/lib/midia-sob-demanda";
 
 interface MediaMeta {
   storage_path?: string;
@@ -29,7 +27,7 @@ function isHttpUrl(value: string | null): value is string {
   return typeof value === "string" && /^https?:\/\//i.test(value);
 }
 
-// Serve chat individual, grupo e Docs: só precisa do conteúdo, não do vínculo.
+// Serve chat individual e grupo: só precisa do conteúdo, não do vínculo.
 // `escopo` diz em qual tabela a mensagem está, para o botão "Tentar novamente"
 // saber o que reprocessar. Sem escopo (ex.: chat interno, que tem tabela
 // própria e mídia enviada por nós) a bolha de erro vai sem o botão.
@@ -57,19 +55,6 @@ export function MessageMedia({
       <p className="italic text-muted-foreground text-sm">
         [{message.tipo}] {message.content ?? ""}
       </p>
-    );
-  }
-
-  // Documento do sistema financeiro (aba Docs) que só baixa quando alguém pede:
-  // "falha" no banco, mas na tela é um botão neutro de baixar, não um erro.
-  if (ehSobDemanda(message.mediaMetadata)) {
-    return (
-      <MediaSobDemanda
-        tipo={message.tipo}
-        fileName={nomeDoArquivo(message.mediaMetadata)}
-        mensagemId={message.id}
-        escopo={escopo}
-      />
     );
   }
 

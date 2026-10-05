@@ -281,7 +281,6 @@ export const TEMPLATE_VARS: Record<string, string[]> = {
   encerramento: [],
   fora_horario: [],
   repasse: [],
-  docs_aviso_somente_documentos: [],
 };
 
 export const TEMPLATE_VAR_DESC: Record<string, string> = {
@@ -311,7 +310,6 @@ export const TEMPLATE_LABEL: Record<string, string> = {
   encerramento: "Encerramento",
   fora_horario: "Fora do horário",
   repasse: "Aviso de repasse",
-  docs_aviso_somente_documentos: 'Docs · Aviso "número só de documentos"',
 };
 
 export async function fetchTemplates(): Promise<TemplateRow[]> {

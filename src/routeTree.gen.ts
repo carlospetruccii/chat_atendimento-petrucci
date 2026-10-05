@@ -17,7 +17,6 @@ import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
 import { Route as AppContatosRouteImport } from './routes/_app.contatos'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
-import { Route as AppDocsRouteImport } from './routes/_app.docs'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppSupervisaoRouteImport } from './routes/_app.supervisao'
@@ -62,11 +61,6 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
-const AppDocsRoute = AppDocsRouteImport.update({
-  id: '/docs',
-  path: '/docs',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppInboxRoute = AppInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -96,7 +90,6 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof AppConfiguracoesRoute
   '/contatos': typeof AppContatosRoute
   '/dashboard': typeof AppDashboardRoute
-  '/docs': typeof AppDocsRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
@@ -109,7 +102,6 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof AppConfiguracoesRoute
   '/contatos': typeof AppContatosRoute
   '/dashboard': typeof AppDashboardRoute
-  '/docs': typeof AppDocsRoute
   '/inbox': typeof AppInboxRoute
   '/pendentes': typeof AppPendentesRoute
   '/supervisao': typeof AppSupervisaoRoute
@@ -125,7 +117,6 @@ export interface FileRoutesById {
   '/_app/configuracoes': typeof AppConfiguracoesRoute
   '/_app/contatos': typeof AppContatosRoute
   '/_app/dashboard': typeof AppDashboardRoute
-  '/_app/docs': typeof AppDocsRoute
   '/_app/inbox': typeof AppInboxRoute
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/supervisao': typeof AppSupervisaoRoute
@@ -142,7 +133,6 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/contatos'
     | '/dashboard'
-    | '/docs'
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
@@ -155,7 +145,6 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/contatos'
     | '/dashboard'
-    | '/docs'
     | '/inbox'
     | '/pendentes'
     | '/supervisao'
@@ -170,7 +159,6 @@ export interface FileRouteTypes {
     | '/_app/configuracoes'
     | '/_app/contatos'
     | '/_app/dashboard'
-    | '/_app/docs'
     | '/_app/inbox'
     | '/_app/pendentes'
     | '/_app/supervisao'
@@ -244,13 +232,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/docs': {
-      id: '/_app/docs'
-      path: '/docs'
-      fullPath: '/docs'
-      preLoaderRoute: typeof AppDocsRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/inbox': {
       id: '/_app/inbox'
       path: '/inbox'
@@ -286,7 +267,6 @@ interface AppRouteChildren {
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
   AppContatosRoute: typeof AppContatosRoute
   AppDashboardRoute: typeof AppDashboardRoute
-  AppDocsRoute: typeof AppDocsRoute
   AppInboxRoute: typeof AppInboxRoute
   AppPendentesRoute: typeof AppPendentesRoute
   AppSupervisaoRoute: typeof AppSupervisaoRoute
@@ -297,7 +277,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppConfiguracoesRoute: AppConfiguracoesRoute,
   AppContatosRoute: AppContatosRoute,
   AppDashboardRoute: AppDashboardRoute,
-  AppDocsRoute: AppDocsRoute,
   AppInboxRoute: AppInboxRoute,
   AppPendentesRoute: AppPendentesRoute,
   AppSupervisaoRoute: AppSupervisaoRoute,

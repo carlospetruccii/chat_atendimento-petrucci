@@ -11,7 +11,6 @@ import { GoogleContatosTab } from "@/components/GoogleContatosTab";
 import { SessoesTab } from "@/components/SessoesTab";
 import { SemTriagemSection } from "@/components/SemTriagemSection";
 import { ConexaoWhatsAppTab } from "@/components/ConexaoWhatsAppTab";
-import { DocsConfigTab } from "@/components/DocsConfigTab";
 
 export const Route = createFileRoute("/_app/configuracoes")({
   staticData: { title: "Configurações" },
@@ -28,7 +27,6 @@ const BASE_TABS = [
   "Lista de Sessões",
   "Contatos Google",
   "Conexão do WhatsApp",
-  "Docs",
 ];
 
 function EmBreve({ name }: { name: string }) {
@@ -52,7 +50,7 @@ function ConfiguracoesPage() {
   return (
     <>
       <div className="border-b border-border">
-        {/* Celular: 10 abas não cabem lado a lado. Rolagem horizontal com snap
+        {/* Celular: 9 abas não cabem lado a lado. Rolagem horizontal com snap
             (em vez de esconder as abas atrás de um <Select>) porque os
             rótulos são curtos e reconhecíveis — a pessoa já sabe onde cada
             aba fica e prefere continuar vendo todas, só deslizando o dedo.
@@ -90,7 +88,6 @@ function ConfiguracoesPage() {
         )}
         {active === "Contatos Google" && <GoogleContatosTab />}
         {active === "Conexão do WhatsApp" && <ConexaoWhatsAppTab />}
-        {active === "Docs" && <DocsConfigTab />}
         {!tabs.includes(active) && <EmBreve name={active} />}
       </div>
     </>

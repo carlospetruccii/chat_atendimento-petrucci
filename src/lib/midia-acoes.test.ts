@@ -28,22 +28,10 @@ describe("reprocessarMidia", () => {
     });
   });
 
-  test("docs vai para a docs-acao (202 em andamento = ok)", async () => {
-    invoke.mockResolvedValue({ data: { ok: true, em_andamento: true }, error: null });
-    expect(await reprocessarMidia({ mensagemId: "m1", escopo: "docs" })).toEqual({ ok: true });
-    expect(invoke).toHaveBeenCalledWith("docs-acao", {
-      body: { acao: "reprocessar_midia", mensagem_id: "m1" },
-    });
-  });
-
   test("recusa vira frase; motivo desconhecido cai no genérico", async () => {
     invoke.mockResolvedValue({ data: { ok: false, motivo: "tentativa_recente" }, error: null });
-    expect((await reprocessarMidia({ mensagemId: "m1", escopo: "docs" })).motivo).toMatch(
+    expect((await reprocessarMidia({ mensagemId: "m1" })).motivo).toMatch(
       /tentativa em andamento/,
-    );
-    invoke.mockResolvedValue({ data: { ok: false, motivo: "midia_propria" }, error: null });
-    expect((await reprocessarMidia({ mensagemId: "m1", escopo: "docs" })).motivo).toMatch(
-      /enviado daqui/,
     );
     invoke.mockResolvedValue({ data: { ok: false, motivo: "xyz" }, error: null });
     expect((await reprocessarMidia({ mensagemId: "m1" })).motivo).toBe(
@@ -54,6 +42,6 @@ describe("reprocessarMidia", () => {
   test("erro de transporte é propagado", async () => {
     const erro = new Error("offline");
     invoke.mockResolvedValue({ data: null, error: erro });
-    await expect(reprocessarMidia({ mensagemId: "m1", escopo: "docs" })).rejects.toBe(erro);
+    await expect(reprocessarMidia({ mensagemId: "m1" })).rejects.toBe(erro);
   });
 });

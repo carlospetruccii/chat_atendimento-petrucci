@@ -3,14 +3,12 @@ import {
   BookUser,
   Clock,
   Eye,
-  FileText,
   MessageCircle,
   Settings,
   type LucideIcon,
 } from "lucide-react";
 import type { CurrentUserProfile } from "@/hooks/useCurrentUser";
 import type { NavBadges } from "@/hooks/useNavBadges";
-import { PERMISSAO_DOCS } from "@/lib/docs-logic";
 
 export type MenuGate = undefined | { superadminOnly: true } | { anyOf: string[] };
 
@@ -48,15 +46,6 @@ export const menuItems: MenuItem[] = [
     icon: Clock,
     badgeKey: "pendentes",
   },
-  {
-    // Conversas do número financeiro: admin sempre (canSee libera superadmin
-    // em todo `anyOf`), colaborador só com a permissão `docs_acesso`.
-    title: "Docs",
-    url: "/docs",
-    icon: FileText,
-    gate: { anyOf: [PERMISSAO_DOCS] },
-    badgeKey: "docs",
-  },
   { title: "Contatos", url: "/contatos", icon: BookUser },
   { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
   {
@@ -78,7 +67,6 @@ const PRIORIDADE_MOBILE: readonly string[] = [
   "/pendentes",
   "/contatos",
   "/dashboard",
-  "/docs",
 ];
 
 /** Quantos destinos cabem na barra inferior antes do slot do avatar. */

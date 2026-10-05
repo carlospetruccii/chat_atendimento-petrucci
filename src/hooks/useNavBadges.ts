@@ -1,8 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { podeAcessarDocs } from "@/lib/docs-logic";
-import { fetchDocsUnreadTotal } from "@/lib/docs-queries";
 
 /**
  * Contadores dos badges da navegação principal.
@@ -15,8 +13,6 @@ import { fetchDocsUnreadTotal } from "@/lib/docs-queries";
 export interface NavBadges {
   pendentes: number;
   inbox: number;
-  /** Docs: não lidas das conversas sem dono + das minhas (get_my_docs_unread_total). */
-  docs: number;
 }
 
 export function useNavBadges(): NavBadges {
@@ -56,17 +52,8 @@ export function useNavBadges(): NavBadges {
     refetchInterval: 30_000,
   });
 
-  // Só pergunta para quem enxerga a aba (sem acesso a RLS devolveria 0 mesmo).
-  const docsQ = useQuery({
-    queryKey: ["docs-unread-total"],
-    queryFn: fetchDocsUnreadTotal,
-    enabled: podeAcessarDocs(user),
-    refetchInterval: 30_000,
-  });
-
   return {
     pendentes: pendentesQ.data ?? 0,
     inbox: inboxQ.data ?? 0,
-    docs: docsQ.data ?? 0,
   };
 }
