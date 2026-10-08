@@ -4,6 +4,7 @@ import { Search, ArrowRightCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { initialsOf, notificarRepasse } from "@/lib/inbox-queries";
+import { mensagemErroRepasse } from "@/lib/repasse-erro";
 import {
   Dialog,
   DialogContent,
@@ -88,23 +89,7 @@ export function RepassarModal({ open, onOpenChange, atendimentoId, onDone }: Pro
     setSubmitting(false);
 
     if (error) {
-      const code = (error as { code?: string }).code;
-      if (code === "42501") {
-        toast.error("Você não tem permissão para repassar este atendimento.");
-      } else if (code === "P0002") {
-        // Encerrado e em triagem já não caem aqui: repassar reabre um e
-        // interrompe o outro. Sobra o atendimento que não existe mais.
-        toast.error("Atendimento não encontrado — recarregue a conversa.");
-      } else if (code === "23505") {
-        toast.error("Este cliente já tem uma conversa ativa — repasse a conversa atual dele.");
-      } else if (code === "22023") {
-        toast.error("Colaborador destino inválido.");
-      } else {
-        const msg = (error as { message?: string }).message;
-        toast.error(
-          msg ? `Não foi possível repassar: ${msg}` : "Não foi possível repassar o atendimento.",
-        );
-      }
+      toast.error(mensagemErroRepasse(error, selectedUser.nome));
       return;
     }
 
