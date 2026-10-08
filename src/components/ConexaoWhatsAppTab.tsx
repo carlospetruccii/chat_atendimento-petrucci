@@ -103,7 +103,7 @@ export function ConexaoWhatsAppTab() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">Conexão do WhatsApp</h2>
           <p className="text-sm text-muted-foreground">
-            Conecte o número da Almore escaneando o QR code com o celular.
+            Conecte o número da Parabrisas Petrucci escaneando o QR code com o celular.
           </p>
         </div>
       </div>
@@ -175,7 +175,7 @@ export function ConexaoWhatsAppTab() {
             <div className="min-w-0">
               <h3 className="text-base font-semibold text-foreground">Desconectado</h3>
               <p className="text-sm text-muted-foreground">
-                Escaneie o QR code para conectar o número da Almore.
+                Escaneie o QR code para conectar o número da Parabrisas Petrucci.
               </p>
             </div>
           </div>
@@ -195,7 +195,7 @@ export function ConexaoWhatsAppTab() {
                 />
               </div>
               <ol className="mt-4 max-w-sm list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-                <li>Abra o WhatsApp no celular da Almore.</li>
+                <li>Abra o WhatsApp no celular da Parabrisas Petrucci.</li>
                 <li>
                   Toque em <strong>Aparelhos conectados</strong>.
                 </li>

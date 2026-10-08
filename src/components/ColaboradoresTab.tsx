@@ -290,7 +290,7 @@ export function ColaboradoresTab() {
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Cadastre e gerencie os colaboradores que atendem clientes da Almore.
+            Cadastre e gerencie os colaboradores que atendem clientes da Parabrisas Petrucci.
           </p>
         </div>
         <button

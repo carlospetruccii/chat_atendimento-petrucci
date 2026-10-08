@@ -60,7 +60,7 @@ function LoginPage() {
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <MessageCircle className="h-7 w-7" strokeWidth={1.75} />
           </div>
-          <h1 className="text-xl font-semibold text-foreground">Atendimento Almore</h1>
+          <h1 className="text-xl font-semibold text-foreground">Atendimento Parabrisas Petrucci</h1>
           <p className="mt-1 text-sm text-muted-foreground">Entre para acessar a plataforma</p>
         </div>
 

@@ -89,13 +89,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // useTheme() força tema claro (a classe .dark nunca é aplicada).
       { name: "theme-color", content: "#f5f4ef" },
       { name: "mobile-web-app-capable", content: "yes" },
-      { title: "Chat Almore" },
+      { title: "Chat Parabrisas Petrucci" },
       { name: "description", content: "Builds a basic, empty landing page skeleton for rapid web development, now with Supabase integration." },
-      { property: "og:title", content: "Chat Almore" },
+      { property: "og:title", content: "Chat Parabrisas Petrucci" },
       { property: "og:description", content: "Builds a basic, empty landing page skeleton for rapid web development, now with Supabase integration." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:title", content: "Chat Almore" },
+      { name: "twitter:title", content: "Chat Parabrisas Petrucci" },
       { name: "twitter:description", content: "Builds a basic, empty landing page skeleton for rapid web development, now with Supabase integration." },
     ],
     links: [

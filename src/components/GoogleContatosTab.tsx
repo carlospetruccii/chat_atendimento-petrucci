@@ -105,7 +105,7 @@ export function GoogleContatosTab() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">Contatos do Google</h2>
           <p className="text-sm text-muted-foreground">
-            Conecte a conta Google da Almore para trazer os contatos salvos. O nome salvo no contato
+            Conecte a conta Google da Parabrisas Petrucci para trazer os contatos salvos. O nome salvo no contato
             aparece no Inbox no lugar do número.
           </p>
         </div>
@@ -221,7 +221,7 @@ export function GoogleContatosTab() {
         <div className="rounded-2xl border border-border bg-card p-6">
           <h3 className="text-base font-semibold text-foreground">Conecte os contatos do Google</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Você entra com a conta Google da Almore e autoriza a leitura dos contatos. A partir daí,
+            Você entra com a conta Google da Parabrisas Petrucci e autoriza a leitura dos contatos. A partir daí,
             a lista sincroniza sozinha.
           </p>
           <button
