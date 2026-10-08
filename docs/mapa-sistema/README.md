@@ -50,6 +50,8 @@ removido — ela está **dormindo**, pronta para ser reativada no futuro.
 | **[04 — Multi‑empresa e autenticação](04-multiempresa-e-autenticacao.md)** | Login, papéis (permissões), a "trava" de isolamento por empresa e como ligá‑la. |
 | **[05 — Dados de exemplo e riscos](05-dados-de-exemplo-e-riscos.md)** | Onde há dados mockados / "Empresa Exemplo", e os pontos de atenção antes de limpar os mocks e ligar a uazapi. |
 | **[08 — Notificação de repasse no WhatsApp](08-notificacao-repasse-whatsapp.md)** | Aviso no WhatsApp pessoal do colaborador ao repassar/atribuir atendimento; correções de segurança (escalonamento de privilégio e PII do telefone); estado do rollout. |
+| **[09 — Aba Tempos: status real](09-aba-tempos-status-real.md)** | Quem usa cada tempo; a RPC `status_tempos()` que diz "Em uso" ou "Sem efeito" pelo estado real (bot, crons, interruptores); o que a tela mostra hoje. |
+| **[10 — Desativar colaborador](10-desativar-colaborador.md)** | Desativar passa a bloquear login, sessões e permissões; travas (próprio acesso, dono, último admin); reativar desfaz; limites conhecidos. |
 
 ---
 
