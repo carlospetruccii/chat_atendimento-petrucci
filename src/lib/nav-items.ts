@@ -1,8 +1,8 @@
 import {
   ContactRound,
   Hourglass,
-  Inbox,
   LayoutDashboard,
+  MessagesSquare,
   ScanEye,
   SlidersHorizontal,
   type LucideIcon,
@@ -38,7 +38,7 @@ export const menuItems: MenuItem[] = [
     icon: LayoutDashboard,
     gate: { anyOf: ["view_all_departments"] },
   },
-  { title: "Inbox", url: "/inbox", icon: Inbox, badgeKey: "inbox" },
+  { title: "Inbox", url: "/inbox", icon: MessagesSquare, badgeKey: "inbox" },
   {
     title: "Pendentes",
     shortTitle: "Pend.",
