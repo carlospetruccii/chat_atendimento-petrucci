@@ -9,6 +9,7 @@ Configurações. Funciona no celular.
 Fork do `ChatAtendimento` da Almore. O que veio de lá em outubro/2026, o que ficou de fora
 e o que falta publicar: [`docs/port-chatatendimento-2026-10.md`](docs/port-chatatendimento-2026-10.md).
 Mapa do sistema (telas, banco, integrações): [`docs/mapa-sistema/`](docs/mapa-sistema/README.md).
+Bot de triagem (menu, setores, estado): [`docs/bot-triagem.md`](docs/bot-triagem.md).
 
 ## Desenvolvimento
 
