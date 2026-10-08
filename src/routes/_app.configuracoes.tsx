@@ -7,7 +7,6 @@ import { TemplatesTab } from "@/components/TemplatesTab";
 import { ColaboradoresTab } from "@/components/ColaboradoresTab";
 import { DepartamentosTab } from "@/components/DepartamentosTab";
 import { OperacaoTab } from "@/components/OperacaoTab";
-import { GoogleContatosTab } from "@/components/GoogleContatosTab";
 import { SessoesTab } from "@/components/SessoesTab";
 import { SemTriagemSection } from "@/components/SemTriagemSection";
 import { ConexaoWhatsAppTab } from "@/components/ConexaoWhatsAppTab";
@@ -25,7 +24,6 @@ const BASE_TABS = [
   "Colaboradores",
   "Operação",
   "Lista de Sessões",
-  "Contatos Google",
   "Conexão do WhatsApp",
 ];
 
@@ -86,7 +84,6 @@ function ConfiguracoesPage() {
             <SemTriagemSection />
           </div>
         )}
-        {active === "Contatos Google" && <GoogleContatosTab />}
         {active === "Conexão do WhatsApp" && <ConexaoWhatsAppTab />}
         {!tabs.includes(active) && <EmBreve name={active} />}
       </div>
