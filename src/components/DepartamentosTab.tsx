@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2, Loader2, Lock } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -25,9 +25,53 @@ import {
   deleteDepartment,
   DepartmentRow,
   fetchDepartments,
+  reordenarDepartamentos,
   TRIAGEM_DEPT_ID,
   updateDepartment,
 } from "@/lib/configuracoes-queries";
+import { moverDepartamento, type DirecaoOrdem } from "@/lib/departamentos-ordem";
+
+// Setinhas ↑↓ que definem a ordem do menu do bot (1, 2, 3…). Mesmo par no
+// cartão (celular) e na linha da tabela (desktop). Inativo não aparece no
+// menu, então fica com as duas desabilitadas.
+function BotoesOrdem({
+  nome,
+  podeSubir,
+  podeDescer,
+  disabled,
+  onMover,
+  className,
+}: {
+  nome: string;
+  podeSubir: boolean;
+  podeDescer: boolean;
+  disabled: boolean;
+  onMover: (direcao: DirecaoOrdem) => void;
+  className: string;
+}) {
+  return (
+    <>
+      <button
+        onClick={() => onMover("cima")}
+        disabled={disabled || !podeSubir}
+        title="Subir no menu"
+        aria-label={`Subir ${nome} no menu`}
+        className={className}
+      >
+        <ArrowUp className="h-4 w-4" strokeWidth={1.5} />
+      </button>
+      <button
+        onClick={() => onMover("baixo")}
+        disabled={disabled || !podeDescer}
+        title="Descer no menu"
+        aria-label={`Descer ${nome} no menu`}
+        className={className}
+      >
+        <ArrowDown className="h-4 w-4" strokeWidth={1.5} />
+      </button>
+    </>
+  );
+}
 
 function TableShell({ children, columns }: { children: React.ReactNode; columns: string[] }) {
   return (
@@ -55,11 +99,19 @@ function TableShell({ children, columns }: { children: React.ReactNode; columns:
 function DepartmentCard({
   d,
   checking,
+  podeSubir,
+  podeDescer,
+  reordering,
+  onMover,
   onEdit,
   onDelete,
 }: {
   d: DepartmentRow;
   checking: boolean;
+  podeSubir: boolean;
+  podeDescer: boolean;
+  reordering: boolean;
+  onMover: (direcao: DirecaoOrdem) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -87,6 +139,14 @@ function DepartmentCard({
         <p className="text-xs text-muted-foreground">{d.colaboradores} colaborador(es)</p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        <BotoesOrdem
+          nome={d.nome}
+          podeSubir={podeSubir}
+          podeDescer={podeDescer}
+          disabled={reordering}
+          onMover={onMover}
+          className="touch-target-mobile inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+        />
         <button
           onClick={onEdit}
           disabled={isSystem}
@@ -162,6 +222,24 @@ export function DepartamentosTab() {
     },
   });
 
+  const reorderMut = useMutation({
+    mutationFn: (ids: string[]) => reordenarDepartamentos(ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["departments"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const itensOrdem = list.map((x) => ({
+    id: x.id,
+    noMenu: x.ativo && x.id !== TRIAGEM_DEPT_ID,
+  }));
+  const novaOrdem = (d: DepartmentRow, direcao: DirecaoOrdem) =>
+    moverDepartamento(itensOrdem, d.id, direcao);
+
+  function mover(d: DepartmentRow, direcao: DirecaoOrdem) {
+    const ids = novaOrdem(d, direcao);
+    if (ids) reorderMut.mutate(ids);
+  }
+
   async function handleDeleteClick(d: DepartmentRow) {
     if (d.id === TRIAGEM_DEPT_ID) return;
     setChecking(true);
@@ -203,6 +281,10 @@ export function DepartamentosTab() {
                 key={d.id}
                 d={d}
                 checking={checking}
+                podeSubir={novaOrdem(d, "cima") !== null}
+                podeDescer={novaOrdem(d, "baixo") !== null}
+                reordering={reorderMut.isPending}
+                onMover={(direcao) => mover(d, direcao)}
                 onEdit={() => openEdit(d)}
                 onDelete={() => handleDeleteClick(d)}
               />
@@ -237,6 +319,14 @@ export function DepartamentosTab() {
                     <td className="px-4 py-3 text-muted-foreground">{d.colaboradores}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
+                        <BotoesOrdem
+                          nome={d.nome}
+                          podeSubir={novaOrdem(d, "cima") !== null}
+                          podeDescer={novaOrdem(d, "baixo") !== null}
+                          disabled={reorderMut.isPending}
+                          onMover={(direcao) => mover(d, direcao)}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+                        />
                         <button
                           onClick={() => openEdit(d)}
                           disabled={isSystem}

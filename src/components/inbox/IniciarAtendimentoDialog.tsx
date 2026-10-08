@@ -87,6 +87,7 @@ export function IniciarAtendimentoDialog({
         .from("departments")
         .select("id, nome")
         .eq("ativo", true)
+        .order("ordem")
         .order("nome");
       if (error) throw error;
       return data ?? [];

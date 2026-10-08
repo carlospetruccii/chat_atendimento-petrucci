@@ -827,6 +827,7 @@ export type Database = {
           created_at: string
           id: string
           nome: string
+          ordem: number
           updated_at: string
         }
         Insert: {
@@ -837,6 +838,7 @@ export type Database = {
           created_at?: string
           id?: string
           nome: string
+          ordem?: number
           updated_at?: string
         }
         Update: {
@@ -847,6 +849,7 @@ export type Database = {
           created_at?: string
           id?: string
           nome?: string
+          ordem?: number
           updated_at?: string
         }
         Relationships: [
@@ -2658,6 +2661,10 @@ export type Database = {
         Returns: boolean
       }
       proximo_horario_abertura: { Args: { ts: string }; Returns: string }
+      reordenar_departamentos: {
+        Args: { p_ids: string[] }
+        Returns: undefined
+      }
       repassar_atendimento: {
         Args: {
           p_atendimento_id: string

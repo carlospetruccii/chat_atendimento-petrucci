@@ -16,7 +16,7 @@ export interface DepartmentRow {
 
 export async function fetchDepartments(): Promise<DepartmentRow[]> {
   const [deptsRes, usersRes] = await Promise.all([
-    supabase.from("departments").select("id, nome, cor, ativo").order("nome"),
+    supabase.from("departments").select("id, nome, cor, ativo").order("ordem").order("nome"),
     supabase.from("users").select("department_id").eq("ativo", true).eq("is_system_user", false),
   ]);
   if (deptsRes.error) throw deptsRes.error;
@@ -87,6 +87,12 @@ export async function deleteDepartment(id: string) {
   const check = await checkDepartmentDeletable(id);
   if (!check.ok) throw new Error(check.reason);
   const { error } = await supabase.from("departments").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// Grava a ordem do menu do bot (e das listas de setor) na sequência recebida.
+export async function reordenarDepartamentos(ids: string[]) {
+  const { error } = await supabase.rpc("reordenar_departamentos", { p_ids: ids });
   if (error) throw error;
 }
 

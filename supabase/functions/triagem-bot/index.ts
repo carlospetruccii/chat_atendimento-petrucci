@@ -13,6 +13,7 @@ import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo, getBotAtivadoEm } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { enviarListaOpcoes, enviarTexto, type OpcaoLista, ZapiError } from "../_shared/uazapi-client.ts";
+import { LIST_TITULO, ordenarDepartamentos } from "./logic.ts";
 
 const FUNCAO = "triagem-bot";
 const BOT_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -43,7 +44,7 @@ interface Atendimento {
   is_sessao: boolean;
 }
 
-interface Departamento { id: string; nome: string; }
+interface Departamento { id: string; nome: string; ordem: number; }
 // Colaborador para o passo "aguardando_colaborador" do fluxo de sessão.
 interface Colaborador { id: string; nome: string; }
 // Item genérico de menu interativo (departamento ou colaborador).
@@ -224,10 +225,10 @@ async function carregarConfig(): Promise<Config> {
 
 async function carregarDepartamentos(): Promise<Departamento[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("departments").select("id, nome")
-    .eq("ativo", true).neq("id", TRIAGEM_DEPT_ID).order("nome", { ascending: true });
+  const { data, error } = await supabase.from("departments").select("id, nome, ordem")
+    .eq("ativo", true).neq("id", TRIAGEM_DEPT_ID);
   if (error) throw error;
-  return (data ?? []) as Departamento[];
+  return ordenarDepartamentos((data ?? []) as Departamento[]);
 }
 
 async function nomeDept(deptId: string): Promise<string> {
@@ -465,7 +466,6 @@ async function enviarEPersistir(at: Atendimento, telefone: string, texto: string
 
 // Limite do WhatsApp para mensagens interativas tipo "List".
 const LIST_MAX_OPCOES = 10;
-const LIST_TITULO = "Atendimento Almore";
 
 /**
  * Limpa do template os placeholders de "lista numerada" — quando a mensagem

@@ -117,6 +117,7 @@ export async function fetchDepartments(): Promise<DeptOption[]> {
     .from("departments")
     .select("id, nome, cor")
     .eq("ativo", true)
+    .order("ordem")
     .order("nome");
   if (error) throw error;
   return data ?? [];

@@ -83,7 +83,7 @@ export async function fetchOpcoesFiltro(): Promise<{
   pessoas: OpcaoFiltro[];
 }> {
   const [deptsRes, usersRes] = await Promise.all([
-    supabase.from("departments").select("id, nome").eq("ativo", true).order("nome"),
+    supabase.from("departments").select("id, nome").eq("ativo", true).order("ordem").order("nome"),
     // Inativo entra na lista: ele continua dono das conversas que atendeu, e
     // sem ele esse histórico não apareceria em filtro nenhum.
     supabase.from("users").select("id, nome, ativo").eq("is_system_user", false).order("nome"),
