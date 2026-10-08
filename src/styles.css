@@ -55,7 +55,7 @@
 
 /* =================================================================
  * Sistema de 4 camadas SÓLIDAS — Tema CLARO
- * L0 background (bege WhatsApp) → L1 surface (branco) → L2 card → L3 elevated
+ * L0 background (verde bem clarinho) → L1 surface (branco) → L2 card → L3 elevated
  * Nada de fundos translúcidos em superfícies. Transparência só em overlays.
  * ================================================================= */
 :root {
@@ -68,7 +68,7 @@
   --wa-green-soft: oklch(0.93 0.06 160);
 
   /* 4 camadas sólidas */
-  --layer-0: oklch(0.955 0.008 95);   /* página */
+  --layer-0: oklch(0.955 0.018 165);   /* página: verde bem clarinho (tom do wa-green) */
   --layer-1: oklch(1 0 0);             /* surface: sidebar, lista, header */
   --layer-2: oklch(0.975 0.004 230);   /* card / modal / popover */
   --layer-3: oklch(0.94 0.005 230);    /* elevated / hover / input focus */
@@ -109,7 +109,7 @@
   --warning-border: oklch(0.82 0.1 80);
 
   /* Chat */
-  --chat-bg: oklch(0.93 0.012 90);
+  --chat-bg: oklch(0.955 0.018 165);
   --chat-sent: oklch(0.92 0.07 155);
   --chat-sent-foreground: var(--text-primary);
   --chat-received: var(--layer-1);
