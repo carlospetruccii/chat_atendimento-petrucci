@@ -137,7 +137,9 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
       )
       .eq("is_system_user", false)
       .order("nome"),
-    supabase.from("company_members").select("user_id, role").eq("ativo", true),
+    // Sem filtrar ativo: desativar desliga o vínculo junto (trigger
+    // users_aplicar_ativo) e o papel do inativo precisa continuar aparecendo.
+    supabase.from("company_members").select("user_id, role"),
     supabase.rpc("admin_list_user_whatsapps"),
   ]);
   if (usersRes.error) throw usersRes.error;

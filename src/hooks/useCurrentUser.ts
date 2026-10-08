@@ -10,6 +10,8 @@ export interface CurrentUserProfile {
   departmentNome: string | null;
   departmentCor: string | null;
   isSuperadmin: boolean;
+  /** false = desativado na tela de Colaboradores (a app expulsa). */
+  ativo: boolean;
   permissions: string[];
 }
 
@@ -58,6 +60,7 @@ async function fetchCurrentUser(userId: string): Promise<CurrentUserProfile | nu
     departmentNome: dept?.nome ?? null,
     departmentCor: dept?.cor ?? null,
     isSuperadmin: !!data.is_superadmin,
+    ativo: data.ativo !== false,
     permissions: perms,
   };
 }

@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { mensagemErroLogin } from "@/lib/acesso";
 import { Loader2, MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuthSession } from "@/hooks/useAuthSession";
@@ -42,7 +43,7 @@ function LoginPage() {
     setSubmitting(false);
 
     if (error || !data.session) {
-      toast.error("E-mail ou senha incorretos");
+      toast.error(mensagemErroLogin(error));
       return;
     }
     const mustChange = data.session.user?.user_metadata?.must_change_password === true;

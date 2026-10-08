@@ -263,15 +263,18 @@ export function ColaboradoresTab() {
   }
 
   function toggleAtivo(c: ColaboradorRow) {
-    if (c.is_superadmin && me?.id === c.id) {
-      toast.error("Superadmin não pode se desativar.");
+    // O banco também barra (ninguém muda o próprio ativo); aqui só evita o erro.
+    if (me?.id === c.id) {
+      toast.error("Você não pode desativar o próprio acesso.");
       return;
     }
     if (c.ativo) setConfirmTarget(c);
     else deactivateMut.mutate({ id: c.id, ativo: true });
   }
 
-  const isSelfSuper = editing?.is_superadmin && me?.id === editing?.id;
+  // Própria ficha: o Switch "Ativo" fica travado (o banco barra mudar o próprio ativo).
+  const isSelf = !!editing && me?.id === editing.id;
+  const isSelfSuper = editing?.is_superadmin && isSelf;
   // Toggle de papel na edição: só o dono, nunca no próprio cadastro nem em outro dono.
   const canEditRole = !!editing && isOwnerMe && editing.role !== "dono" && editing.id !== me?.id;
   const saving = createMut.isPending || updateMut.isPending;
@@ -367,7 +370,7 @@ export function ColaboradoresTab() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((c) => {
             const stStyle = STATUS_STYLE[c.status];
-            const isMeSuper = c.is_superadmin && me?.id === c.id;
+            const isMe = me?.id === c.id;
             return (
               <div
                 key={c.id}
@@ -433,7 +436,7 @@ export function ColaboradoresTab() {
                   >
                     <Pencil className="h-3.5 w-3.5" strokeWidth={1.7} /> Editar
                   </button>
-                  {!isMeSuper && (
+                  {!isMe && (
                     <button
                       onClick={() => toggleAtivo(c)}
                       className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
@@ -608,7 +611,7 @@ export function ColaboradoresTab() {
                   </div>
                   <Switch
                     checked={form.ativo}
-                    disabled={!!isSelfSuper}
+                    disabled={isSelf}
                     onCheckedChange={(v) => setForm({ ...form, ativo: v })}
                   />
                 </div>
@@ -625,8 +628,10 @@ export function ColaboradoresTab() {
                     onCheckedChange={(v) => setForm({ ...form, disponivel: v })}
                   />
                 </div>
-                {isSelfSuper && (
-                  <p className="text-xs text-muted-foreground">Superadmin não pode se desativar.</p>
+                {isSelf && (
+                  <p className="text-xs text-muted-foreground">
+                    Você não pode desativar o próprio acesso.
+                  </p>
                 )}
               </>
             )}
