@@ -126,6 +126,8 @@ supabase functions deploy webhook-zapi-receive triagem-bot cron-notificacao-cola
 ```
 
 - Novas: `mensagem-acao`, `mensagem-encaminhar`, `reprocessar-midia`.
+- `triagem-bot` já publicada (v3, 06/10/2026), junto com a ordem do menu — ver
+  [bot-triagem.md](bot-triagem.md).
 - `webhook-zapi-receive` e `webhook-historico` são `verify_jwt = false` (validam token no corpo).
 - Rollback do webhook: a versão anterior publicada é a v8.
 - Opcionais (só importam o `uazapi-client.ts` alterado, comportamento igual):
@@ -133,8 +135,16 @@ supabase functions deploy webhook-zapi-receive triagem-bot cron-notificacao-cola
   `mark-chat-read`, `grupo-participantes`, `historico-solicitar`, `whatsapp-connection`,
   `sincronizar-grupos`, `atualizar-fotos`.
 
-Enquanto as funções novas não estiverem publicadas, apagar, editar, encaminhar e
-"tentar novamente" na mídia dão erro na tela.
+**Publicadas em 08/10/2026** (todas da lista acima; `triagem-bot` em 06 e 08/10). Webhook
+conferido depois: respostas 200, mensagens chegando, sem erro nos logs. Rollback do webhook:
+v8.
+
+**Também em 08/10/2026** — comparação com os bugs já corrigidos no Almore:
+- WhatsApp pessoal do colaborador (`users.whatsapp`) estava legível por qualquer usuário
+  logado: a migration `20260717140000_lock_users_whatsapp_column.sql` não tinha valido
+  no nosso banco. Reaplicada pelo MCP.
+- Trazido o `fd6e532` (aviso "Este atendimento já está com <nome>" no repasse).
+- Bot: matcher do `926c795` + correções da fila — ver [bot-triagem.md](bot-triagem.md).
 
 ## Secrets
 

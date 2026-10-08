@@ -101,7 +101,7 @@ para ela aparecer no Inbox — e pode até reabrir um atendimento encerrado.
 |-------|-------------|
 | **Atendimento** | Uma conversa/ticket entre um cliente e a empresa. Tem um status (em triagem, pendente, reservado, em atendimento, encerrado). |
 | **Triagem** | A fase inicial automática, conduzida pelo robô, que descobre o departamento. |
-| **Departamento** | Setor de atendimento (ex.: Administrativo, Suporte). |
+| **Departamento** | Setor de atendimento. Na Parabrisas Petrucci: Vendas, Suporte, Financeiro e Sem parar, nessa ordem no menu (ver [bot-triagem.md](../bot-triagem.md)). |
 | **Pendente** | Atendimento sem dono, esperando um atendente pegar. |
 | **Reservado** | Atendimento já atribuído a um atendente, mas ele ainda não respondeu. |
 | **Administrador** | O papel de **supervisão** — quem vê tudo e recebe os avisos de conversas paradas. Era chamado "Luana" antes. |
