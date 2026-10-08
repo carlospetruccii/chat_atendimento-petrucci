@@ -13,7 +13,7 @@ import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { botEstaAtivo, getBotAtivadoEm } from "../_shared/kill-switch.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
 import { enviarListaOpcoes, enviarTexto, type OpcaoLista, ZapiError } from "../_shared/uazapi-client.ts";
-import { LIST_TITULO, ordenarDepartamentos } from "./logic.ts";
+import { identificarPorTexto, LIST_TITULO, ordenarDepartamentos } from "./logic.ts";
 
 const FUNCAO = "triagem-bot";
 const BOT_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -64,9 +64,6 @@ interface Config {
   lembreteMin: number;
 }
 
-function normalizar(s: string): string {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-}
 function aplicarTemplate(texto: string, vars: Record<string, string>): string {
   return texto.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
 }
@@ -75,82 +72,6 @@ function formatarLista(itens: { nome: string }[]): string {
 }
 function telefoneZapi(numero: string): string { return numero.replace(/\D/g, ""); }
 
-// Palavras genéricas de conversa que NÃO ajudam a identificar o setor/pessoa.
-// Ignoradas no casamento por texto livre para não gerar falso-positivo (ex.:
-// "quero falar com o setor" não pode casar pela palavra "setor").
-const STOPWORDS = new Set([
-  "quero", "queria", "gostaria", "preciso", "necessito", "desejo",
-  "falar", "com", "o", "a", "os", "as", "um", "uma", "uns", "umas",
-  "de", "do", "da", "dos", "das", "no", "na", "nos", "nas", "em",
-  "pra", "para", "por", "favor", "pf", "pfv",
-  "setor", "departamento", "depto", "opcao", "opção", "opções", "opcoes",
-  "e", "ou", "que", "meu", "minha", "assunto", "sobre", "atendimento",
-  "me", "ajuda", "ajudar", "ao", "isso", "esse", "essa", "tem", "ver",
-]);
-
-// Casa a resposta LIVRE do cliente com um item do menu (departamento ou
-// colaborador). Ordem de tentativa:
-//   1) número puro → índice (1-based) do menu;
-//   2) nome do item idêntico ao texto;
-//   3) nome do item mencionado no meio da frase ("quero fiscal", "o fiscal"),
-//      casando por nome inteiro contido, palavra significativa em comum ou
-//      prefixo (>=3 chars) em qualquer direção — só resolve se UM único item
-//      casar (ambíguo devolve null e o bot pergunta de novo);
-//   4) número solto em meio ao texto ("opção 2", "quero a 3").
-// Nunca "chuta": entrada ambígua (0 ou 2+ candidatos) retorna null.
-function identificarPorTexto<T extends { id: string; nome: string }>(texto: string, itens: T[]): string | null {
-  const t = normalizar(texto);
-  if (!t) return null;
-
-  // 1) Número puro → índice.
-  if (/^\d+$/.test(t)) {
-    const idx = parseInt(t, 10) - 1;
-    return idx >= 0 && idx < itens.length ? itens[idx].id : null;
-  }
-
-  // 2) Nome idêntico.
-  const exato = itens.find((d) => normalizar(d.nome) === t);
-  if (exato) return exato.id;
-
-  // 3) Nome mencionado no texto livre.
-  const tokens = t.split(/\s+/).filter((x) => x.length > 0);
-  const candidatos = new Set<string>();
-  for (const d of itens) {
-    const nome = normalizar(d.nome);
-    // (a) nome completo do item contido no texto ("quero o departamento pessoal").
-    if (nome.length >= 3 && t.includes(nome)) {
-      candidatos.add(d.id);
-      continue;
-    }
-    // (b) alguma palavra significativa do nome casa com um token do cliente
-    //     (igual ou prefixo em qualquer direção, ambos >=3 chars).
-    const palavrasNome = nome.split(/\s+/).filter((w) => w.length >= 3 && !STOPWORDS.has(w));
-    let casou = false;
-    for (const w of palavrasNome) {
-      for (const tok of tokens) {
-        if (tok.length < 3 || STOPWORDS.has(tok)) continue;
-        if (w === tok || w.startsWith(tok) || tok.startsWith(w)) {
-          casou = true;
-          break;
-        }
-      }
-      if (casou) break;
-    }
-    if (casou) candidatos.add(d.id);
-  }
-  if (candidatos.size === 1) return [...candidatos][0];
-  if (candidatos.size > 1) return null; // ambíguo: cliente citou mais de um setor.
-
-  // 4) Número solto em meio ao texto ("opção 2", "quero a 3") — só se houver
-  //    exatamente um número e nenhum nome tiver casado acima.
-  const numeros = tokens.map((tok) => tok.replace(/\D/g, "")).filter((x) => x !== "");
-  if (numeros.length === 1) {
-    const idx = parseInt(numeros[0], 10) - 1;
-    if (idx >= 0 && idx < itens.length) return itens[idx].id;
-  }
-
-  return null;
-}
 
 // Resolve um item a partir do CLIQUE numa opção da lista interativa. A uazapi
 // devolve o id da opção em media_metadata.selected_id no formato "<prefixo><uuid>"
@@ -1267,11 +1188,18 @@ async function executar(): Promise<{ processados: number; pulados_anti_flood: nu
 
   const limiteIso = new Date(Date.now() - cfg.delaySeg * 1000).toISOString();
 
-  const { data: atendimentos, error } = await supabase.from("atendimentos")
+  let fila = supabase.from("atendimentos")
     .select("id, client_id, triagem_estagio, triagem_tentativas, current_department_id, triagem_last_processed_msg_id, is_sessao")
     .eq("status", "em_triagem")
-    .in("triagem_estagio", ["aguardando_inicio", "aguardando_departamento", "aguardando_colaborador"])
-    .order("created_at", { ascending: true }).limit(50);
+    .in("triagem_estagio", ["aguardando_inicio", "aguardando_departamento", "aguardando_colaborador"]);
+  // Só conversa com mensagem depois de o bot ser ligado. Sem isso, o backlog
+  // de em_triagem antigo (anterior à ativação, que o bot pula) ocupa as 50
+  // vagas da fila para sempre e os atendimentos novos nunca são processados.
+  if (botAtivadoEm) fila = fila.gte("last_message_at", botAtivadoEm);
+  // Mais recente primeiro: conversa antiga que só recebeu mensagem nossa
+  // depois da ativação (o bot a pula) não empurra as novas para fora das 50.
+  const { data: atendimentos, error } = await fila
+    .order("last_message_at", { ascending: false }).limit(50);
 
   if (error) {
     log({ funcao: FUNCAO, evento: "query_atendimentos_falhou", status: "erro", erro_msg: error.message });
