@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pencil, Loader2, AlertTriangle } from "lucide-react";
+import { Pencil, Loader2, AlertTriangle, CheckCircle2, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -8,7 +8,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { fetchTempos, updateTempo, TEMPO_GRUPOS, type TempoRow } from "@/lib/configuracoes-queries";
+import {
+  fetchTempos,
+  updateTempo,
+  textoAfetados,
+  TEMPO_GRUPOS,
+  type TempoRow,
+} from "@/lib/tempos-queries";
 
 export function TemposTab() {
   const [rows, setRows] = useState<TempoRow[] | null>(null);
@@ -95,11 +101,22 @@ export function TemposTab() {
                           <label className="block text-sm font-semibold text-foreground">
                             {f.label}
                           </label>
-                          {f.inativo && (
+                          {f.emUso ? (
+                            <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                              <CheckCircle2 className="h-3 w-3" strokeWidth={2} />
+                              Em uso
+                            </span>
+                          ) : (
                             <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                              <AlertTriangle className="h-3 w-3" strokeWidth={2} />
+                              <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={2} />
                               {f.inativo}
                             </span>
+                          )}
+                          {textoAfetados(f.afetados, f.emUso) && (
+                            <p className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground">
+                              <Users className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={2} />
+                              {textoAfetados(f.afetados, f.emUso)}
+                            </p>
                           )}
                           <p className="mt-1 text-xs text-muted-foreground max-w-2xl">
                             {f.descricao ?? "—"}

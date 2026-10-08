@@ -2673,6 +2673,14 @@ export type Database = {
         }
         Returns: boolean
       }
+      status_tempos: {
+        Args: never
+        Returns: {
+          afetados: number | null
+          chave: string
+          motivo: string | null
+        }[]
+      }
       ultimo_atendente_no_departamento: {
         Args: { p_client_id: string; p_department_id: string }
         Returns: string
