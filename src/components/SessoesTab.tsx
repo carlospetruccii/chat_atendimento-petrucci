@@ -83,7 +83,7 @@ export function SessoesTab() {
   const numerosJaNaLista = new Set(sessoes.map((s) => s.numero_whatsapp));
 
   return (
-    <div className="max-w-2xl">
+    <div className="mx-auto max-w-2xl">
       {/* Cabeçalho */}
       <div className="mb-6 flex items-center gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent">
