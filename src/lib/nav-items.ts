@@ -1,10 +1,10 @@
 import {
-  BarChart,
-  BookUser,
-  Clock,
-  Eye,
-  MessageCircle,
-  Settings,
+  ContactRound,
+  Hourglass,
+  Inbox,
+  LayoutDashboard,
+  ScanEye,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import type { CurrentUserProfile } from "@/hooks/useCurrentUser";
@@ -35,24 +35,29 @@ export const menuItems: MenuItem[] = [
   {
     title: "Dashboard",
     url: "/dashboard",
-    icon: BarChart,
+    icon: LayoutDashboard,
     gate: { anyOf: ["view_all_departments"] },
   },
-  { title: "Inbox", url: "/inbox", icon: MessageCircle, badgeKey: "inbox" },
+  { title: "Inbox", url: "/inbox", icon: Inbox, badgeKey: "inbox" },
   {
     title: "Pendentes",
     shortTitle: "Pend.",
     url: "/pendentes",
-    icon: Clock,
+    icon: Hourglass,
     badgeKey: "pendentes",
   },
-  { title: "Contatos", url: "/contatos", icon: BookUser },
-  { title: "Supervisão", url: "/supervisao", icon: Eye, gate: { anyOf: ["view_all_departments"] } },
+  { title: "Contatos", url: "/contatos", icon: ContactRound },
+  {
+    title: "Supervisão",
+    url: "/supervisao",
+    icon: ScanEye,
+    gate: { anyOf: ["view_all_departments"] },
+  },
   {
     title: "Configurações",
     shortTitle: "Config.",
     url: "/configuracoes",
-    icon: Settings,
+    icon: SlidersHorizontal,
     gate: { superadminOnly: true },
   },
 ];
