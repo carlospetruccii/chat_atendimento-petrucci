@@ -272,7 +272,7 @@ export function EquipeChatPanel({
       {/* Mensagens */}
       <div
         ref={chat.scrollContainerRef}
-        className="scroll-contain flex-1 overflow-y-auto p-3 sm:p-6"
+        className="scroll-contain flex-1 overflow-y-auto bg-[var(--chat-bg)] p-3 sm:p-6"
       >
         <div ref={chat.topSentinelRef} />
         {chat.isLoadingMore && (
