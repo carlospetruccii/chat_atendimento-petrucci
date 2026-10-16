@@ -3,8 +3,9 @@
 O bot (`triagem-bot`) cumprimenta o cliente, mostra o menu de setores e manda a conversa
 para a fila **Pendentes** do setor escolhido.
 
-> **Estado: DESLIGADO.** `system_config.bot_ativo = 'false'` e o cron `triagem-bot` está
-> inativo. Só ligar quando o dono pedir. Ligar dispara WhatsApp para cliente real.
+> **Estado: DESLIGADO.** `system_config.bot_ativo = 'false'`. Desde 09/10/2026 todos os
+> crons estão ligados (igual ao Almore) e respeitam `bot_ativo`: o botão da aba **Operação**
+> é o único controle. Só ligar quando o dono pedir. Ligar dispara WhatsApp para cliente real.
 
 ---
 
@@ -129,9 +130,9 @@ tipos quebraria o cadastro de setor).
    conversa fica em Pendentes e só os admins veem.
 2. Conferir os textos na aba **Templates**.
 3. Conferir o horário comercial (aba **Horário**) — o lembrete só sai dentro dele.
-4. Ligar na aba **Operação**. Isso grava `bot_ativado_em`: mensagens que chegaram
+4. Ligar na aba **Operação** (os crons já estão ligados desde 09/10/2026). Isso grava `bot_ativado_em`: mensagens que chegaram
    **antes** de ligar são ignoradas (não há disparo em massa para conversas antigas).
-5. Conferir que o cron `triagem-bot` ficou ativo e acompanhar os logs da função.
+5. Acompanhar os logs da função `triagem-bot`.
 
 Para desligar: aba **Operação** de novo. O bot checa `bot_ativo` antes de qualquer
 envio.
@@ -151,13 +152,15 @@ DELETE FROM departments WHERE nome IN ('Vendas', 'Suporte', 'Financeiro', 'Sem p
 
 Os usuários Bot/Sistema devem ficar (o código depende deles).
 
+## Horário comercial (cadastrado em 09/10/2026)
+
+Seg–sex 08:00–17:30, sáb 08:00–12:00, domingo fechado. Gravado em `business_hours`
+(aba **Horário**, usada pelo bot) e em `department_business_hours` (os 4 setores, usada
+nos alertas de atendimento parado; essa não tem tela — se mudar o horário, mudar nas duas).
+
 ## Pendências
 
 - Cadastrar os colaboradores.
-- Cadastrar o horário comercial (aba **Horário**): sem ele o lembrete "ainda está aí?"
-  nunca sai.
-- Ao ligar o bot, ligar junto o cron `cron-retry-mensagens-falha` (no Almore fica ligado).
-  Ele respeita `bot_ativo`, então desligado não faz nada.
 - Textos do fluxo interno de **Sessões** (`sessao_*`) ainda não existem; nesse fluxo
   o bot fica mudo.
 - A página de retorno do login do Google ainda diz "Almore"
