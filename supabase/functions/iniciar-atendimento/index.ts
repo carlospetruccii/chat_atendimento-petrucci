@@ -5,6 +5,7 @@
 
 import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { escolherDepartamentoProprio } from "./logic.ts";
 
 const FUNCAO = "iniciar-atendimento";
 
@@ -18,6 +19,11 @@ const STATUS_ATIVOS = ["em_triagem", "reservado", "pendente", "em_atendimento"];
 
 interface Payload {
   client_id?: string;
+  /**
+   * Setor da conversa. Quem escolhe setor/atendente (admin) manda sempre; o
+   * colaborador com vários setores manda o que escolheu entre os dele (sem
+   * mandar, vale o principal).
+   */
   department_id?: string | null;
   assigned_to?: string | null;
   /**
@@ -62,13 +68,14 @@ Deno.serve(async (req: Request) => {
   const clientId = payload.client_id?.trim();
   if (!clientId) return json({ ok: false, erro: "client_id_obrigatorio" }, 400);
 
-  // Carrega chamador + permissão view_all_departments
-  const [{ data: caller }, { data: callerPerm }] = await Promise.all([
+  // Carrega chamador + setores + permissão view_all_departments
+  const [{ data: caller }, { data: callerDepts }, { data: callerPerm }] = await Promise.all([
     supabase
       .from("users")
       .select("id, nome, department_id, is_superadmin, ativo")
       .eq("id", callerId)
       .maybeSingle(),
+    supabase.from("user_departments").select("department_id").eq("user_id", callerId),
     supabase
       .from("user_permissions")
       .select("permission")
@@ -105,23 +112,33 @@ Deno.serve(async (req: Request) => {
     // Valida assigned_to
     const { data: alvo } = await supabase
       .from("users")
-      .select("id, nome, department_id, ativo, disponivel, is_system_user")
+      .select("id, nome, ativo, disponivel, is_system_user")
       .eq("id", assignedTo)
+      .maybeSingle();
+    // O atendente precisa ser do setor escolhido (é um dos setores dele).
+    const { data: alvoNoDept } = await supabase
+      .from("user_departments")
+      .select("user_id")
+      .eq("user_id", assignedTo)
+      .eq("department_id", departmentId)
       .maybeSingle();
     if (
       !alvo ||
       alvo.is_system_user ||
       !alvo.ativo ||
       !alvo.disponivel ||
-      alvo.department_id !== departmentId
+      !alvoNoDept
     ) {
       return json({ ok: false, erro: "assigned_to_invalido" }, 400);
     }
   } else {
-    if (!caller.department_id) {
-      return json({ ok: false, erro: "caller_sem_departamento" }, 400);
-    }
-    departmentId = caller.department_id;
+    const escolha = escolherDepartamentoProprio({
+      principal: caller.department_id ?? null,
+      meus: (callerDepts ?? []).map((d: { department_id: string }) => d.department_id),
+      pedido: typeof payload.department_id === "string" ? payload.department_id.trim() || null : null,
+    });
+    if (!escolha.ok) return json({ ok: false, erro: escolha.erro }, 400);
+    departmentId = escolha.departmentId;
     assignedTo = callerId;
   }
 

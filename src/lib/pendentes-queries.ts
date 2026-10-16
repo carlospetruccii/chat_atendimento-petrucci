@@ -5,6 +5,7 @@ import {
   notificarRepasse,
   type AtendimentoStatus,
 } from "./inbox-queries";
+import { departamentosPorUsuario } from "./departamentos-usuario";
 
 export { initialsOf, FALLBACK_DEPT_COR };
 
@@ -36,6 +37,8 @@ export interface CollaboratorOption {
   initials: string;
   departmentId: string | null;
   departmentNome: string;
+  /** Todos os setores (principal primeiro); vazio = sem departamento. */
+  departamentos: { id: string; nome: string }[];
 }
 
 function previewFromMsg(content: string | null, tipo: string | null): string {
@@ -124,14 +127,23 @@ export async function fetchDepartments(): Promise<DeptOption[]> {
 }
 
 export async function fetchCollaborators(): Promise<CollaboratorOption[]> {
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, nome, department_id, departments:department_id ( nome )")
-    .eq("ativo", true)
-    .eq("is_system_user", false)
-    .order("nome");
-  if (error) throw error;
-  return (data ?? []).map((u) => {
+  const [usersRes, vinculosRes] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id, nome, department_id, departments:department_id ( nome )")
+      .eq("ativo", true)
+      .eq("is_system_user", false)
+      .order("nome"),
+    supabase.from("user_departments").select("user_id, department_id, departments(nome, cor)"),
+  ]);
+  if (usersRes.error) throw usersRes.error;
+  if (vinculosRes.error) throw vinculosRes.error;
+  const users = usersRes.data ?? [];
+  const deptsByUser = departamentosPorUsuario(
+    vinculosRes.data ?? [],
+    new Map(users.map((u) => [u.id, u.department_id])),
+  );
+  return users.map((u) => {
     const dep = u.departments as { nome: string } | null;
     return {
       id: u.id,
@@ -139,6 +151,7 @@ export async function fetchCollaborators(): Promise<CollaboratorOption[]> {
       initials: initialsOf(u.nome),
       departmentId: u.department_id,
       departmentNome: dep?.nome ?? "Sem departamento",
+      departamentos: (deptsByUser.get(u.id) ?? []).map((d) => ({ id: d.id, nome: d.nome })),
     };
   });
 }

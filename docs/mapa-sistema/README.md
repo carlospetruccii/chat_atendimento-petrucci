@@ -52,6 +52,7 @@ removido — ela está **dormindo**, pronta para ser reativada no futuro.
 | **[08 — Notificação de repasse no WhatsApp](08-notificacao-repasse-whatsapp.md)** | Aviso no WhatsApp pessoal do colaborador ao repassar/atribuir atendimento; correções de segurança (escalonamento de privilégio e PII do telefone); estado do rollout. |
 | **[09 — Aba Tempos: status real](09-aba-tempos-status-real.md)** | Quem usa cada tempo; a RPC `status_tempos()` que diz "Em uso" ou "Sem efeito" pelo estado real (bot, crons, interruptores); o que a tela mostra hoje. |
 | **[10 — Desativar colaborador](10-desativar-colaborador.md)** | Desativar passa a bloquear login, sessões e permissões; travas (próprio acesso, dono, último admin); reativar desfaz; limites conhecidos. |
+| **[11 — Colaborador em vários departamentos](11-colaborador-varios-departamentos.md)** | Tabela `user_departments`, departamento principal, visibilidade/fila/repasse por qualquer setor da pessoa, escolha de setor ao iniciar conversa; limites conhecidos. |
 
 ---
 

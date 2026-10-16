@@ -20,10 +20,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   alterarPapelColaborador,
   ColaboradorRow,
   criarColaborador,
+  definirDepartamentosColaborador,
   fetchColaboradores,
   fetchDepartments,
   setColaboradorAtivo,
@@ -33,6 +35,7 @@ import {
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { filtrarColaboradores } from "@/lib/colaboradores-filter";
 import { normalizarE164, formatarNumero } from "@/lib/phone";
+import { mesmosDepartamentos } from "@/lib/departamentos-usuario";
 
 function initials(n: string) {
   return n
@@ -62,7 +65,8 @@ interface FormState {
   email: string;
   password: string;
   role: PapelForm;
-  department_id: string;
+  /** Ordem de marcação; o 1º é o principal. */
+  department_ids: string[];
   whatsapp: string;
   ativo: boolean;
   disponivel: boolean;
@@ -88,7 +92,8 @@ export function ColaboradoresTab() {
   const deptsQ = useQuery({ queryKey: ["departments"], queryFn: fetchDepartments });
 
   const colaboradores = colaboradoresQ.data ?? EMPTY_COLABORADORES;
-  const depts = (deptsQ.data ?? []).filter((d) => d.id !== TRIAGEM_DEPT_ID && d.ativo);
+  const todosDepts = (deptsQ.data ?? []).filter((d) => d.id !== TRIAGEM_DEPT_ID);
+  const depts = todosDepts.filter((d) => d.ativo);
 
   // Só o dono pode promover/rebaixar (bate com a RLS de company_members).
   const meRole = useMemo(
@@ -109,7 +114,7 @@ export function ColaboradoresTab() {
     email: "",
     password: "",
     role: "colaborador",
-    department_id: "",
+    department_ids: [],
     whatsapp: "",
     ativo: true,
     disponivel: true,
@@ -135,7 +140,7 @@ export function ColaboradoresTab() {
       email: "",
       password: "",
       role: "colaborador",
-      department_id: depts[0]?.id ?? "",
+      department_ids: depts[0] ? [depts[0].id] : [],
       whatsapp: "",
       ativo: true,
       disponivel: true,
@@ -151,7 +156,7 @@ export function ColaboradoresTab() {
       email: c.email ?? "",
       password: "",
       role: c.role === "colaborador" ? "colaborador" : "administrador",
-      department_id: c.department_id ?? "",
+      department_ids: c.department_ids,
       whatsapp: c.whatsapp ?? "",
       ativo: c.ativo,
       disponivel: c.disponivel,
@@ -175,12 +180,16 @@ export function ColaboradoresTab() {
     mutationFn: async (vars: {
       id: string;
       input: Parameters<typeof updateColaborador>[1];
-      roleChange?: { role: "administrador" | "colaborador"; department_id: string | null };
+      roleChange?: { role: "administrador" | "colaborador"; department_ids: string[] };
+      departmentIds?: string[];
     }) => {
       // A troca de papel muda o acesso (is_superadmin) + o papel canônico, então
-      // vai pela Edge Function antes de salvar os demais campos do perfil.
+      // vai pela Edge Function antes de salvar os demais campos do perfil. Ela
+      // já grava os setores; sem troca de papel, os setores vão pela RPC.
       if (vars.roleChange) {
         await alterarPapelColaborador({ user_id: vars.id, ...vars.roleChange });
+      } else if (vars.departmentIds) {
+        await definirDepartamentosColaborador(vars.id, vars.departmentIds);
       }
       await updateColaborador(vars.id, vars.input);
     },
@@ -212,8 +221,8 @@ export function ColaboradoresTab() {
       if (!form.password || form.password.length < 8) e.password = "Mínimo 8 caracteres";
     }
     // Departamento é obrigatório só para colaborador (admin pode ter, mas é opcional).
-    if (form.role === "colaborador" && !form.department_id)
-      e.department_id = "Departamento é obrigatório";
+    if (form.role === "colaborador" && form.department_ids.length === 0)
+      e.department_ids = "Escolha pelo menos um departamento";
     // WhatsApp é opcional; se preenchido, precisa ser um número válido.
     if (form.whatsapp.trim() && !normalizarE164(form.whatsapp))
       e.whatsapp = "Número inválido. Use DDD + número (ex.: 11 91234-5678).";
@@ -224,31 +233,29 @@ export function ColaboradoresTab() {
   function save() {
     if (!validate()) return;
     const whatsapp = form.whatsapp.trim() ? normalizarE164(form.whatsapp) : null;
-    const department_id = form.department_id || null;
+    const department_ids = form.department_ids;
     if (editing) {
       const currentRole: PapelForm =
         editing.role === "colaborador" ? "colaborador" : "administrador";
       const roleChanged = canEditRole && form.role !== currentRole;
-      // O departamento de um administrador só é espelhado em company_members
-      // pela RPC de troca de papel (dual-write atômico). Se só o departamento
-      // mudou — sem trocar o papel — força a mesma chamada mesmo assim, senão
-      // users.department_id e company_members.department_id ficam divergentes.
-      const deptChangedForAdmin =
-        canEditRole &&
-        form.role === "administrador" &&
-        department_id !== (editing.department_id ?? null);
+      const deptsChanged = !mesmosDepartamentos(department_ids, editing.department_ids);
+      // Setores de administrador só o dono muda, junto com o papel (mesma
+      // Edge Function). Setores de colaborador vão direto pela RPC.
+      const deptChangedForAdmin = canEditRole && form.role === "administrador" && deptsChanged;
       const roleChange =
-        roleChanged || deptChangedForAdmin ? { role: form.role, department_id } : undefined;
+        roleChanged || deptChangedForAdmin ? { role: form.role, department_ids } : undefined;
+      const departmentIds =
+        !roleChange && deptsChanged && form.role === "colaborador" ? department_ids : undefined;
       updateMut.mutate({
         id: editing.id,
         input: {
           nome: form.nome,
-          department_id,
           ativo: form.ativo,
           disponivel: form.disponivel,
           whatsapp,
         },
         roleChange,
+        departmentIds,
       });
     } else {
       createMut.mutate({
@@ -256,10 +263,20 @@ export function ColaboradoresTab() {
         email: form.email.trim(),
         password: form.password,
         role: form.role,
-        department_id,
+        department_ids,
         whatsapp,
       });
     }
+  }
+
+  // Marcar põe no fim da lista; o 1º marcado continua sendo o principal.
+  function toggleDept(id: string, marcado: boolean) {
+    setForm((f) => ({
+      ...f,
+      department_ids: marcado
+        ? [...f.department_ids.filter((d) => d !== id), id]
+        : f.department_ids.filter((d) => d !== id),
+    }));
   }
 
   function toggleAtivo(c: ColaboradorRow) {
@@ -278,6 +295,9 @@ export function ColaboradoresTab() {
   // Toggle de papel na edição: só o dono, nunca no próprio cadastro nem em outro dono.
   const canEditRole = !!editing && isOwnerMe && editing.role !== "dono" && editing.id !== me?.id;
   const saving = createMut.isPending || updateMut.isPending;
+  const deptsBloqueados = !!editing && form.role === "administrador" && !canEditRole;
+  // Setores ativos + algum inativo que a pessoa ainda tenha (para não sumir).
+  const deptsDoForm = todosDepts.filter((d) => d.ativo || form.department_ids.includes(d.id));
 
   return (
     <div className="space-y-5">
@@ -405,18 +425,19 @@ export function ColaboradoresTab() {
                 <div className="my-4 border-t border-border" />
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {c.department_id && (
+                  {c.departamentos.map((d) => (
                     <span
+                      key={d.id}
                       className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium"
-                      style={{ backgroundColor: `${c.department_cor}22`, color: c.department_cor }}
+                      style={{ backgroundColor: `${d.cor}22`, color: d.cor }}
                     >
                       <span
                         className="inline-block h-2 w-2 rounded-full"
-                        style={{ backgroundColor: c.department_cor }}
+                        style={{ backgroundColor: d.cor }}
                       />
-                      {c.department_nome}
+                      {d.nome}
                     </span>
-                  )}
+                  ))}
                   <span
                     className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
                     style={{ backgroundColor: stStyle.bg, color: stStyle.fg }}
@@ -557,7 +578,7 @@ export function ColaboradoresTab() {
                   onChange={(e) => setForm({ ...form, role: e.target.value as PapelForm })}
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 >
-                  <option value="colaborador">Colaborador (atendente de um departamento)</option>
+                  <option value="colaborador">Colaborador (atendente de departamentos)</option>
                   <option value="administrador">Administrador (acesso total)</option>
                 </select>
                 {editing && (
@@ -568,36 +589,55 @@ export function ColaboradoresTab() {
               </div>
             )}
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-foreground">
-                Departamento{form.role === "administrador" && " (opcional)"}
-              </label>
-              <select
-                value={form.department_id}
-                onChange={(e) => setForm({ ...form, department_id: e.target.value })}
-                disabled={!!editing && form.role === "administrador" && !canEditRole}
-                className={`w-full rounded-md border bg-background px-3 py-2 text-sm ${
-                  errors.department_id ? "border-destructive" : "border-border"
+              <p className="mb-1.5 block text-xs font-medium text-foreground">
+                Departamentos{form.role === "administrador" && " (opcional)"}
+              </p>
+              <div
+                className={`max-h-48 space-y-1 overflow-y-auto rounded-md border bg-background p-2 ${
+                  errors.department_ids ? "border-destructive" : "border-border"
                 }`}
               >
-                <option value="">
-                  {form.role === "administrador" ? "Nenhum" : "Selecione..."}
-                </option>
-                {depts.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.nome}
-                  </option>
-                ))}
-              </select>
-              {errors.department_id && (
-                <p className="mt-1 text-xs text-destructive">{errors.department_id}</p>
+                {deptsDoForm.map((d) => {
+                  const marcado = form.department_ids.includes(d.id);
+                  const principal = form.department_ids[0] === d.id;
+                  return (
+                    <label
+                      key={d.id}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
+                    >
+                      <Checkbox
+                        checked={marcado}
+                        disabled={deptsBloqueados}
+                        onCheckedChange={(v) => toggleDept(d.id, v === true)}
+                      />
+                      <span
+                        className="inline-block h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: d.cor }}
+                      />
+                      <span className="flex-1 truncate">
+                        {d.nome}
+                        {!d.ativo && " (inativo)"}
+                      </span>
+                      {principal && form.department_ids.length > 1 && (
+                        <span className="text-[10px] font-medium text-muted-foreground">
+                          principal
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              {errors.department_ids && (
+                <p className="mt-1 text-xs text-destructive">{errors.department_ids}</p>
               )}
-              {form.role === "administrador" && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Administrador continua vendo tudo. Atribuir um departamento só faz esta pessoa
-                  passar a receber os avisos de novo pendente daquele setor.
-                  {!!editing && !canEditRole && " Só o dono pode alterar."}
-                </p>
-              )}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {form.role === "administrador"
+                  ? "Administrador continua vendo tudo. Marcar departamentos só faz esta pessoa passar a receber os avisos de novo pendente desses setores."
+                  : "A pessoa vê e atende as conversas de todos os departamentos marcados."}
+                {form.department_ids.length > 1 &&
+                  " O principal (o primeiro marcado) é usado quando a conversa não tem um setor da pessoa."}
+                {deptsBloqueados && " Só o dono pode alterar."}
+              </p>
             </div>
 
             {editing && (

@@ -168,7 +168,7 @@ export function NotificationsManager() {
       }
 
       const deptId = row.current_department_id ?? null;
-      const relevant = me.isSuperadmin || (!!deptId && deptId === me.departmentId);
+      const relevant = me.isSuperadmin || (!!deptId && me.departmentIds.includes(deptId));
       if (!relevant) return;
       if (notifiedPending.current.has(id)) return;
       notifiedPending.current.add(id);

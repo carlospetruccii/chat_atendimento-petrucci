@@ -6,7 +6,10 @@ export interface CurrentUserProfile {
   id: string;
   nome: string;
   email: string | null;
+  /** Departamento principal. */
   departmentId: string | null;
+  /** Todos os setores da pessoa (o principal primeiro). */
+  departmentIds: string[];
   departmentNome: string | null;
   departmentCor: string | null;
   isSuperadmin: boolean;
@@ -34,7 +37,7 @@ export interface UseCurrentUserResult {
  * colaborador        → `is_superadmin = false` + departamento (só Inbox e Pendentes).
  */
 async function fetchCurrentUser(userId: string): Promise<CurrentUserProfile | null> {
-  const [userRes, permsRes] = await Promise.all([
+  const [userRes, permsRes, deptsRes] = await Promise.all([
     supabase
       .from("users")
       .select(
@@ -43,9 +46,13 @@ async function fetchCurrentUser(userId: string): Promise<CurrentUserProfile | nu
       .eq("id", userId)
       .maybeSingle(),
     supabase.from("user_permissions").select("permission").eq("user_id", userId),
+    supabase.from("user_departments").select("department_id").eq("user_id", userId),
   ]);
 
   if (userRes.error) throw userRes.error;
+  // Sem a lista (falha pontual), segue só com o principal: não derruba o app.
+  if (deptsRes.error)
+    console.warn("[useCurrentUser] setores não carregaram:", deptsRes.error.message);
   const data = userRes.data;
   if (!data) return null;
 
@@ -57,6 +64,12 @@ async function fetchCurrentUser(userId: string): Promise<CurrentUserProfile | nu
     nome: data.nome,
     email: data.email ?? null,
     departmentId: data.department_id,
+    departmentIds: [
+      ...(data.department_id ? [data.department_id] : []),
+      ...(deptsRes.data ?? [])
+        .map((d) => d.department_id)
+        .filter((id) => id !== data.department_id),
+    ],
     departmentNome: dept?.nome ?? null,
     departmentCor: dept?.cor ?? null,
     isSuperadmin: !!data.is_superadmin,

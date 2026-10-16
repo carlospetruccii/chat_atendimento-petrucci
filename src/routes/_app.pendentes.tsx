@@ -53,6 +53,7 @@ import {
   type PreviewMessage,
 } from "@/lib/pendentes-queries";
 import { MessageMedia } from "@/components/inbox-media/MessageMedia";
+import { agruparPorDepartamento } from "@/lib/departamentos-usuario";
 import type { InboxMessage } from "@/lib/inbox-queries";
 import {
   PendentesFilterSheet,
@@ -644,14 +645,8 @@ function AssignModal({
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
 
-  const filtered = collaborators.filter((c) =>
-    c.nome.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  const grouped = filtered.reduce<Record<string, CollaboratorOption[]>>((acc, c) => {
-    (acc[c.departmentNome] ??= []).push(c);
-    return acc;
-  }, {});
+  // Quem tem vários setores aparece em cada um deles.
+  const grupos = agruparPorDepartamento(collaborators, search);
 
   const selectedUser = collaborators.find((c) => c.id === selected) ?? null;
 
@@ -685,13 +680,13 @@ function AssignModal({
         </div>
 
         <div className="max-h-64 overflow-y-auto -mx-1 px-1 space-y-3">
-          {Object.entries(grouped).map(([dept, users]) => (
-            <div key={dept}>
+          {grupos.map((grupo) => (
+            <div key={grupo.departmentId ?? "sem-departamento"}>
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground px-1 mb-1">
-                {dept}
+                {grupo.nome}
               </div>
               <div className="space-y-1">
-                {users.map((u) => (
+                {grupo.pessoas.map((u) => (
                   <button
                     key={u.id}
                     onClick={() => setSelected(u.id)}
@@ -704,14 +699,16 @@ function AssignModal({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-foreground">{u.nome}</div>
-                      <div className="text-xs text-muted-foreground">{u.departmentNome}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {u.departamentos.map((d) => d.nome).join(" · ") || u.departmentNome}
+                      </div>
                     </div>
                   </button>
                 ))}
               </div>
             </div>
           ))}
-          {filtered.length === 0 && (
+          {grupos.length === 0 && (
             <div className="py-6 text-center text-sm text-muted-foreground">
               Nenhum colaborador encontrado
             </div>

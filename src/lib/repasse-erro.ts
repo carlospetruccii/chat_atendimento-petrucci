@@ -4,10 +4,11 @@ interface ErroRpc {
 }
 
 /**
- * Traduz o erro da RPC `repassar_atendimento` pro toast. O 22023 cobre dois
- * casos no banco — destino inválido e "já está com este colaborador" (comum
+ * Traduz o erro da RPC `repassar_atendimento` pro toast. O 22023 cobre três
+ * casos no banco — destino inválido, "já está com este colaborador" (comum
  * quando o destino assumiu a conversa enquanto a tela de quem repassa estava
- * velha) — então só o código não basta: desempata pela mensagem.
+ * velha) e destino fora do setor escolhido — então só o código não basta:
+ * desempata pela mensagem.
  */
 export function mensagemErroRepasse(erro: ErroRpc, nomeDestino: string): string {
   switch (erro.code) {
@@ -20,9 +21,11 @@ export function mensagemErroRepasse(erro: ErroRpc, nomeDestino: string): string 
     case "23505":
       return "Este cliente já tem uma conversa ativa — repasse a conversa atual dele.";
     case "22023":
-      return erro.message?.includes("já está com este colaborador")
-        ? `Este atendimento já está com ${nomeDestino}.`
-        : "Colaborador destino inválido.";
+      if (erro.message?.includes("já está com este colaborador"))
+        return `Este atendimento já está com ${nomeDestino}.`;
+      if (erro.message?.includes("não pertence a este departamento"))
+        return `${nomeDestino} não é mais deste departamento — reabra a lista e escolha de novo.`;
+      return "Colaborador destino inválido.";
     default:
       return erro.message
         ? `Não foi possível repassar: ${erro.message}`

@@ -11,19 +11,19 @@ const base: EntradaTroca = {
   targetExists: true,
   targetRole: "colaborador",
   novoRole: "administrador",
-  departmentId: null,
+  departmentIds: [],
 };
 
 Deno.test("promove colaborador → administrador (sem departamento)", () => {
   const r = resolverTrocaPapel({ ...base, novoRole: "administrador" });
-  assertEquals(r, { ok: true, isAdmin: true, departmentId: null });
+  assertEquals(r, { ok: true, isAdmin: true, departmentIds: [] });
 });
 
 Deno.test("promove colaborador → administrador com departamento atribuído (opcional)", () => {
   // Admin pode ter um departamento marcado — continua vendo tudo, mas passa a
   // receber os avisos de novo pendente daquele setor.
-  const r = resolverTrocaPapel({ ...base, novoRole: "administrador", departmentId: "dept-outros" });
-  assertEquals(r, { ok: true, isAdmin: true, departmentId: "dept-outros" });
+  const r = resolverTrocaPapel({ ...base, novoRole: "administrador", departmentIds: ["dept-outros"] });
+  assertEquals(r, { ok: true, isAdmin: true, departmentIds: ["dept-outros"] });
 });
 
 Deno.test("rebaixa administrador → colaborador com departamento", () => {
@@ -31,9 +31,9 @@ Deno.test("rebaixa administrador → colaborador com departamento", () => {
     ...base,
     targetRole: "administrador",
     novoRole: "colaborador",
-    departmentId: "dept-9",
+    departmentIds: ["dept-9"],
   });
-  assertEquals(r, { ok: true, isAdmin: false, departmentId: "dept-9" });
+  assertEquals(r, { ok: true, isAdmin: false, departmentIds: ["dept-9"] });
 });
 
 Deno.test("colaborador sem departamento é rejeitado", () => {
@@ -41,10 +41,20 @@ Deno.test("colaborador sem departamento é rejeitado", () => {
     ...base,
     targetRole: "administrador",
     novoRole: "colaborador",
-    departmentId: "   ",
+    departmentIds: [],
   });
   assertEquals(r.ok, false);
   if (!r.ok) assertEquals(r.status, 400);
+});
+
+Deno.test("rebaixa para colaborador em vários departamentos (ordem mantida)", () => {
+  const r = resolverTrocaPapel({
+    ...base,
+    targetRole: "administrador",
+    novoRole: "colaborador",
+    departmentIds: ["dept-vendas", "dept-sem-parar"],
+  });
+  assertEquals(r, { ok: true, isAdmin: false, departmentIds: ["dept-vendas", "dept-sem-parar"] });
 });
 
 Deno.test("só o dono pode trocar papéis", () => {

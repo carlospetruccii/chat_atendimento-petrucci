@@ -2,7 +2,8 @@ export interface ColaboradorFiltravel {
   id: string;
   nome: string;
   email: string | null;
-  department_id: string | null;
+  /** Todos os setores da pessoa. */
+  department_ids: string[];
   status: "ativo" | "indisponivel" | "inativo";
 }
 
@@ -26,7 +27,8 @@ export function filtrarColaboradores<T extends ColaboradorFiltravel>(
       !(colaborador.email ?? "").toLowerCase().includes(buscaNormalizada)
     )
       return false;
-    if (departamentoId !== "Todos" && colaborador.department_id !== departamentoId) return false;
+    if (departamentoId !== "Todos" && !colaborador.department_ids.includes(departamentoId))
+      return false;
     if (status !== "Todos" && colaborador.status !== status) return false;
     return mostrarInativos || colaborador.status !== "inativo";
   });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { blobParaBase64, codigoDoErro, corpoDoErro } from "./edge-functions";
+import { blobParaBase64, codigoDoErro, corpoDoErro, mensagemDoErro } from "./edge-functions";
 
 describe("blobParaBase64", () => {
   test("converte sem o prefixo data:", async () => {
@@ -32,5 +32,28 @@ describe("codigoDoErro / corpoDoErro", () => {
     const e = erroCom(JSON.stringify({ motivo: "x" }));
     expect(await corpoDoErro(e)).toEqual({ motivo: "x" });
     expect(await corpoDoErro(e)).toEqual({ motivo: "x" });
+  });
+});
+
+describe("mensagemDoErro", () => {
+  const erroCom = (corpo: string) =>
+    Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+      context: new Response(corpo, {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+    });
+
+  test("usa o campo error do corpo (motivo real da função)", async () => {
+    const erro = erroCom(
+      JSON.stringify({ error: "A user with this email address has already been registered" }),
+    );
+    expect(await mensagemDoErro(erro, "Falha")).toBe(
+      "A user with this email address has already been registered",
+    );
+  });
+  test("sem corpo legível usa o fallback, não a mensagem genérica do supabase-js", async () => {
+    expect(await mensagemDoErro(erroCom("<html>"), "Falha ao criar")).toBe("Falha ao criar");
+    expect(await mensagemDoErro(new Error("rede"), "Falha ao criar")).toBe("Falha ao criar");
   });
 });

@@ -11,6 +11,7 @@ import {
   type ClienteAutocompleteRow,
 } from "@/lib/clientes-queries";
 import { avisoCadastro } from "@/lib/cadastro-aviso";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 interface Props {
   open: boolean;
@@ -28,7 +29,7 @@ interface Conflito {
 }
 
 interface DeptRow { id: string; nome: string }
-interface UserRow { id: string; nome: string; department_id: string | null }
+interface UserRow { id: string; nome: string }
 
 export function IniciarAtendimentoDialog({
   open,
@@ -38,6 +39,10 @@ export function IniciarAtendimentoDialog({
   initialClient,
 }: Props) {
   const navigate = useNavigate();
+  const { user: me } = useCurrentUser();
+  // Colaborador em vários setores escolhe em qual deles a conversa começa.
+  const meusDepts = me?.departmentIds ?? [];
+  const escolheProprioDept = !canChooseDept && meusDepts.length > 1;
   const [busca, setBusca] = useState("");
   const [debounced, setDebounced] = useState("");
   const [selecionado, setSelecionado] = useState<ClienteAutocompleteRow | null>(null);
@@ -92,23 +97,28 @@ export function IniciarAtendimentoDialog({
       if (error) throw error;
       return data ?? [];
     },
-    enabled: open && canChooseDept,
+    enabled: open && (canChooseDept || escolheProprioDept),
   });
+  const deptsVisiveis = canChooseDept
+    ? (deptsQ.data ?? [])
+    : (deptsQ.data ?? []).filter((d) => meusDepts.includes(d.id));
 
   // Atendentes do depto escolhido
   const usersQ = useQuery({
     queryKey: ["iniciar-atend", "users", departmentId],
     queryFn: async (): Promise<UserRow[]> => {
+      // Inclui quem tem esse setor entre vários.
       const { data, error } = await supabase
-        .from("users")
-        .select("id, nome, department_id, ativo, disponivel, is_system_user")
+        .from("user_departments")
+        .select("users!inner(id, nome, ativo, disponivel, is_system_user)")
         .eq("department_id", departmentId)
-        .eq("ativo", true)
-        .eq("disponivel", true)
-        .eq("is_system_user", false)
-        .order("nome");
+        .eq("users.ativo", true)
+        .eq("users.disponivel", true)
+        .eq("users.is_system_user", false);
       if (error) throw error;
-      return (data ?? []) as UserRow[];
+      return (data ?? [])
+        .map((v) => ({ id: v.users.id, nome: v.users.nome }))
+        .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     },
     enabled: open && canChooseDept && !!departmentId,
   });
@@ -165,6 +175,7 @@ export function IniciarAtendimentoDialog({
   async function iniciar() {
     if (!selecionado) return;
     if (canChooseDept && (!departmentId || !assignedTo)) return;
+    if (escolheProprioDept && !departmentId) return;
 
     setIniciando(true);
     setConflito(null);
@@ -173,6 +184,8 @@ export function IniciarAtendimentoDialog({
       if (canChooseDept) {
         body.department_id = departmentId;
         body.assigned_to = assignedTo;
+      } else if (escolheProprioDept && departmentId) {
+        body.department_id = departmentId;
       }
       const { data, error } = await supabase.functions.invoke("iniciar-atendimento", { body });
 
@@ -216,7 +229,9 @@ export function IniciarAtendimentoDialog({
 
   if (!open) return null;
 
-  const podeIniciar = !!selecionado && (!canChooseDept || (!!departmentId && !!assignedTo));
+  const podeIniciar =
+    !!selecionado &&
+    (canChooseDept ? !!departmentId && !!assignedTo : !escolheProprioDept || !!departmentId);
 
   return (
     <div
@@ -351,6 +366,27 @@ export function IniciarAtendimentoDialog({
             )}
           </div>
 
+          {/* Colaborador em vários setores: em qual deles a conversa começa */}
+          {escolheProprioDept && selecionado && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">
+                Departamento
+              </label>
+              <select
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Selecione...</option>
+                {deptsVisiveis.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Depto + assigned_to (só Administrador) */}
           {canChooseDept && selecionado && (
             <>
@@ -364,7 +400,7 @@ export function IniciarAtendimentoDialog({
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 >
                   <option value="">Selecione...</option>
-                  {(deptsQ.data ?? []).map((d) => (
+                  {deptsVisiveis.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.nome}
                     </option>

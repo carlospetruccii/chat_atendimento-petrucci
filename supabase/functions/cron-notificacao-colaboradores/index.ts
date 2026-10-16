@@ -4,9 +4,10 @@
 // pessoal quem precisa atender um cliente que acabou de cair na fila:
 //
 //  - atendimento 'pendente'  → TODOS os colaboradores ativos do departamento.
-//    Um administrador só entra nessa lista se tiver esse departamento atribuído
-//    em users.department_id (admin sem departamento não recebe — ele já tem o
-//    lembrete de atraso à parte).
+//    Quem tem vários setores recebe de todos eles (user_departments). Um
+//    administrador só entra nessa lista se tiver esse departamento atribuído
+//    (admin sem departamento não recebe — ele já tem o lembrete de atraso à
+//    parte).
 //  - atendimento 'reservado' → SÓ o dono da reserva (assigned_to), e SÓ quando a
 //    reserva foi automática. O bot reserva para o último atendente do cliente
 //    naquele setor (triagem-bot finalizarTriagem/continuidade e
@@ -173,11 +174,14 @@ Deno.serve(async (_req: Request) => {
     const colabCache = new Map<string, Destino[]>();
     const resolveColaboradores = async (deptId: string): Promise<Destino[]> => {
       if (colabCache.has(deptId)) return colabCache.get(deptId)!;
-      const { data: users } = await supabase
-        .from("users")
-        .select("whatsapp, ativo, is_system_user")
+      const { data: vinculos } = await supabase
+        .from("user_departments")
+        .select("users!inner(whatsapp, ativo, is_system_user)")
         .eq("department_id", deptId);
-      const destinos = (users ?? [])
+      const users = (vinculos ?? []).map(
+        (v: { users: Parameters<typeof colaboradorRecebe>[0] }) => v.users,
+      );
+      const destinos = users
         .filter((u: Parameters<typeof colaboradorRecebe>[0]) => colaboradorRecebe(u))
         .map((u: { whatsapp: string | null }) => ({ whatsapp: soDigitos(u.whatsapp ?? "") }));
       colabCache.set(deptId, destinos);

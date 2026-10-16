@@ -5,11 +5,13 @@
 //
 // Mantém as DUAS fontes consistentes numa só operação:
 //   - users.is_superadmin  → é o que libera (ou tranca) o acesso de admin.
-//   - users.department_id  → obrigatório para colaborador; opcional para admin
-//     (se atribuído, o admin passa a receber os avisos de novo pendente do setor).
+//   - departamentos (user_departments; o 1º vira users.department_id) →
+//     obrigatório para colaborador; opcional para admin (se atribuído, o admin
+//     passa a receber os avisos de novo pendente desses setores).
 //   - company_members.role → papel canônico (+ department_id espelhado).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { Papel, resolverTrocaPapel } from "./logic.ts";
+import { lerDepartamentos } from "../_shared/departamentos.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -61,7 +63,7 @@ Deno.serve(async (req) => {
   const companyId = callerMember?.company_id as string | undefined;
   const callerRole = (callerMember?.role ?? null) as Papel | null;
 
-  let body: { user_id?: string; role?: string; department_id?: string | null };
+  let body: { user_id?: string; role?: string; department_id?: unknown; department_ids?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -70,6 +72,8 @@ Deno.serve(async (req) => {
   const targetId = (body.user_id ?? "").trim();
   if (!targetId) return json(400, { error: "user_id é obrigatório" });
   if (!companyId) return json(400, { error: "Empresa do chamador não encontrada" });
+  const departamentos = lerDepartamentos(body);
+  if (!departamentos.ok) return json(400, { error: departamentos.error });
 
   // Estado atual do alvo, restrito à empresa do chamador.
   const { data: targetMember, error: targetErr } = await admin
@@ -91,11 +95,11 @@ Deno.serve(async (req) => {
     targetExists: !!targetMember,
     targetRole: (targetMember?.role ?? null) as Papel | null,
     novoRole: (body.role ?? "").trim(),
-    departmentId: body.department_id ?? null,
+    departmentIds: departamentos.ids,
   });
   if (!decisao.ok) return json(decisao.status, { error: decisao.error });
 
-  const { isAdmin, departmentId } = decisao;
+  const { isAdmin, departmentIds } = decisao;
 
   // Escreve users + company_members numa única transação (RPC). Evita estado
   // inconsistente entre o gate de acesso e o papel canônico.
@@ -103,7 +107,7 @@ Deno.serve(async (req) => {
     p_user_id: targetId,
     p_company_id: companyId,
     p_is_admin: isAdmin,
-    p_department_id: departmentId,
+    p_department_ids: departmentIds,
   });
   if (rpcErr) {
     // Detalhe do banco fica só no log; cliente recebe mensagem genérica.

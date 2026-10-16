@@ -15,23 +15,23 @@ export interface EntradaTroca {
   targetRole: Papel | null;
   /** Papel desejado. */
   novoRole: string;
-  /** Departamento informado (obrigatório para colaborador). */
-  departmentId: string | null;
+  /** Departamentos informados, já validados (o 1º é o principal). Colaborador exige ao menos um. */
+  departmentIds: string[];
 }
 
 export type ResultadoTroca =
   | { ok: false; status: number; error: string }
-  | { ok: true; isAdmin: boolean; departmentId: string | null };
+  | { ok: true; isAdmin: boolean; departmentIds: string[] };
 
 /**
  * Decide se a troca de papel é permitida e, se for, o estado resultante
- * (is_superadmin + departamento). Regras:
+ * (is_superadmin + departamentos). Regras:
  *  - Só o dono troca papéis (bate com a RLS de company_members).
  *  - Não se pode trocar o próprio papel nem o de outro dono.
  *  - Papel válido é apenas 'administrador' ou 'colaborador'.
- *  - Colaborador exige departamento. Administrador pode ter um departamento
- *    atribuído (opcional) — continua enxergando tudo, mas passa a receber os
- *    avisos de novo pendente daquele setor como se fosse um colaborador dele.
+ *  - Colaborador exige ao menos um departamento. Administrador pode ter
+ *    departamentos atribuídos (opcional) — continua enxergando tudo, mas passa a
+ *    receber os avisos de novo pendente desses setores como um colaborador deles.
  */
 export function resolverTrocaPapel(e: EntradaTroca): ResultadoTroca {
   if (e.callerRole !== "dono") {
@@ -55,11 +55,11 @@ export function resolverTrocaPapel(e: EntradaTroca): ResultadoTroca {
   }
 
   const isAdmin = e.novoRole === "administrador";
-  const departmentId = (e.departmentId ?? "").trim() || null;
+  const departmentIds = e.departmentIds;
 
-  if (!isAdmin && !departmentId) {
+  if (!isAdmin && departmentIds.length === 0) {
     return { ok: false, status: 400, error: "Colaborador exige um departamento." };
   }
 
-  return { ok: true, isAdmin, departmentId };
+  return { ok: true, isAdmin, departmentIds };
 }

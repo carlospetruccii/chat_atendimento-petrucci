@@ -34,3 +34,13 @@ export async function codigoDoErro(error: unknown): Promise<string | undefined> 
   const corpo = await corpoDoErro(error);
   return typeof corpo?.erro === "string" ? corpo.erro : undefined;
 }
+
+/**
+ * Mensagem para mostrar ao usuário quando uma Edge Function responde não-2xx:
+ * o `error` do corpo (motivo real) ou o fallback — nunca o genérico
+ * "Edge Function returned a non-2xx status code" do supabase-js.
+ */
+export async function mensagemDoErro(error: unknown, fallback: string): Promise<string> {
+  const corpo = await corpoDoErro(error);
+  return typeof corpo?.error === "string" && corpo.error ? corpo.error : fallback;
+}

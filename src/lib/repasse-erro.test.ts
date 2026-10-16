@@ -14,6 +14,14 @@ describe("mensagemErroRepasse", () => {
     expect(mensagemErroRepasse(erro, "Samira")).toBe("Colaborador destino inválido.");
   });
 
+  test("avisa quando o destino não é do setor escolhido (lista desatualizada)", () => {
+    const erro = { code: "22023", message: "Colaborador não pertence a este departamento" };
+
+    expect(mensagemErroRepasse(erro, "Samira")).toBe(
+      "Samira não é mais deste departamento — reabra a lista e escolha de novo.",
+    );
+  });
+
   test("traduz falta de permissão", () => {
     expect(mensagemErroRepasse({ code: "42501" }, "Samira")).toBe(
       "Você não tem permissão para repassar este atendimento.",

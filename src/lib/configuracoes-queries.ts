@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { normalizarE164 } from "./phone";
+import { mensagemDoErro } from "./edge-functions";
+import { departamentosPorUsuario, type DepartamentoResumo } from "./departamentos-usuario";
 
 export const TRIAGEM_DEPT_ID = "00000000-0000-0000-0000-000000000010";
 export const FALLBACK_COR = "#64748b";
@@ -17,15 +19,19 @@ export interface DepartmentRow {
 export async function fetchDepartments(): Promise<DepartmentRow[]> {
   const [deptsRes, usersRes] = await Promise.all([
     supabase.from("departments").select("id, nome, cor, ativo").order("ordem").order("nome"),
-    supabase.from("users").select("department_id").eq("ativo", true).eq("is_system_user", false),
+    // Quem tem vários setores conta em cada um deles.
+    supabase
+      .from("user_departments")
+      .select("department_id, users!inner(ativo, is_system_user)")
+      .eq("users.ativo", true)
+      .eq("users.is_system_user", false),
   ]);
   if (deptsRes.error) throw deptsRes.error;
   if (usersRes.error) throw usersRes.error;
 
   const counts = new Map<string, number>();
-  for (const u of usersRes.data ?? []) {
-    if (!u.department_id) continue;
-    counts.set(u.department_id, (counts.get(u.department_id) ?? 0) + 1);
+  for (const v of usersRes.data ?? []) {
+    counts.set(v.department_id, (counts.get(v.department_id) ?? 0) + 1);
   }
   return (deptsRes.data ?? []).map((d) => ({
     id: d.id,
@@ -60,7 +66,10 @@ export async function checkDepartmentDeletable(
     return { ok: false, reason: "Departamento de sistema não pode ser excluído." };
 
   const [usersRes, atendRes] = await Promise.all([
-    supabase.from("users").select("id", { count: "exact", head: true }).eq("department_id", id),
+    supabase
+      .from("user_departments")
+      .select("user_id", { count: "exact", head: true })
+      .eq("department_id", id),
     supabase
       .from("atendimentos")
       .select("id", { count: "exact", head: true })
@@ -117,9 +126,13 @@ export interface ColaboradorRow {
   disponivel: boolean;
   is_superadmin: boolean;
   role: PapelColaborador | null;
+  /** Departamento principal (o 1º de `departamentos`). */
   department_id: string | null;
   department_nome: string;
   department_cor: string;
+  /** Todos os setores, principal primeiro. */
+  departamentos: DepartamentoResumo[];
+  department_ids: string[];
   created_at: string;
   status: ColaboradorStatus;
 }
@@ -129,7 +142,7 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
   // está nos tipos gerados). is_superadmin permanece para o gate das telas.
   // whatsapp (PII/LGPD) NÃO é mais selecionável direto da tabela users — vem por
   // uma RPC SECURITY DEFINER que só devolve o número para admin (e a própria linha).
-  const [usersRes, membersRes, whatsappRes] = await Promise.all([
+  const [usersRes, membersRes, whatsappRes, vinculosRes] = await Promise.all([
     supabase
       .from("users")
       .select(
@@ -141,10 +154,17 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
     // users_aplicar_ativo) e o papel do inativo precisa continuar aparecendo.
     supabase.from("company_members").select("user_id, role"),
     supabase.rpc("admin_list_user_whatsapps"),
+    supabase.from("user_departments").select("user_id, department_id, departments(nome, cor)"),
   ]);
   if (usersRes.error) throw usersRes.error;
   if (membersRes.error) throw membersRes.error;
   if (whatsappRes.error) throw whatsappRes.error;
+  if (vinculosRes.error) throw vinculosRes.error;
+
+  const deptsByUser = departamentosPorUsuario(
+    vinculosRes.data ?? [],
+    new Map((usersRes.data ?? []).map((u) => [u.id, u.department_id])),
+  );
 
   const roleByUser = new Map<string, PapelColaborador>();
   for (const m of membersRes.data ?? []) {
@@ -158,6 +178,7 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
 
   return (usersRes.data ?? []).map((u) => {
     const dept = u.departments as { nome: string; cor: string } | null;
+    const departamentos = deptsByUser.get(u.id) ?? [];
     let status: ColaboradorStatus = "inativo";
     if (u.ativo) status = u.disponivel ? "ativo" : "indisponivel";
     return {
@@ -172,6 +193,8 @@ export async function fetchColaboradores(): Promise<ColaboradorRow[]> {
       department_id: u.department_id,
       department_nome: dept?.nome ?? "—",
       department_cor: dept?.cor ?? FALLBACK_COR,
+      departamentos,
+      department_ids: departamentos.map((d) => d.id),
       created_at: u.created_at,
       status,
     };
@@ -182,7 +205,6 @@ export async function updateColaborador(
   id: string,
   input: {
     nome: string;
-    department_id: string | null;
     ativo: boolean;
     disponivel: boolean;
     whatsapp: string | null;
@@ -194,12 +216,21 @@ export async function updateColaborador(
     .from("users")
     .update({
       nome: input.nome.trim(),
-      department_id: input.department_id,
       ativo: input.ativo,
       disponivel: input.disponivel,
       whatsapp,
     })
     .eq("id", id);
+  if (error) throw error;
+}
+
+// Setores de um colaborador (o 1º é o principal). Administrador só o dono muda
+// — e isso vai junto da troca de papel (alterarPapelColaborador).
+export async function definirDepartamentosColaborador(id: string, departmentIds: string[]) {
+  const { error } = await supabase.rpc("definir_departamentos_usuario", {
+    p_user_id: id,
+    p_department_ids: departmentIds,
+  });
   if (error) throw error;
 }
 
@@ -214,17 +245,12 @@ export async function setColaboradorAtivo(id: string, ativo: boolean) {
 export async function alterarPapelColaborador(input: {
   user_id: string;
   role: "administrador" | "colaborador";
-  department_id: string | null;
+  department_ids: string[];
 }) {
   const { data, error } = await supabase.functions.invoke("alterar-papel-colaborador", {
     body: input,
   });
-  if (error) {
-    const ctx = (error as { context?: { body?: unknown } }).context;
-    throw new Error(
-      (typeof ctx?.body === "string" && ctx.body) || error.message || "Falha ao alterar papel",
-    );
-  }
+  if (error) throw new Error(await mensagemDoErro(error, "Falha ao alterar papel"));
   if (data?.error) throw new Error(data.error);
   return data;
 }
@@ -234,19 +260,14 @@ export async function criarColaborador(input: {
   email: string;
   password: string;
   role: "administrador" | "colaborador";
-  department_id: string | null;
+  department_ids: string[];
   whatsapp: string | null;
 }) {
   const { data, error } = await supabase.functions.invoke("criar-colaborador", {
     body: input,
   });
-  if (error) {
-    // A edge function devolve o motivo no corpo mesmo em erro HTTP.
-    const ctx = (error as { context?: { body?: unknown } }).context;
-    throw new Error(
-      (typeof ctx?.body === "string" && ctx.body) || error.message || "Falha ao criar",
-    );
-  }
+  // A edge function devolve o motivo no corpo mesmo em erro HTTP.
+  if (error) throw new Error(await mensagemDoErro(error, "Falha ao criar colaborador"));
   if (data?.error) throw new Error(data.error);
   return data;
 }

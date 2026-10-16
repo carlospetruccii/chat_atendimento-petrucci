@@ -2304,6 +2304,39 @@ export type Database = {
           },
         ]
       }
+      user_departments: {
+        Row: {
+          created_at: string
+          department_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_departments_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_departments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           ativo: boolean
@@ -2427,15 +2460,25 @@ export type Database = {
           whatsapp: string
         }[]
       }
-      alterar_papel_membro: {
-        Args: {
-          p_company_id: string
-          p_department_id: string
-          p_is_admin: boolean
-          p_user_id: string
-        }
-        Returns: undefined
-      }
+      alterar_papel_membro:
+        | {
+            Args: {
+              p_company_id: string
+              p_department_id: string
+              p_is_admin: boolean
+              p_user_id: string
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_company_id: string
+              p_department_ids: string[]
+              p_is_admin: boolean
+              p_user_id: string
+            }
+            Returns: undefined
+          }
       assign_pendente_a_usuario: {
         Args: { p_atendimento_id: string; p_user_id: string }
         Returns: boolean
@@ -2453,6 +2496,10 @@ export type Database = {
       current_user_can_view_all: { Args: never; Returns: boolean }
       current_user_department: { Args: never; Returns: string }
       current_user_is_superadmin: { Args: never; Returns: boolean }
+      definir_departamentos_usuario: {
+        Args: { p_department_ids: string[]; p_user_id: string }
+        Returns: undefined
+      }
       dashboard_company_do_chamador: { Args: never; Returns: string }
       dashboard_engajamento: {
         Args: { p_company_id: string; p_janela_dias: number; p_to: string }
@@ -2668,6 +2715,7 @@ export type Database = {
       repassar_atendimento: {
         Args: {
           p_atendimento_id: string
+          p_department_id?: string
           p_observacao?: string
           p_to_user_id: string
         }

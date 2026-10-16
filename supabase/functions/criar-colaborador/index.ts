@@ -3,13 +3,16 @@
 // Apenas superadmin OU usuário com permissão 'manage_users' pode chamar.
 //
 // Papéis (single-tenant; seguem dono/administrador/colaborador):
-//   - 'administrador' → is_superadmin = true, enxerga tudo. Departamento é
-//     opcional: se atribuído, o admin passa a receber os avisos de novo
-//     pendente daquele setor (como um colaborador dele).
-//   - 'colaborador'   → is_superadmin = false, departamento obrigatório.
+//   - 'administrador' → is_superadmin = true, enxerga tudo. Departamentos são
+//     opcionais: se atribuídos, o admin passa a receber os avisos de novo
+//     pendente desses setores (como um colaborador deles).
+//   - 'colaborador'   → is_superadmin = false, ao menos um departamento.
+// Departamentos: `department_ids` (lista; o 1º é o principal) ou o antigo
+// `department_id`.
 // A pessoa entra com uma senha TEMPORÁRIA e é obrigada a trocá-la no 1º acesso
 // (marcador em user_metadata.must_change_password = true).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { lerDepartamentos } from "../_shared/departamentos.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -84,7 +87,8 @@ Deno.serve(async (req) => {
     email?: string;
     password?: string;
     role?: string;
-    department_id?: string | null;
+    department_id?: unknown;
+    department_ids?: unknown;
     whatsapp?: string | null;
   };
   try {
@@ -104,15 +108,22 @@ Deno.serve(async (req) => {
   // Compat: sem role explícito, mantém o comportamento antigo (colaborador).
   const role = (body.role ?? "colaborador").trim();
   const isAdmin = role === "administrador";
-  const department_id = body.department_id ?? null;
+  const departamentos = lerDepartamentos(body);
+  if (!departamentos.ok) return json(400, { error: departamentos.error });
+  const departmentIds = departamentos.ids;
+  const department_id = departmentIds[0] ?? null;
 
   if (role !== "administrador" && role !== "colaborador") {
     return json(400, { error: "Papel inválido (use 'administrador' ou 'colaborador')" });
   }
+  // Quem só tem manage_users cadastra colaborador, mas não cria administrador.
+  if (isAdmin && callerRow?.is_superadmin !== true) {
+    return json(403, { error: "Só um administrador pode cadastrar outro administrador" });
+  }
   if (!nome || !email || !password) {
     return json(400, { error: "Campos obrigatórios: nome, email, password" });
   }
-  if (!isAdmin && !department_id) {
+  if (!isAdmin && departmentIds.length === 0) {
     return json(400, { error: "Colaborador exige um departamento" });
   }
   if (password.length < 8) return json(400, { error: "Senha deve ter pelo menos 8 caracteres" });
@@ -143,6 +154,9 @@ Deno.serve(async (req) => {
     user_metadata: { must_change_password: true },
   });
   if (createErr || !created.user) {
+    if ((createErr as { code?: string } | null)?.code === "email_exists") {
+      return json(400, { error: "Já existe um usuário com este e-mail." });
+    }
     return json(400, { error: createErr?.message ?? "Falha ao criar usuário no Auth" });
   }
   const newId = created.user.id;
@@ -163,6 +177,20 @@ Deno.serve(async (req) => {
   if (insertErr) {
     await admin.auth.admin.deleteUser(newId); // rollback Auth
     return json(400, { error: `Falha ao criar registro: ${insertErr.message}` });
+  }
+
+  // O principal já entrou pelo insert (trigger); grava a lista completa.
+  if (departmentIds.length > 1) {
+    const { error: deptErr } = await admin.rpc("definir_departamentos_usuario", {
+      p_user_id: newId,
+      p_department_ids: departmentIds,
+    });
+    if (deptErr) {
+      console.error("[criar-colaborador] departamentos falharam:", deptErr.message);
+      await admin.from("users").delete().eq("id", newId); // rollback perfil
+      await admin.auth.admin.deleteUser(newId); // rollback Auth
+      return json(400, { error: "Falha ao salvar os departamentos. Tente novamente." });
+    }
   }
 
   // Vínculo com a empresa (papel canônico). Não bloqueia o cadastro se falhar:

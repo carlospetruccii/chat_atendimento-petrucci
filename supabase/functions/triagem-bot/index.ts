@@ -158,15 +158,18 @@ async function nomeDept(deptId: string): Promise<string> {
   return (data as { nome: string } | null)?.nome ?? "";
 }
 
-// Colaboradores ativos (não-sistema) de um departamento, para o passo de
-// escolha de pessoa no fluxo de sessão. Ordem por nome (igual ao menu de deps).
+// Colaboradores ativos (não-sistema) de um departamento — inclusive quem tem
+// esse setor entre vários —, para o passo de escolha de pessoa no fluxo de
+// sessão. Ordem por nome (igual ao menu de deps).
 async function carregarColaboradores(deptId: string): Promise<Colaborador[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("users").select("id, nome")
-    .eq("department_id", deptId).eq("ativo", true).eq("is_system_user", false)
-    .order("nome", { ascending: true });
+  const { data, error } = await supabase.from("user_departments")
+    .select("users!inner(id, nome, ativo, is_system_user)")
+    .eq("department_id", deptId).eq("users.ativo", true).eq("users.is_system_user", false);
   if (error) throw error;
-  return (data ?? []) as Colaborador[];
+  return ((data ?? []) as unknown as Array<{ users: Colaborador }>)
+    .map((v) => ({ id: v.users.id, nome: v.users.nome }))
+    .sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR"));
 }
 
 // Nome cadastrado na Lista de Sessões para o número do cliente (saudação
