@@ -1,0 +1,78 @@
+MENSAGEM DE ABERTURA (mandar antes das prints)
+
+O sistema é basicamente o WhatsApp da empresa organizado por departamento. Como administrador, você enxerga tudo: todos os atendimentos, todos os departamentos e todas as pessoas. Além de atender, você acompanha os números, organiza a equipe e cuida das configurações. Vou te mostrar tela por tela:
+
+
+1- Dashboard  (print: 01-dashboard.png)
+
+É o painel com os números do atendimento. Ele se atualiza sozinho a cada minuto.
+No topo você escolhe o período (hoje, ontem, 7 dias, 30 dias ou um intervalo seu) e pode filtrar por departamento ou por pessoa.
+
+Em aberto agora → quantos atendimentos estão rolando neste momento (fica vermelho quando acumula).
+Encerrados no período → quantos foram finalizados.
+Tempo médio 1ª resposta → quanto o cliente espera, em média, até alguém responder.
+Mensagens no período → quantas mensagens foram trocadas.
+
+Embaixo tem o gráfico de atendimentos por dia e a divisão por departamento. Mais abaixo fica a parte de Relacionamento: tempo de primeira resposta, quem puxa a conversa (a empresa ou o cliente) e quantas vezes o cliente foi passado de um departamento pra outro.
+Essa tela só mostra os números. Mexer nela não muda nada no sistema.
+
+
+2- Inbox  (print: 02-inbox.png)
+
+É onde as conversas acontecem. Do lado esquerdo fica a lista e do lado direito a conversa aberta, igual ao WhatsApp Web.
+Em cima tem três abas: Chat (clientes), Grupos (grupos de WhatsApp da empresa) e Equipe (conversa interna entre vocês). Também dá pra buscar e filtrar por situação (em andamento, encerrado...).
+
+Como administrador, você vê as conversas de todo mundo, não só as suas. Quando você abre a conversa de outra pessoa, ela entra em "modo supervisão" (aquela faixa amarela embaixo): você lê tudo, mas não escreve.
+Botões no topo da conversa:
+Atribuir a mim → você assume o atendimento e passa a poder responder.
+Repassar → passa o atendimento pra outra pessoa (pode deixar uma observação).
+Encerrar → finaliza o atendimento (pode registrar o motivo).
+Linha do tempo → mostra todos os atendimentos anteriores daquele cliente.
+
+Nas suas conversas você responde igual ao WhatsApp: texto, áudio, foto, documento e responder/citar uma mensagem.
+
+
+3- Pendentes  (print: 03-pendentes.png)
+
+É a "fila de espera": clientes que querem falar e ainda não têm ninguém atendendo. Como administrador, você vê a fila de todos os departamentos.
+Dá pra filtrar por departamento e por tempo de espera, ordenar e buscar. No canto direito você troca entre Grade (cartões) e Tabela.
+
+Atender → o cliente vira seu e você já cai direto na conversa (Inbox).
+Pré-visualizar (👁) → mostra as últimas mensagens antes de você decidir, sem assumir o cliente.
+Atribuir → manda o cliente direto pra outra pessoa da equipe. Só o administrador tem esse botão.
+
+Se alguém pegar antes de você, o sistema avisa "já foi atribuído". É normal, é só seguir pro próximo.
+
+
+4- Contatos  (print: 04-contatos.png)
+
+É a agenda da empresa: os contatos da conta Google da Parabrisas Petrucci mais os clientes que já estão cadastrados no sistema.
+Dá pra buscar por nome ou número. Clicando em Conversar você começa um atendimento novo com aquela pessoa, e ela já aparece na sua Inbox.
+Contato sem número de WhatsApp aparece na lista, mas o botão fica desligado.
+
+
+5- Supervisão  (sem print)
+
+É a visão geral de todos os atendimentos, de qualquer situação, para acompanhar a equipe. Dá pra ver em Tabela ou em Kanban (colunas por situação: triagem, reservado, em atendimento, pendente e encerrado).
+Você filtra por período, departamento, atendente e situação. Clicando num atendimento, ele abre na Inbox pra você ler. No Kanban dá pra arrastar um cartão pra "Encerrado" e fechar o atendimento direto dali.
+
+
+6- Configurações › Departamentos  (print: 05-departamentos.png)
+
+Aqui ficam os setores da empresa (Vendas, Suporte, Financeiro...). O cliente escolhe o setor e cai na fila daquele departamento.
+Novo departamento → cria um setor com nome e cor.
+Setas ↑ ↓ → mudam a ordem em que os setores aparecem pro cliente no WhatsApp.
+Lápis → edita o nome ou a cor.
+Lixeira → remove. Só funciona se o setor não tiver ninguém nem atendimento em aberto.
+A coluna Colaboradores mostra quantas pessoas estão em cada setor.
+
+
+7- Configurações › Colaboradores  (print: 06-colaboradores.png)
+
+Aqui você cadastra e gerencia quem usa o sistema.
+Novo colaborador → você coloca nome, e-mail, uma senha inicial e o departamento. No primeiro acesso a pessoa troca a senha.
+Editar → muda o nome ou o departamento (o e-mail não muda).
+Desativar → corta o acesso da pessoa na hora, sem apagar o histórico dela. Dá pra reativar depois pelo filtro "Inativos".
+Dá pra buscar por nome/e-mail e filtrar por departamento e situação.
+
+O essencial é isso. Qualquer dúvida me chama!
