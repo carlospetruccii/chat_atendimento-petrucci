@@ -139,7 +139,10 @@ export async function listInboxConversations(
     .select("atendimento_id, content, tipo, direction, created_at, apagada_em")
     .in("atendimento_id", ids)
     .order("created_at", { ascending: false });
-  if (msgErr) throw msgErr;
+  // A prévia é enfeite: se esta consulta falhar (ex.: statement timeout com o
+  // banco ocupado), a lista segue sem ela. Derrubar a lista inteira deixava a
+  // tela com dados velhos — inclusive sem saber que a conversa já era sua.
+  if (msgErr) console.warn("[inbox] prévia das conversas indisponível:", msgErr.message);
 
   const previewByAtendimento = new Map<
     string,

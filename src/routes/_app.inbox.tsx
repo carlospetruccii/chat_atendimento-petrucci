@@ -63,6 +63,7 @@ import { useSelecaoMensagens } from "@/hooks/useSelecaoMensagens";
 import { useLongPress } from "@/hooks/useLongPress";
 import { useAgora } from "@/hooks/useAgora";
 import { useChatHistory } from "@/hooks/useChatHistory";
+import { aplicarAtribuicao } from "@/lib/inbox-atribuicao";
 import { agruparMensagens, chatLoadState, type AtendimentoMeta } from "@/lib/inbox-history";
 import { ClientHistorySheet } from "@/components/inbox/ClientHistorySheet";
 import { AudioRecorderBar } from "@/components/inbox/AudioRecorderBar";
@@ -722,6 +723,12 @@ function InboxPage() {
 
     toast.success(
       eraEncerrado ? "Atendimento reaberto e atribuído a você" : "Atendimento atribuído a você",
+    );
+    // Atualiza a lista em cache já: a refetch abaixo pode falhar (timeout) e a
+    // conversa ficaria em "Modo supervisão" até recarregar a página.
+    queryClient.setQueryData<InboxConversation[]>(
+      ["inbox", "conversations", user.id, canViewAll],
+      (antiga) => aplicarAtribuicao(antiga, current.id, { id: user.id, nome: user.nome }),
     );
     queryClient.invalidateQueries({ queryKey: ["inbox"] });
   };
