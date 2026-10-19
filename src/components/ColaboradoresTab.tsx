@@ -239,13 +239,15 @@ export function ColaboradoresTab() {
         editing.role === "colaborador" ? "colaborador" : "administrador";
       const roleChanged = canEditRole && form.role !== currentRole;
       const deptsChanged = !mesmosDepartamentos(department_ids, editing.department_ids);
-      // Setores de administrador só o dono muda, junto com o papel (mesma
-      // Edge Function). Setores de colaborador vão direto pela RPC.
+      // Setores de outro administrador só o dono muda, junto com o papel (mesma
+      // Edge Function). Setores de colaborador e os próprios vão pela RPC.
       const deptChangedForAdmin = canEditRole && form.role === "administrador" && deptsChanged;
       const roleChange =
         roleChanged || deptChangedForAdmin ? { role: form.role, department_ids } : undefined;
       const departmentIds =
-        !roleChange && deptsChanged && form.role === "colaborador" ? department_ids : undefined;
+        !roleChange && deptsChanged && (form.role === "colaborador" || isSelf)
+          ? department_ids
+          : undefined;
       updateMut.mutate({
         id: editing.id,
         input: {
@@ -295,7 +297,8 @@ export function ColaboradoresTab() {
   // Toggle de papel na edição: só o dono, nunca no próprio cadastro nem em outro dono.
   const canEditRole = !!editing && isOwnerMe && editing.role !== "dono" && editing.id !== me?.id;
   const saving = createMut.isPending || updateMut.isPending;
-  const deptsBloqueados = !!editing && form.role === "administrador" && !canEditRole;
+  // Setores de administrador: o dono muda os de outro admin; cada admin muda os próprios.
+  const deptsBloqueados = !!editing && form.role === "administrador" && !canEditRole && !isSelf;
   // Setores ativos + algum inativo que a pessoa ainda tenha (para não sumir).
   const deptsDoForm = todosDepts.filter((d) => d.ativo || form.department_ids.includes(d.id));
 
