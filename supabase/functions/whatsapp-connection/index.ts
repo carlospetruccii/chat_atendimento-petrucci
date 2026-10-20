@@ -14,8 +14,13 @@
 //
 // Ao conectar, também (re)configura o webhook da instância apontando para a
 // função webhook-zapi-receive (com o secret na query), de forma idempotente.
+//
+// ACESSO: só superadmin ativo (JWT de usuário) ou chave de servidor. Sem isso,
+// qualquer um com a URL podia desconectar o número da empresa (verify_jwt=false).
 
+import { ehOperadorOuSuperadmin } from "../_shared/auth-operador.ts";
 import { iniciarCronometro, log } from "../_shared/logger.ts";
+import { getSupabaseAdmin } from "../_shared/supabase-client.ts";
 import {
   conectarInstancia,
   configurarWebhook,
@@ -76,6 +81,11 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return jsonResponse({ ok: false, erro: "method_not_allowed" }, 405);
 
   const cron = iniciarCronometro();
+
+  if (!(await ehOperadorOuSuperadmin(req, getSupabaseAdmin()))) {
+    log({ funcao: FUNCAO, evento: "acesso_negado", status: "erro", duracao_ms: cron() });
+    return jsonResponse({ ok: false, erro: "nao_autorizado" }, 401);
+  }
 
   if (!credenciaisConfiguradas()) {
     return jsonResponse({
