@@ -15,8 +15,9 @@
 -- Seq Scan. Com RLS ligada, o Postgres só usa índice em filtro do usuário se o
 -- operador for "leakproof", e `->>` do jsonb não é. Este índice ajuda consultas
 -- feitas por service_role/edge functions, mas NÃO resolve sozinho a policy do
--- storage. O conserto de verdade é trocar o EXISTS da policy por uma função
--- SECURITY DEFINER (decisão pendente, mexe em RLS).
+-- storage. O conserto de verdade veio na migration seguinte
+-- (20261016132017_mensagens_midia_visivel_fn): a policy chama uma função
+-- SECURITY DEFINER, que roda sem RLS e usa este índice.
 
 CREATE INDEX IF NOT EXISTS idx_mensagens_storage_path
   ON public.mensagens ((media_metadata ->> 'storage_path'))
