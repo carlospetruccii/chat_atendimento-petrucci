@@ -8,7 +8,8 @@
 --   3) reordenar_departamentos grava a posição de cada id;
 --   4) reordenar_departamentos recusa lista vazia, id repetido e id inexistente;
 --   5) usuários de sistema Bot/Sistema e os 5 textos do bot existem;
---   6) o bot continua DESLIGADO (bot_ativo = 'false').
+--   6) bot_ativo é 'true'/'false' e, se ligado, bot_ativado_em está carimbado
+--      (sem o carimbo o bot dispara para o backlog antigo). Ligado desde 20/10/2026.
 --
 -- Roda dentro de BEGIN/ROLLBACK. Levanta EXCEPTION no primeiro caso divergente.
 BEGIN;
@@ -117,11 +118,15 @@ BEGIN
   END IF;
 
   ---------------------------------------------------------------------------
-  -- 6) O bot continua desligado.
+  -- 6) bot_ativo válido; ligado exige bot_ativado_em.
   ---------------------------------------------------------------------------
   IF (SELECT valor FROM public.system_config WHERE chave = 'bot_ativo')
-     IS DISTINCT FROM 'false' THEN
-    RAISE EXCEPTION 'CASO 6 (bot_ativo deveria ser false)';
+     NOT IN ('true', 'false') THEN
+    RAISE EXCEPTION 'CASO 6 (bot_ativo deveria ser true ou false)';
+  END IF;
+  IF (SELECT valor FROM public.system_config WHERE chave = 'bot_ativo') = 'true'
+     AND coalesce((SELECT valor FROM public.system_config WHERE chave = 'bot_ativado_em'), '') = '' THEN
+    RAISE EXCEPTION 'CASO 6 (bot ligado sem bot_ativado_em)';
   END IF;
 
   RAISE NOTICE 'departamentos_ordem: todos os casos OK';
