@@ -53,6 +53,7 @@ removido — ela está **dormindo**, pronta para ser reativada no futuro.
 | **[09 — Aba Tempos: status real](09-aba-tempos-status-real.md)** | Quem usa cada tempo; a RPC `status_tempos()` que diz "Em uso" ou "Sem efeito" pelo estado real (bot, crons, interruptores); o que a tela mostra hoje. |
 | **[10 — Desativar colaborador](10-desativar-colaborador.md)** | Desativar passa a bloquear login, sessões e permissões; travas (próprio acesso, dono, último admin); reativar desfaz; limites conhecidos. |
 | **[11 — Colaborador em vários departamentos](11-colaborador-varios-departamentos.md)** | Tabela `user_departments`, departamento principal, visibilidade/fila/repasse por qualquer setor da pessoa, escolha de setor ao iniciar conversa; limites conhecidos. |
+| **[12 — Lentidão, ativação do bot e conexão do WhatsApp (20/10/2026)](12-lentidao-rls-e-ativacao-bot-2026-10-20.md)** | RLS sem função por linha (arrays + InitPlan), contador de não lidas, limpeza da fila e ativação do bot, `whatsapp-connection` exigindo login; pendências. |
 
 ---
 

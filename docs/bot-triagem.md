@@ -3,9 +3,9 @@
 O bot (`triagem-bot`) cumprimenta o cliente, mostra o menu de setores e manda a conversa
 para a fila **Pendentes** do setor escolhido.
 
-> **Estado: DESLIGADO.** `system_config.bot_ativo = 'false'`. Desde 09/10/2026 todos os
-> crons estão ligados (igual ao Almore) e respeitam `bot_ativo`: o botão da aba **Operação**
-> é o único controle. Só ligar quando o dono pedir. Ligar dispara WhatsApp para cliente real.
+> **Estado: LIGADO desde 20/10/2026 09:47** (ordem do dono). `system_config.bot_ativo = 'true'`,
+> `bot_ativado_em` carimbado. Todos os crons respeitam `bot_ativo`; o botão da aba **Operação**
+> é o único controle. Detalhes da ativação: `docs/mapa-sistema/12-lentidao-rls-e-ativacao-bot-2026-10-20.md`.
 
 ---
 
@@ -114,7 +114,7 @@ O banco tinha sido criado só com o schema do Almore, sem dados. Faltava:
 |---|---|
 | `src/lib/departamentos-ordem.test.ts` | `npm test` |
 | `supabase/functions/triagem-bot/logic.test.ts` | `cd supabase/functions && deno test --allow-all --no-check` |
-| `supabase/tests/departamentos_ordem.test.sql` | rodar no SQL do Supabase (BEGIN/ROLLBACK, não grava nada). Também confere que `bot_ativo` é `false`. |
+| `supabase/tests/departamentos_ordem.test.sql` | rodar no SQL do Supabase (BEGIN/ROLLBACK, não grava nada). Também confere que `bot_ativo` é válido e, se ligado, tem `bot_ativado_em`. |
 
 ### Revisões
 
@@ -159,6 +159,11 @@ Seg–sex 08:00–17:30, sáb 08:00–12:00, domingo fechado. Gravado em `busine
 nos alertas de atendimento parado; essa não tem tela — se mudar o horário, mudar nas duas).
 
 ## Pendências
+
+- Avisos internos (atendimento parado, admin) não têm destinatário: o responsável padrão
+  não existe mais e quase ninguém tem WhatsApp cadastrado. Ver doc 12.
+- Atendimento `em_triagem` que a equipe atende pelo celular precisa de
+  `triagem_estagio = 'concluida'`, senão o bot entra no meio quando o cliente escreve.
 
 - Cadastrar os colaboradores.
 - Textos do fluxo interno de **Sessões** (`sessao_*`) ainda não existem; nesse fluxo
