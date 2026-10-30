@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchContatoNamesByNumbers } from "@/lib/contatos-queries";
 import { selecionarAtendimentoAnterior } from "@/lib/inbox-history-selection";
+import { filtroConversasVisiveis } from "@/lib/inbox-visibilidade";
 import type { MarcaOtimizacaoIa } from "@/lib/otimizacao-ia";
 
 export type AtendimentoStatus =
@@ -72,10 +73,13 @@ interface ListConversationsParams {
   userId: string;
   isSuperadmin: boolean;
   canViewAll: boolean;
+  /** Setores da pessoa: as pendentes deles entram na lista de quem não vê tudo. */
+  departmentIds: string[];
 }
 
 /**
- * Atendentes comuns: só veem atendimentos atribuídos a eles em status ativo (reservado / em_atendimento).
+ * Atendentes comuns: veem os atendimentos atribuídos a eles em status ativo (reservado / em_atendimento)
+ * e as pendentes, ainda sem dono, dos setores deles.
  * Administrador / quem tem view_all_departments: vê todos os atendimentos em andamento, incluindo triagem.
  */
 export async function listInboxConversations(
@@ -104,7 +108,7 @@ export async function listInboxConversations(
     // Administrador / superadmin: vê todos os status, inclusive encerrados,
     // misturados em ordem cronológica.
   } else {
-    query = query.eq("assigned_to", params.userId).in("status", ["reservado", "em_atendimento"]);
+    query = query.or(filtroConversasVisiveis(params.userId, params.departmentIds));
   }
 
   const { data, error } = await query.limit(500);

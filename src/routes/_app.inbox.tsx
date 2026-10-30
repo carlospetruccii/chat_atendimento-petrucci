@@ -25,7 +25,8 @@ import {
   type InboxStatusFilterValue,
 } from "@/components/inbox/InboxStatusFilter";
 import { InboxSetorFilter } from "@/components/inbox/InboxSetorFilter";
-import { fetchDepartments } from "@/lib/pendentes-queries";
+import { claimAtendimento, fetchDepartments } from "@/lib/pendentes-queries";
+import { podeAtenderPendente } from "@/lib/inbox-visibilidade";
 import { TRIAGEM_DEPT_ID } from "@/lib/configuracoes-queries";
 import {
   SETOR_TODOS,
@@ -238,6 +239,7 @@ function InboxPage() {
         userId: user!.id,
         isSuperadmin: user!.isSuperadmin,
         canViewAll,
+        departmentIds: user!.departmentIds,
       }),
     enabled: !!user && abaChatAtiva,
   });
@@ -344,6 +346,8 @@ function InboxPage() {
 
   // Modo supervisão: Administrador abriu uma conversa que NÃO está atribuída a ela
   const supervisionMode = !!current && canViewAll && current.assignedTo !== user?.id;
+  // Pendente de um setor da pessoa, ainda sem dono: lê, mas só responde depois de "Atender".
+  const atenderPendente = !!current && podeAtenderPendente(current, canViewAll);
 
   // "Tique azul": marca a conversa como lida no WhatsApp SOMENTE quando quem
   // abriu é o atendente responsável E o atendimento está em andamento. Assim
@@ -365,13 +369,14 @@ function InboxPage() {
   // Badge interno de não lidas: zera para quem abriu, ao abrir — independente
   // de quem é o responsável ou do status (diferente do "tique azul" acima).
   useEffect(() => {
-    if (!current || !user?.id) return;
+    // Pendente do setor ainda sem dono: ler não zera o aviso — ele some ao atender.
+    if (!current || !user?.id || atenderPendente) return;
     void marcarAtendimentoLido(current.id).then(() => {
       queryClient.invalidateQueries({ queryKey: ["inbox", "conversations"] });
       queryClient.invalidateQueries({ queryKey: ["inbox-unread-total"] });
       queryClient.invalidateQueries({ queryKey: ["inbox", "abas-unread"] });
     });
-  }, [current?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [current?.id, user?.id, atenderPendente]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Atendimentos do mesmo cliente que entram no scroll contínuo.
   const atendimentosQuery = useQuery({
@@ -772,6 +777,22 @@ function InboxPage() {
     queryClient.invalidateQueries({ queryKey: ["inbox"] });
   };
 
+  // "Atender" numa pendente do setor: mesma RPC da tela Pendentes (claim_pendente),
+  // que também carimba o setor e as mensagens órfãs. Perde a corrida → já foi pega.
+  const atenderConversa = async () => {
+    if (!current || !user) return;
+    try {
+      const ganhou = await claimAtendimento(current.id, user.id, user.id);
+      if (ganhou) toast.success("Atendimento atribuído a você");
+      else toast.error("Este atendimento já foi pego por outra pessoa.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      toast.error(msg ? `Não foi possível atender: ${msg}` : "Não foi possível atender.");
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["inbox"] });
+  };
+
   // Botão Voltar do cabeçalho (só existe no celular — ver `data-pane` abaixo).
   // Só limpa a seleção local: abrir uma conversa nunca empurra `?conversation=`
   // para a URL (só a sincroniza quando ela chega de fora), então não há nada
@@ -893,6 +914,11 @@ function InboxPage() {
                               {statusLabel(c.status)}
                             </span>
                           )}
+                          {c.status === "pendente" && !c.assignedTo && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                              {statusLabel(c.status)}
+                            </span>
+                          )}
                           {c.status === "encerrado" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
                               {statusLabel(c.status)}
@@ -965,6 +991,17 @@ function InboxPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {atenderPendente && (
+                    <Button
+                      aria-label="Atender"
+                      size="sm"
+                      onClick={atenderConversa}
+                      className="rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      <UserPlus className="h-4 w-4" strokeWidth={1.5} />
+                      <span className="hidden sm:inline">Atender</span>
+                    </Button>
+                  )}
                   {supervisionMode && (
                     <Button
                       // O rótulo some abaixo de sm: e `display:none` não conta para o
@@ -987,24 +1024,30 @@ function InboxPage() {
                       botões com texto não cabem ao lado do nome numa tela de
                       360px. */}
                   <div className="hidden items-center gap-2 md:flex">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setRepassarOpen(true)}
-                      className="rounded-2xl"
-                    >
-                      <ArrowRightLeft className="h-4 w-4" strokeWidth={1.5} />
-                      Repassar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setEncerrarOpen(true)}
-                      className="rounded-2xl"
-                    >
-                      <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
-                      Encerrar
-                    </Button>
+                    {/* Pendente sem dono: o backend só deixa repassar/encerrar quem é
+                        responsável (ou supervisor) — quem vai atender clica em Atender antes. */}
+                    {!atenderPendente && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRepassarOpen(true)}
+                          className="rounded-2xl"
+                        >
+                          <ArrowRightLeft className="h-4 w-4" strokeWidth={1.5} />
+                          Repassar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEncerrarOpen(true)}
+                          className="rounded-2xl"
+                        >
+                          <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
+                          Encerrar
+                        </Button>
+                      </>
+                    )}
                     {canViewAll && (
                       <Button
                         variant="outline"
@@ -1017,33 +1060,39 @@ function InboxPage() {
                       </Button>
                     )}
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label="Mais ações do atendimento"
-                        className="touch-target-mobile inline-flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
-                      >
-                        <MoreVertical className="h-5 w-5" strokeWidth={1.8} />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => setRepassarOpen(true)}>
-                        <ArrowRightLeft className="h-4 w-4" strokeWidth={1.5} />
-                        Repassar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setEncerrarOpen(true)}>
-                        <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
-                        Encerrar
-                      </DropdownMenuItem>
-                      {canViewAll && (
-                        <DropdownMenuItem onSelect={() => setTimelineOpen(true)}>
-                          <Clock className="h-4 w-4" strokeWidth={1.5} />
-                          Linha do tempo
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {!atenderPendente && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Mais ações do atendimento"
+                          className="touch-target-mobile inline-flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+                        >
+                          <MoreVertical className="h-5 w-5" strokeWidth={1.8} />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {!atenderPendente && (
+                          <>
+                            <DropdownMenuItem onSelect={() => setRepassarOpen(true)}>
+                              <ArrowRightLeft className="h-4 w-4" strokeWidth={1.5} />
+                              Repassar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setEncerrarOpen(true)}>
+                              <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
+                              Encerrar
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {canViewAll && (
+                          <DropdownMenuItem onSelect={() => setTimelineOpen(true)}>
+                            <Clock className="h-4 w-4" strokeWidth={1.5} />
+                            Linha do tempo
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </div>
 
@@ -1197,7 +1246,7 @@ function InboxPage() {
                         modoSelecao={selecao.ativo}
                         selecionada={selecao.selecionados.has(m.id)}
                         onSegurar={() => {
-                          if (supervisionMode) return;
+                          if (supervisionMode || atenderPendente) return;
                           selecao.iniciarCom(m);
                         }}
                         onToqueSelecao={() => selecao.alternar(m)}
@@ -1351,12 +1400,13 @@ function InboxPage() {
               </div>
 
               {/* Input */}
-              {supervisionMode ? (
+              {supervisionMode || atenderPendente ? (
                 <div className="flex items-center gap-2 border-t border-[var(--warning-border)] bg-[var(--warning-bg)] px-6 py-3 text-sm text-[var(--warning-foreground)]">
                   <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   <span>
-                    Modo supervisão · Visualização. Para enviar mensagens, atribua o atendimento a
-                    você.
+                    {supervisionMode
+                      ? "Modo supervisão · Visualização. Para enviar mensagens, atribua o atendimento a você."
+                      : "Conversa pendente do seu setor. Clique em Atender para responder."}
                   </span>
                 </div>
               ) : (
