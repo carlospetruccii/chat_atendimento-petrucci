@@ -24,6 +24,16 @@ import {
   InboxStatusFilter,
   type InboxStatusFilterValue,
 } from "@/components/inbox/InboxStatusFilter";
+import { InboxSetorFilter } from "@/components/inbox/InboxSetorFilter";
+import { fetchDepartments } from "@/lib/pendentes-queries";
+import { TRIAGEM_DEPT_ID } from "@/lib/configuracoes-queries";
+import {
+  SETOR_TODOS,
+  conversaNoSetor,
+  naoLidasPorSetor,
+  opcoesDeSetor,
+  type SetorFiltro,
+} from "@/lib/inbox-setor";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -171,6 +181,7 @@ function InboxPage() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<InboxStatusFilterValue>("todos");
+  const [setorFilter, setSetorFilter] = useState<SetorFiltro>(SETOR_TODOS);
   const [replyTo, setReplyTo] = useState<InboxMessage | null>(null);
   const [aba, setAba] = useState<InboxAba>(search.aba ?? "chat");
   // Apagar para todos / editar mensagem (recursos nativos do WhatsApp).
@@ -231,7 +242,7 @@ function InboxPage() {
     enabled: !!user && abaChatAtiva,
   });
 
-  const conversations = conversationsQuery.data ?? [];
+  const conversations = useMemo(() => conversationsQuery.data ?? [], [conversationsQuery.data]);
 
   // Contadores das três abas, para o badge do alternador. Ficam numa query só
   // (chave separada da do menu lateral, que soma os três).
@@ -278,16 +289,44 @@ function InboxPage() {
   });
   const matchedClientIds = messageSearchQuery.data ?? new Set<string>();
 
-  // Contadores por status, para os badges das pills de filtro — sempre sobre
-  // `conversations` (não `filtered`), senão o número encolhe junto com a busca.
+  const departamentosQuery = useQuery({
+    queryKey: ["inbox", "departamentos"],
+    queryFn: fetchDepartments,
+    enabled: !!user && abaChatAtiva,
+    staleTime: 5 * 60_000,
+  });
+  const opcoesSetor = useMemo(
+    () =>
+      opcoesDeSetor(departamentosQuery.data ?? [], {
+        canViewAll,
+        departmentIds: user?.departmentIds ?? [],
+        triagemDeptId: TRIAGEM_DEPT_ID,
+      }),
+    [departamentosQuery.data, canViewAll, user?.departmentIds],
+  );
+  const naoLidasSetor = useMemo(
+    () => naoLidasPorSetor(conversations, TRIAGEM_DEPT_ID),
+    [conversations],
+  );
+  // A fileira só aparece com 2+ opções. Setor escolhido que deixou de existir
+  // (desativado, ou sumiu da lista) ou fileira escondida: volta a "todos", senão
+  // a lista ficaria filtrada sem botão para limpar.
+  const mostrarSetores = opcoesSetor.length > 1;
+  const setorAtivo =
+    mostrarSetores && opcoesSetor.some((o) => o.id === setorFilter) ? setorFilter : SETOR_TODOS;
+  const doSetor = conversations.filter((c) => conversaNoSetor(c, setorAtivo, TRIAGEM_DEPT_ID));
+
+  // Contadores por status, para os badges das pills de filtro — sobre as
+  // conversas do setor escolhido, mas nunca sobre `filtered`, senão o número
+  // encolhe junto com a busca.
   const statusCounts: Record<InboxStatusFilterValue, number> = {
-    todos: conversations.length,
-    em_andamento: conversations.filter((c) => c.status !== "encerrado").length,
-    encerrado: conversations.filter((c) => c.status === "encerrado").length,
-    nao_visto: conversations.filter((c) => c.unread > 0).length,
+    todos: doSetor.length,
+    em_andamento: doSetor.filter((c) => c.status !== "encerrado").length,
+    encerrado: doSetor.filter((c) => c.status === "encerrado").length,
+    nao_visto: doSetor.filter((c) => c.unread > 0).length,
   };
 
-  const filtered = conversations.filter((c) => {
+  const filtered = doSetor.filter((c) => {
     if (statusFilter === "encerrado" && c.status !== "encerrado") return false;
     if (statusFilter === "em_andamento" && c.status === "encerrado") return false;
     if (statusFilter === "nao_visto" && c.unread <= 0) return false;
@@ -787,6 +826,14 @@ function InboxPage() {
               counts={statusCounts}
               onChange={setStatusFilter}
             />
+            {mostrarSetores && (
+              <InboxSetorFilter
+                value={setorAtivo}
+                opcoes={opcoesSetor}
+                naoLidas={naoLidasSetor}
+                onChange={setSetorFilter}
+              />
+            )}
           </div>
 
           {conversationsQuery.isLoading ? (
@@ -795,7 +842,7 @@ function InboxPage() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-              {statusFilter !== "todos"
+              {statusFilter !== "todos" || setorAtivo !== SETOR_TODOS
                 ? "Nenhuma conversa nesse filtro."
                 : canViewAll
                   ? "Nenhuma conversa em andamento."
